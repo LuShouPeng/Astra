@@ -17,3 +17,17 @@ export interface FileChange {
   binary: boolean;
   reviewStatus: ReviewStatus;
 }
+
+export interface GitFileChangeReadModel {
+  relativePath: string;
+  status: FileChangeStatus;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+}
+
+export interface FileDiffReadModel {
+  diff?: string;
+  binary: boolean;
+  truncated: boolean;
+}

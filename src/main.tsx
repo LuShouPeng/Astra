@@ -10,6 +10,7 @@ import './modules/command-center/command-center.css';
 import './modules/projects/projects.css';
 import './modules/sessions/sessions.css';
 import './modules/attention/attention.css';
+import './modules/changes/changes.css';
 import './app/shell/shell.css';
 
 const acceptanceService =

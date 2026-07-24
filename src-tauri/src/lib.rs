@@ -10,7 +10,10 @@ pub fn run() {
             modules::workspace::workspace_inspect_path,
             modules::workspace::workspace_check_exists,
             modules::project::project_git_summary,
-            modules::project::system_open_directory
+            modules::project::project_git_changes,
+            modules::project::project_file_diff,
+            modules::project::system_open_directory,
+            modules::project::system_open_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running Astra Nexus");

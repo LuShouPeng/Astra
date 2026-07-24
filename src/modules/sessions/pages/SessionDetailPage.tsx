@@ -1,17 +1,21 @@
 import { ArrowLeft, Send } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { appEventBus } from '../../../core/events/appEventBus';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
+import { ChangesReview, type ChangesService } from '../../changes';
 import { Timeline } from '../components/Timeline';
 import { applyFollowUp, nextSessionTimestamp } from '../model/sessionTransitions';
 
 type SessionTab = 'timeline' | 'changes';
 
-export function SessionDetailPage() {
+export function SessionDetailPage({ changesService }: { changesService?: ChangesService }) {
   const { sessionId } = useParams();
+  const [searchParams] = useSearchParams();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
-  const [tab, setTab] = useState<SessionTab>('timeline');
+  const [tab, setTab] = useState<SessionTab>(
+    searchParams.get('tab') === 'changes' ? 'changes' : 'timeline',
+  );
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   if (!snapshot) return <div className="session-state">Loading session...</div>;
@@ -86,21 +90,11 @@ export function SessionDetailPage() {
         </button>
       </div>
 
-      <div className="session-content">
+      <div className={`session-content ${tab === 'changes' ? 'session-content--changes' : ''}`}>
         {tab === 'timeline' ? (
           <Timeline events={events} />
         ) : (
-          <section className="session-changes" aria-label="Changed files">
-            {changes.map((change) => (
-              <div key={change.id}>
-                <span>{change.relativePath}</span>
-                <small>
-                  +{change.additions} -{change.deletions}
-                </small>
-              </div>
-            ))}
-            {changes.length === 0 && <p>No changed files in this session.</p>}
-          </section>
+          <ChangesReview sessionId={session.id} service={changesService} />
         )}
       </div>
 

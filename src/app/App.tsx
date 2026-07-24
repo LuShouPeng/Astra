@@ -11,6 +11,12 @@ import { TauriPrototypeStore } from '../core/data/tauriPrototypeStore';
 import { WorkbenchProvider, useWorkbench } from '../core/state/WorkbenchContext';
 import { CommandCenterPage } from '../modules/command-center';
 import { AttentionPage } from '../modules/attention';
+import {
+  ChangesPage,
+  TauriChangesNativeAdapter,
+  createChangesService,
+  type ChangesService,
+} from '../modules/changes';
 import { createDemoSnapshot } from '../modules/demo';
 import {
   createProjectService,
@@ -36,6 +42,10 @@ function createDefaultRepository(): PrototypeRepository {
     store: new TauriPrototypeStore(),
     createFallback: createDemoSnapshot,
   });
+}
+
+function createDefaultChangesService(): ChangesService {
+  return createChangesService(new TauriChangesNativeAdapter());
 }
 
 function ProjectsRoute({ service }: { service: ProjectService }) {
@@ -81,9 +91,11 @@ function ProjectsRoute({ service }: { service: ProjectService }) {
 function AppRouter({
   repository,
   projectService,
+  changesService,
 }: {
   repository: PrototypeRepository;
   projectService: ProjectService;
+  changesService: ChangesService;
 }) {
   const { activeWorkspace } = useWorkspace();
   if (resolveAppRoute(activeWorkspace) === 'projects') return <WelcomePage />;
@@ -96,9 +108,12 @@ function AppRouter({
           <Route path="command-center" element={<CommandCenterPage />} />
           <Route path="projects" element={<ProjectsRoute service={projectService} />} />
           <Route path="projects/:projectId" element={<ComingSoonPage />} />
-          <Route path="sessions/:sessionId" element={<SessionDetailPage />} />
+          <Route
+            path="sessions/:sessionId"
+            element={<SessionDetailPage changesService={changesService} />}
+          />
           <Route path="attention" element={<AttentionPage />} />
-          <Route path="changes" element={<ComingSoonPage />} />
+          <Route path="changes" element={<ChangesPage service={changesService} />} />
           <Route path="settings" element={<ComingSoonPage />} />
           <Route path="*" element={<Navigate replace to="/command-center" />} />
         </Route>
@@ -111,10 +126,12 @@ export function App({
   service,
   repository,
   projectService: suppliedProjectService,
+  changesService: suppliedChangesService,
 }: {
   service?: WorkspaceService;
   repository?: PrototypeRepository;
   projectService?: ProjectService;
+  changesService?: ChangesService;
 }) {
   const workspaceService = useMemo(() => service ?? createDefaultService(), [service]);
   const prototypeRepository = useMemo(() => repository ?? createDefaultRepository(), [repository]);
@@ -122,10 +139,18 @@ export function App({
     () => suppliedProjectService ?? createProjectService(new TauriProjectNativeAdapter()),
     [suppliedProjectService],
   );
+  const changesService = useMemo(
+    () => suppliedChangesService ?? createDefaultChangesService(),
+    [suppliedChangesService],
+  );
   return (
     <HashRouter>
       <WorkspaceProvider service={workspaceService}>
-        <AppRouter repository={prototypeRepository} projectService={projectService} />
+        <AppRouter
+          repository={prototypeRepository}
+          projectService={projectService}
+          changesService={changesService}
+        />
       </WorkspaceProvider>
     </HashRouter>
   );

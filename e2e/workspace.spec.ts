@@ -88,7 +88,7 @@ test('opens a session timeline and records a deterministic follow-up', async ({ 
   await expect(page.getByText('0 passed, 0 failed')).toBeVisible();
 
   await page.getByRole('tab', { name: 'Changes 4' }).click();
-  await expect(page.getByText('src/auth/session.ts')).toBeVisible();
+  await expect(page.getByRole('option', { name: /src\/auth\/session\.ts/ })).toBeVisible();
   await page.getByRole('tab', { name: 'Timeline 6' }).click();
 
   await page.getByLabel('Follow-up message').fill('Check the refresh token boundary.');
@@ -114,5 +114,34 @@ test('resolves attention and synchronizes command center counts', async ({ page 
   await expect(page.locator('[data-status="waiting"] strong')).toHaveText('0');
   await expect(page.locator('[data-status="failed"] strong')).toHaveText('0');
   await expect(page.getByText('0 items need attention')).toBeVisible();
+  await expectNoDocumentOverflow(page);
+});
+
+test('reviews a text diff and requests a deterministic rerun', async ({ page }) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  await page.getByRole('link', { name: 'Changes', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: 'Review Changes' })).toBeVisible();
+  await expect(page.getByRole('option')).toHaveCount(4);
+  await expect(page.getByText('-const timeout = 5000;')).toBeVisible();
+  await page.getByRole('option', { name: /docs\/auth-flow\.png/ }).click();
+  await expect(page.getByText('Binary preview unavailable')).toBeVisible();
+  await page.getByRole('option', { name: /src\/auth\/session\.ts/ }).click();
+
+  await page.getByRole('button', { name: 'Request Changes' }).click();
+  await expect(page.getByRole('button', { name: 'Submit request' })).toBeDisabled();
+  await page
+    .getByLabel('Requested changes')
+    .fill('Cover the refresh-token boundary without changing the public API.');
+  await page.getByLabel('Severity').selectOption('high');
+  await page.getByRole('button', { name: 'Submit request' }).click();
+
+  await expect(page.getByRole('status').filter({ hasText: 'Changes requested' })).toBeVisible();
+  await page.getByRole('link', { name: 'Open Session' }).click();
+  await expect(
+    page.getByText('[High] Cover the refresh-token boundary without changing the public API.'),
+  ).toBeVisible();
+  await expect(page.locator('.session-status')).toHaveText('running');
   await expectNoDocumentOverflow(page);
 });
