@@ -143,7 +143,7 @@ test('resolves attention and synchronizes command center counts', async ({ page 
   await page.getByRole('button', { name: 'Retry TypeScript typecheck failed' }).click();
   await expect(page.getByText('No open items in this filter.')).toBeVisible();
 
-  await page.getByRole('link', { name: 'Command Center' }).click();
+  await page.getByRole('link', { name: 'Command Center', exact: true }).click();
   await expect(page.locator('[data-status="running"] strong')).toHaveText('4');
   await expect(page.locator('[data-status="waiting"] strong')).toHaveText('0');
   await expect(page.locator('[data-status="failed"] strong')).toHaveText('0');
