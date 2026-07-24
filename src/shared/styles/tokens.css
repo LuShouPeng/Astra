@@ -71,3 +71,52 @@
   --activity-rail-width: 48px;
   --sidebar-width: 264px;
 }
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-canvas: #f4f6f8;
+  --color-surface: #ffffff;
+  --color-surface-raised: #eef1f4;
+  --color-surface-hover: #e8edf1;
+  --color-surface-selected: #e2f2e8;
+  --color-border: #d6dde3;
+  --color-border-strong: #a7b2bc;
+  --color-text: #172026;
+  --color-text-muted: #4e5c67;
+  --color-text-subtle: #697680;
+  --color-accent: #187a43;
+  --color-accent-hover: #126738;
+  --color-accent-ink: #ffffff;
+  --color-accent-surface: rgb(24 122 67 / 10%);
+  --color-accent-surface-subtle: rgb(24 122 67 / 7%);
+  --color-accent-border: rgb(24 122 67 / 32%);
+  --color-accent-status: #126b3a;
+  --color-accent-track: rgb(24 122 67 / 18%);
+  --color-focus: #2563a8;
+  --color-info: #2563a8;
+  --color-info-text: #174d86;
+  --color-info-border: rgb(37 99 168 / 35%);
+  --color-info-surface: rgb(37 99 168 / 8%);
+  --color-brand: #6652b8;
+  --color-brand-border: rgb(102 82 184 / 32%);
+  --color-brand-surface: rgb(102 82 184 / 8%);
+  --color-warning: #8a5b00;
+  --color-warning-surface: rgb(138 91 0 / 11%);
+  --color-danger: #b4232f;
+  --color-danger-button: #a11d29;
+  --color-danger-button-hover: #8d1722;
+  --color-danger-status: #9f1d28;
+  --color-danger-status-surface: rgb(180 35 47 / 10%);
+  --color-danger-surface: #fae8ea;
+  --color-danger-surface-subtle: rgb(180 35 47 / 8%);
+  --color-danger-surface-faint: rgb(180 35 47 / 4%);
+  --color-on-danger: #ffffff;
+  --color-overlay: rgb(23 32 38 / 45%);
+  --color-activity-rail: #e9edf0;
+  --color-active-surface: rgb(23 32 38 / 4%);
+  --color-selected-border: #72a487;
+  --color-status-ink: #ffffff;
+  --shadow-dialog: 0 18px 60px rgb(23 32 38 / 22%);
+  --shadow-menu: 0 8px 28px rgb(23 32 38 / 18%);
+  --shadow-tooltip: 0 4px 16px rgb(23 32 38 / 18%);
+}

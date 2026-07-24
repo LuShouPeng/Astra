@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { WorkspaceService } from '../core/contracts/workspace';
 import type { Project, ProjectGitSummary } from '../core/contracts/projects';
@@ -40,6 +40,7 @@ import { createWorkspaceService } from '../modules/workspace/services/workspaceS
 import { WorkspaceProvider, useWorkspace } from '../modules/workspace/state/WorkspaceContext';
 import { resolveAppRoute } from './routes';
 import { WorkbenchShell } from './shell/WorkbenchShell';
+import { startThemePreference } from '../core/preferences/appearance';
 
 function createDefaultService(): WorkspaceService {
   return createWorkspaceService(createTauriWorkspaceAdapters());
@@ -159,6 +160,7 @@ export function App({
   changesService?: ChangesService;
   desktopNotifications?: DesktopNotificationService;
 }) {
+  useEffect(() => startThemePreference(), []);
   const workspaceService = useMemo(() => service ?? createDefaultService(), [service]);
   const prototypeRepository = useMemo(() => repository ?? createDefaultRepository(), [repository]);
   const projectService = useMemo(

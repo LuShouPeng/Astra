@@ -18,6 +18,27 @@ function repository(): PrototypeRepository {
 }
 
 describe('SettingsPage', () => {
+  it('opens deep-linked sections and applies a persistent theme', async () => {
+    const user = userEvent.setup();
+    localStorage.clear();
+    render(
+      <MemoryRouter initialEntries={['/settings?tab=demo']}>
+        <WorkbenchProvider repository={repository()}>
+          <SettingsPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('tab', { name: 'Demo' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await user.click(screen.getByRole('tab', { name: 'General' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Theme' }), 'light');
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(localStorage.getItem('astra-nexus.theme')).toBe('light');
+  });
+
   it('persists notification rules and triggers the desktop adapter', async () => {
     const user = userEvent.setup();
     const store = repository();
@@ -51,7 +72,7 @@ describe('SettingsPage', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Dark')).toBeVisible();
+    expect(await screen.findByText('System')).toBeVisible();
     expect(screen.getByText('Coming soon')).toBeVisible();
     await user.click(screen.getByRole('tab', { name: 'About' }));
     expect(screen.getByText('0.1.0')).toBeVisible();

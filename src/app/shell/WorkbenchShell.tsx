@@ -5,6 +5,7 @@ import { useWorkspace } from '../../modules/workspace/state/WorkspaceContext';
 import { ActivityRail } from './ActivityRail';
 import { ProjectSessionTree } from './ProjectSessionTree';
 import { StatusBar } from './StatusBar';
+import { useWorkbenchShortcuts } from './useWorkbenchShortcuts';
 
 export function WorkbenchShell() {
   const { activeWorkspace, closeWorkspace } = useWorkspace();
@@ -21,6 +22,7 @@ function WorkbenchShellContent({
   onClose: () => void;
 }) {
   const { snapshot, warning } = useWorkbench();
+  useWorkbenchShortcuts();
 
   return (
     <div className="workbench-shell">

@@ -229,3 +229,21 @@ test('plays, steps, and resets the deterministic demo', async ({ page }) => {
   await expect(page.getByText('Step 0 of 3')).toBeVisible();
   await expectNoDocumentOverflow(page);
 });
+
+test('deep-links settings, persists theme, and navigates with shortcuts', async ({ page }) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  await page.getByRole('link', { name: 'Create simulated task' }).click();
+
+  await expect(page.getByRole('tab', { name: 'Demo' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: 'General' }).click();
+  await page.getByRole('combobox', { name: 'Theme' }).selectOption('light');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  await page.keyboard.press('Alt+3');
+  await expect(page.getByRole('heading', { name: 'Needs Attention' })).toBeVisible();
+  await expectNoDocumentOverflow(page);
+});

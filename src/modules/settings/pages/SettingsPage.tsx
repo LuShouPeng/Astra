@@ -1,6 +1,12 @@
 import { BellRing, Info, MonitorCog, Play } from 'lucide-react';
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { AppNotification, NotificationSettings } from '../../../core/contracts/notifications';
+import {
+  loadThemePreference,
+  saveThemePreference,
+  type ThemePreference,
+} from '../../../core/preferences/appearance';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import { DemoControls } from '../../demo';
 import type { DesktopNotificationService } from '../../notifications';
@@ -13,6 +19,10 @@ const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: 'demo', label: 'Demo' },
   { id: 'about', label: 'About' },
 ];
+
+function settingsTab(value: string | null): SettingsTab {
+  return value === 'notifications' || value === 'demo' || value === 'about' ? value : 'general';
+}
 
 const testNotification: AppNotification = {
   id: 'notification-settings-test',
@@ -30,7 +40,9 @@ export function SettingsPage({
   desktopNotifications?: DesktopNotificationService;
 }) {
   const { snapshot, saveSnapshot, saving } = useWorkbench();
-  const [tab, setTab] = useState<SettingsTab>('general');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = settingsTab(searchParams.get('tab'));
+  const [theme, setTheme] = useState<ThemePreference>(() => loadThemePreference());
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,7 +94,7 @@ export function SettingsPage({
             role="tab"
             aria-selected={tab === item.id}
             onClick={() => {
-              setTab(item.id);
+              setSearchParams(item.id === 'general' ? {} : { tab: item.id }, { replace: true });
               setNotice(null);
               setError(null);
             }}
@@ -107,8 +119,18 @@ export function SettingsPage({
                 <strong>Theme</strong>
                 <small>Application appearance</small>
               </div>
-              <select aria-label="Theme" value="dark" disabled>
+              <select
+                aria-label="Theme"
+                value={theme}
+                onChange={(event) => {
+                  const preference = event.target.value as ThemePreference;
+                  setTheme(preference);
+                  saveThemePreference(preference);
+                }}
+              >
+                <option value="system">System</option>
                 <option value="dark">Dark</option>
+                <option value="light">Light</option>
               </select>
             </div>
             <div className="settings-row">
