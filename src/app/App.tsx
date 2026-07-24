@@ -27,6 +27,7 @@ import {
 } from '../modules/notifications';
 import {
   createProjectService,
+  ProjectDetailPage,
   ProjectsPage,
   TauriProjectNativeAdapter,
   type ProjectService,
@@ -37,7 +38,6 @@ import { WelcomePage } from '../modules/workspace';
 import { createTauriWorkspaceAdapters } from '../modules/workspace/services/workspaceAdapters';
 import { createWorkspaceService } from '../modules/workspace/services/workspaceService';
 import { WorkspaceProvider, useWorkspace } from '../modules/workspace/state/WorkspaceContext';
-import { ComingSoonPage } from './pages/ComingSoonPage';
 import { resolveAppRoute } from './routes';
 import { WorkbenchShell } from './shell/WorkbenchShell';
 
@@ -122,7 +122,10 @@ function AppRouter({
           <Route index element={<Navigate replace to="/command-center" />} />
           <Route path="command-center" element={<CommandCenterPage />} />
           <Route path="projects" element={<ProjectsRoute service={projectService} />} />
-          <Route path="projects/:projectId" element={<ComingSoonPage />} />
+          <Route
+            path="projects/:projectId"
+            element={<ProjectDetailPage service={projectService} />}
+          />
           <Route
             path="sessions/:sessionId"
             element={<SessionDetailPage changesService={changesService} />}

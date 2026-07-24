@@ -23,8 +23,8 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | --------------- | ------------------------------------------------------------------------------------------------------- | -------- |
 | Command Center  | Welcome header, four status totals, active Sessions, Attention preview, project matrix, recent activity | pending  |
 | Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | verified |
-| Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | pending  |
-| Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | pending  |
+| Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | verified |
+| Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | verified |
 | Changes         | File statuses/counts, unified text diff, line numbers, review actions, binary fallback                  | verified |
 | Needs Attention | Six filters and type-specific actions                                                                   | verified |
 | Notifications   | Seven notification events, unread state, typed navigation target, settings                              | verified |
@@ -36,7 +36,7 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | Requirement                         | Status   |
 | ----------------------------------- | -------- |
 | Application starts without crashing | verified |
-| All primary pages navigate          | pending  |
+| All primary pages navigate          | verified |
 | Frozen demo data loads              | verified |
 | Session detail opens                | verified |
 | Timeline renders                    | verified |

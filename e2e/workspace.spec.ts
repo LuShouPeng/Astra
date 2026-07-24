@@ -98,6 +98,32 @@ test('opens a session timeline and records a deterministic follow-up', async ({ 
   await expectNoDocumentOverflow(page);
 });
 
+test('navigates project detail and structured session views', async ({ page }) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  const tree = page.getByRole('tree', { name: 'Projects and sessions' });
+  await tree.getByRole('link', { name: 'backend-api', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: 'backend-api' })).toBeVisible();
+  await expect(page.getByRole('tab')).toHaveCount(5);
+  await page.getByRole('tab', { name: 'Activity 6' }).click();
+  await expect(page.getByText('Found four relevant call sites.')).toBeVisible();
+  await page.getByRole('tab', { name: 'Sessions 3' }).click();
+  await page
+    .getByRole('region', { name: 'Project Sessions' })
+    .getByRole('link', { name: /Fix intermittent login timeout/ })
+    .click();
+
+  await page.getByRole('tab', { name: 'Commands 1' }).click();
+  await expect(page.getByText('Exit code 0')).toBeVisible();
+  await page.getByRole('tab', { name: 'Tests 1' }).click();
+  await expect(page.getByText('0 passed')).toBeVisible();
+  await page.getByRole('tab', { name: 'Context' }).click();
+  await expect(page.getByText('Deterministic mock')).toBeVisible();
+  await expect(page.getByText('demo://backend-api')).toBeVisible();
+  await expectNoDocumentOverflow(page);
+});
+
 test('resolves attention and synchronizes command center counts', async ({ page }) => {
   await page.goto('/?scenario=populated');
   await page.getByRole('button', { name: 'Open Astra Nexus' }).click();

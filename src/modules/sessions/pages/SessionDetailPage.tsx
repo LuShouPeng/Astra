@@ -4,18 +4,23 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { appEventBus } from '../../../core/events/appEventBus';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import { ChangesReview, type ChangesService } from '../../changes';
+import { CommandsView, ContextView, TestsView } from '../components/SessionEventViews';
 import { Timeline } from '../components/Timeline';
 import { applyFollowUp, nextSessionTimestamp } from '../model/sessionTransitions';
 
-type SessionTab = 'timeline' | 'changes';
+type SessionTab = 'timeline' | 'changes' | 'tests' | 'commands' | 'context';
+
+function sessionTab(value: string | null): SessionTab {
+  return value === 'changes' || value === 'tests' || value === 'commands' || value === 'context'
+    ? value
+    : 'timeline';
+}
 
 export function SessionDetailPage({ changesService }: { changesService?: ChangesService }) {
   const { sessionId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
-  const [tab, setTab] = useState<SessionTab>(
-    searchParams.get('tab') === 'changes' ? 'changes' : 'timeline',
-  );
+  const tab = sessionTab(searchParams.get('tab'));
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   if (!snapshot) return <div className="session-state">Loading session...</div>;
@@ -30,6 +35,12 @@ export function SessionDetailPage({ changesService }: { changesService?: Changes
   const capability = snapshot.providerCapabilities[session.provider];
   const events = snapshot.timelineEvents.filter((event) => event.sessionId === session.id);
   const changes = snapshot.fileChanges.filter((change) => change.sessionId === session.id);
+  const tests = events.filter((event) => event.type === 'test');
+  const commands = events.filter((event) => event.type === 'command');
+
+  function selectTab(nextTab: SessionTab) {
+    setSearchParams(nextTab === 'timeline' ? {} : { tab: nextTab }, { replace: true });
+  }
 
   async function submitFollowUp(event: FormEvent) {
     event.preventDefault();
@@ -82,19 +93,30 @@ export function SessionDetailPage({ changesService }: { changesService?: Changes
       </div>
 
       <div className="session-tabs" role="tablist" aria-label="Session views">
-        <button role="tab" aria-selected={tab === 'timeline'} onClick={() => setTab('timeline')}>
+        <button role="tab" aria-selected={tab === 'timeline'} onClick={() => selectTab('timeline')}>
           Timeline <span>{events.length}</span>
         </button>
-        <button role="tab" aria-selected={tab === 'changes'} onClick={() => setTab('changes')}>
+        <button role="tab" aria-selected={tab === 'changes'} onClick={() => selectTab('changes')}>
           Changes <span>{changes.length}</span>
+        </button>
+        <button role="tab" aria-selected={tab === 'tests'} onClick={() => selectTab('tests')}>
+          Tests <span>{tests.length}</span>
+        </button>
+        <button role="tab" aria-selected={tab === 'commands'} onClick={() => selectTab('commands')}>
+          Commands <span>{commands.length}</span>
+        </button>
+        <button role="tab" aria-selected={tab === 'context'} onClick={() => selectTab('context')}>
+          Context
         </button>
       </div>
 
       <div className={`session-content ${tab === 'changes' ? 'session-content--changes' : ''}`}>
-        {tab === 'timeline' ? (
-          <Timeline key={session.id} events={events} />
-        ) : (
-          <ChangesReview sessionId={session.id} service={changesService} />
+        {tab === 'timeline' && <Timeline key={session.id} events={events} />}
+        {tab === 'changes' && <ChangesReview sessionId={session.id} service={changesService} />}
+        {tab === 'tests' && <TestsView events={tests} />}
+        {tab === 'commands' && <CommandsView events={commands} />}
+        {tab === 'context' && (
+          <ContextView session={session} project={project} capability={capability} />
         )}
       </div>
 
