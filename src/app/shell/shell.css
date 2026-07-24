@@ -97,6 +97,23 @@
 .activity-button--disabled {
   opacity: 0.38;
 }
+.activity-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  min-width: 16px;
+  height: 16px;
+  place-items: center;
+  padding: 0 3px;
+  border: 2px solid var(--color-activity-rail);
+  border-radius: 8px;
+  color: var(--color-on-danger);
+  background: var(--color-danger-button);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  line-height: 1;
+}
 
 .activity-button[data-tooltip]::after {
   position: absolute;
@@ -124,6 +141,9 @@
 .activity-button[data-tooltip]:hover::after {
   opacity: 1;
   transform: translateX(0);
+}
+.activity-button--active[data-tooltip]::after {
+  display: none;
 }
 
 .sidebar-slot {

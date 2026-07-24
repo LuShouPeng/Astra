@@ -46,6 +46,7 @@ describe('App workspace flow', () => {
     expect(await screen.findByRole('heading', { name: 'Command Center' })).toBeVisible();
     expect(screen.getAllByText('Astra Nexus').length).toBeGreaterThan(0);
     expect(screen.getByRole('navigation', { name: 'Workbench activities' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Notifications' })).toHaveTextContent('2');
     expect(screen.getByRole('button', { name: 'Back to Projects' })).toBeVisible();
   });
 

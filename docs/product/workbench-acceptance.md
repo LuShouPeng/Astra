@@ -14,22 +14,22 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | US-004 | Render all seven Timeline event types in time order                       | Contract and component tests      | verified |
 | US-005 | Render changed files, text diff and binary fallback                       | Rust, adapter and component tests | verified |
 | US-006 | Process filtered Attention items and deep-link to Session                 | Store, component and E2E tests    | verified |
-| US-007 | Emit configured desktop notifications and navigate from app notifications | Adapter and E2E tests             | pending  |
+| US-007 | Emit configured desktop notifications and navigate from app notifications | Adapter and E2E tests             | verified |
 | US-008 | Accept or request changes and update Session/Timeline                     | Transition and E2E tests          | verified |
 
 ## Pages And Modules
 
-| Surface         | Minimum scope                                                                                           | Status   |
-| --------------- | ------------------------------------------------------------------------------------------------------- | -------- |
-| Command Center  | Welcome header, four status totals, active Sessions, Attention preview, project matrix, recent activity | pending  |
-| Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | verified |
-| Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | pending  |
-| Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | pending  |
-| Changes         | File statuses/counts, unified text diff, line numbers, review actions, binary fallback                  | verified |
-| Needs Attention | Six filters and type-specific actions                                                                   | verified |
-| Notifications   | Seven notification events, unread state, typed navigation target, settings                              | pending  |
-| Settings/About  | General, Notifications, Demo, version, description and stack                                            | pending  |
-| App Shell       | Primary navigation, project/Session tree, content slot, responsive optional inspector                   | verified |
+| Surface         | Minimum scope                                                                                           | Status      |
+| --------------- | ------------------------------------------------------------------------------------------------------- | ----------- |
+| Command Center  | Welcome header, four status totals, active Sessions, Attention preview, project matrix, recent activity | pending     |
+| Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | verified    |
+| Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | pending     |
+| Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | pending     |
+| Changes         | File statuses/counts, unified text diff, line numbers, review actions, binary fallback                  | verified    |
+| Needs Attention | Six filters and type-specific actions                                                                   | verified    |
+| Notifications   | Seven notification events, unread state, typed navigation target, settings                              | verified    |
+| Settings/About  | General, Notifications, Demo, version, description and stack                                            | implemented |
+| App Shell       | Primary navigation, project/Session tree, content slot, responsive optional inspector                   | verified    |
 
 ## P0 Release Gates
 
@@ -42,7 +42,7 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | Timeline renders                    | verified |
 | Diff renders                        | verified |
 | Needs Attention actions work        | verified |
-| Desktop notification can trigger    | pending  |
+| Desktop notification can trigger    | verified |
 | Windows installer builds            | pending  |
 
 ## P1 Release Gates
@@ -54,7 +54,7 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | Read Git status                 | verified |
 | Read real text diff             | verified |
 | Request Changes updates Session | verified |
-| Notification click navigates    | pending  |
+| Notification click navigates    | verified |
 | Projects persist after restart  | verified |
 
 ## P2 Polish Gates

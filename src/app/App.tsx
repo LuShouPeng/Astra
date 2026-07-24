@@ -19,12 +19,20 @@ import {
 } from '../modules/changes';
 import { createDemoSnapshot } from '../modules/demo';
 import {
+  DesktopNotificationBridge,
+  NotificationsPage,
+  TauriDesktopNotificationAdapter,
+  createDesktopNotificationService,
+  type DesktopNotificationService,
+} from '../modules/notifications';
+import {
   createProjectService,
   ProjectsPage,
   TauriProjectNativeAdapter,
   type ProjectService,
 } from '../modules/projects';
 import { SessionDetailPage } from '../modules/sessions';
+import { SettingsPage } from '../modules/settings';
 import { WelcomePage } from '../modules/workspace';
 import { createTauriWorkspaceAdapters } from '../modules/workspace/services/workspaceAdapters';
 import { createWorkspaceService } from '../modules/workspace/services/workspaceService';
@@ -46,6 +54,10 @@ function createDefaultRepository(): PrototypeRepository {
 
 function createDefaultChangesService(): ChangesService {
   return createChangesService(new TauriChangesNativeAdapter());
+}
+
+function createDefaultDesktopNotificationService(): DesktopNotificationService {
+  return createDesktopNotificationService(new TauriDesktopNotificationAdapter());
 }
 
 function ProjectsRoute({ service }: { service: ProjectService }) {
@@ -92,16 +104,19 @@ function AppRouter({
   repository,
   projectService,
   changesService,
+  desktopNotifications,
 }: {
   repository: PrototypeRepository;
   projectService: ProjectService;
   changesService: ChangesService;
+  desktopNotifications: DesktopNotificationService;
 }) {
   const { activeWorkspace } = useWorkspace();
   if (resolveAppRoute(activeWorkspace) === 'projects') return <WelcomePage />;
 
   return (
     <WorkbenchProvider repository={repository}>
+      <DesktopNotificationBridge service={desktopNotifications} />
       <Routes>
         <Route element={<WorkbenchShell />}>
           <Route index element={<Navigate replace to="/command-center" />} />
@@ -113,8 +128,12 @@ function AppRouter({
             element={<SessionDetailPage changesService={changesService} />}
           />
           <Route path="attention" element={<AttentionPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
           <Route path="changes" element={<ChangesPage service={changesService} />} />
-          <Route path="settings" element={<ComingSoonPage />} />
+          <Route
+            path="settings"
+            element={<SettingsPage desktopNotifications={desktopNotifications} />}
+          />
           <Route path="*" element={<Navigate replace to="/command-center" />} />
         </Route>
       </Routes>
@@ -127,11 +146,13 @@ export function App({
   repository,
   projectService: suppliedProjectService,
   changesService: suppliedChangesService,
+  desktopNotifications: suppliedDesktopNotifications,
 }: {
   service?: WorkspaceService;
   repository?: PrototypeRepository;
   projectService?: ProjectService;
   changesService?: ChangesService;
+  desktopNotifications?: DesktopNotificationService;
 }) {
   const workspaceService = useMemo(() => service ?? createDefaultService(), [service]);
   const prototypeRepository = useMemo(() => repository ?? createDefaultRepository(), [repository]);
@@ -143,6 +164,10 @@ export function App({
     () => suppliedChangesService ?? createDefaultChangesService(),
     [suppliedChangesService],
   );
+  const desktopNotifications = useMemo(
+    () => suppliedDesktopNotifications ?? createDefaultDesktopNotificationService(),
+    [suppliedDesktopNotifications],
+  );
   return (
     <HashRouter>
       <WorkspaceProvider service={workspaceService}>
@@ -150,6 +175,7 @@ export function App({
           repository={prototypeRepository}
           projectService={projectService}
           changesService={changesService}
+          desktopNotifications={desktopNotifications}
         />
       </WorkspaceProvider>
     </HashRouter>

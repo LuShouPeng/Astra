@@ -145,3 +145,22 @@ test('reviews a text diff and requests a deterministic rerun', async ({ page }) 
   await expect(page.locator('.session-status')).toHaveText('running');
   await expectNoDocumentOverflow(page);
 });
+
+test('opens notifications, follows a target, and persists notification settings', async ({
+  page,
+}) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  await page.getByRole('link', { name: 'Notifications' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+  await page.getByRole('button', { name: 'Open Codex needs approval' }).click();
+  await expect(page.getByRole('heading', { name: 'Fix mobile navigation layout' })).toBeVisible();
+
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Notifications' }).click();
+  await page.getByRole('checkbox', { name: 'Notify on Completed' }).uncheck();
+  await page.getByRole('button', { name: 'Send test notification' }).click();
+  await expect(page.getByRole('status')).toHaveText('Desktop notification sent');
+  await expectNoDocumentOverflow(page);
+});
