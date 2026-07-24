@@ -115,7 +115,7 @@ visual coverage; no Gemini CLI behavior may be implemented.
 | Desktop shell geometry       | Tauri minimum width is 1200 px; title bar is 48 px; sidebar is 260 px; CSS contract test enforces all three values                                                                                                         | verified     |
 | Session status semantics     | Running uses blue semantic tokens and Completed uses green tokens in the tree, Command Center, and Session header                                                                                                          | verified     |
 | Read-only Git responsiveness | Summary, changed-file, and diff commands are async and dispatch blocking Git work through `spawn_blocking`; Rust contract test covers all three                                                                            | verified     |
-| Async feedback               | Project add, workbench persistence, review actions, settings, notifications, demo controls, and removal expose pending/disabled state and recoverable feedback                                                             | verified     |
+| Async feedback               | Project add, directory/file open, diff clipboard copy, persistence, review actions, settings, notification tests, demo controls, and removal expose pending/disabled state and recoverable feedback                        | verified     |
 | Failure recovery             | Failed project removal retains its confirmation; failed Request Changes retains typed feedback; tests cover both retry paths                                                                                               | verified     |
 | Module boundaries            | ESLint rejects cross-module deep imports; modules expose public entry points while `core` and `shared` remain common dependencies                                                                                          | verified     |
 | Review event interpretation  | The PRD data contract fixes seven Timeline variants. Request Changes therefore emits `user_message` and, when needed, `status`; review state is persisted on `FileChange` instead of adding an undocumented eighth variant | verified     |
@@ -124,9 +124,10 @@ visual coverage; no Gemini CLI behavior may be implemented.
 
 ## Release Evidence
 
-- Frontend unit/component suite: 132 tests passed across 40 files. Coverage was 90.15% statements,
-  82.31% branches, 91.64% functions, and 91.64% lines.
-- E2E suite: 22 tests passed across desktop projects at 1280x720 and 1440x900.
+- Frontend unit/component suite: 138 tests passed across 40 files. Coverage was 90.58% statements,
+  83.50% branches, 92.08% functions, and 92.26% lines.
+- E2E suite: 24 tests passed across desktop projects at 1280x720 and 1440x900, including
+  browser-clock checks that each of the six primary page transitions completes in under 300 ms.
 - Rust suite: 6 tests passed, covering path confinement, bounded read-only Git behavior, binary
   fallback, repository isolation, path identity, and async Git command dispatch.
 - NSIS build produced a current-user installer; the portable EXE launch probe passed.
