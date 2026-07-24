@@ -24,12 +24,41 @@ describe('CommandCenterPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Command Center' })).toBeVisible();
+    expect(screen.getByText('Astra Nexus')).toBeVisible();
+    expect(
+      screen.getByText(new Intl.DateTimeFormat('en', { dateStyle: 'full' }).format(new Date())),
+    ).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Create simulated task' })).toHaveAttribute(
+      'href',
+      '/settings?tab=demo',
+    );
     expect(screen.getByText('2', { selector: '[data-status="running"] strong' })).toBeVisible();
-    expect(screen.getByText('1', { selector: '[data-status="waiting"] strong' })).toBeVisible();
+    expect(screen.getByText('2', { selector: '[data-status="waiting"] strong' })).toBeVisible();
+    expect(screen.getByRole('link', { name: /Running Agents 2/ })).toHaveAttribute(
+      'href',
+      '/command-center?status=running',
+    );
+    expect(screen.getByRole('link', { name: /Needs Attention 2/ })).toHaveAttribute(
+      'href',
+      '/attention',
+    );
+    expect(screen.getByRole('link', { name: /Completed Today 2/ })).toHaveAttribute(
+      'href',
+      '/command-center?status=completed',
+    );
+    expect(screen.getByRole('link', { name: /Failed 1/ })).toHaveAttribute(
+      'href',
+      '/command-center?status=failed',
+    );
     const activeSessions = screen.getByRole('region', { name: 'Active Sessions' });
     expect(
       within(activeSessions).getByRole('link', { name: /Fix intermittent login timeout/ }),
     ).toHaveAttribute('href', '/sessions/session-backend-claude');
+    expect(
+      within(activeSessions).getByRole('link', {
+        name: /Claude.*running.*45m.*4 files.*Reviewing auth service call paths/s,
+      }),
+    ).toBeVisible();
     expect(screen.getByRole('link', { name: /2 items need attention/ })).toHaveAttribute(
       'href',
       '/attention',
@@ -49,6 +78,32 @@ describe('CommandCenterPage', () => {
     expect(
       screen.getByRole('link', { name: /Approval.*Fix mobile navigation layout/s }),
     ).toHaveAttribute('href', '/sessions/session-frontend-codex');
+  });
+
+  it('shows the session result selected from a status metric', async () => {
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => createDemoSnapshot()),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => createDemoSnapshot()),
+      consumeWarning: vi.fn(() => null),
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/command-center?status=completed']}>
+        <WorkbenchProvider repository={repository}>
+          <CommandCenterPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    const sessions = await screen.findByRole('region', { name: 'Completed Sessions' });
+    expect(within(sessions).getByText('Add authentication unit tests')).toBeVisible();
+    expect(within(sessions).getByText('Update API documentation')).toBeVisible();
+    expect(within(sessions).queryByText('Fix intermittent login timeout')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Clear status filter' })).toHaveAttribute(
+      'href',
+      '/command-center',
+    );
   });
 
   it('renders loading and repository error states', async () => {

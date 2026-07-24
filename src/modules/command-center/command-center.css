@@ -24,6 +24,13 @@
   font-size: var(--text-xl);
 }
 
+.command-center__date {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+
 .command-center__header > span,
 .section-heading > span {
   color: var(--color-text-subtle);
@@ -59,7 +66,17 @@
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  color: var(--color-text);
   background: var(--color-surface);
+  text-decoration: none;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.status-metric:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
 }
 
 .status-metric span {
@@ -164,7 +181,7 @@
 .session-row {
   display: grid;
   min-height: 58px;
-  grid-template-columns: 8px minmax(0, 1fr) minmax(120px, auto);
+  grid-template-columns: 8px 30px minmax(0, 1fr) auto minmax(120px, auto);
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
@@ -172,6 +189,30 @@
   color: var(--color-text);
   text-decoration: none;
   transition: background var(--transition-fast);
+}
+
+.agent-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.agent-mark--claude {
+  color: var(--color-warning);
+}
+
+.agent-mark--codex {
+  color: var(--color-accent-status);
+}
+
+.agent-mark--gemini {
+  color: var(--color-brand);
 }
 
 .session-row:hover {
@@ -192,10 +233,23 @@
 
 .session-row__main strong,
 .session-row__main small,
+.session-row__metrics small,
 .session-row__action {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-row__metrics {
+  display: flex;
+  gap: var(--space-3);
+  color: var(--color-text-subtle);
+}
+
+.session-list__empty {
+  padding: var(--space-6);
+  color: var(--color-text-muted);
+  text-align: center;
 }
 
 .session-row__main strong {
@@ -359,6 +413,7 @@
 
   .command-center__actions > span,
   .command-center__actions .button--secondary,
+  .session-row__metrics,
   .session-row__action {
     display: none;
   }
@@ -370,7 +425,7 @@
   }
 
   .session-row {
-    grid-template-columns: 8px minmax(0, 1fr);
+    grid-template-columns: 8px 30px minmax(0, 1fr);
   }
 
   .session-row__main strong {
