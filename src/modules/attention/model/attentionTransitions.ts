@@ -12,6 +12,22 @@ export class AttentionTransitionError extends Error {
   }
 }
 
+export function markAttentionRead(
+  snapshot: WorkbenchSnapshot,
+  attentionId: string,
+): WorkbenchSnapshot {
+  const item = snapshot.attentionItems.find((candidate) => candidate.id === attentionId);
+  if (!item || item.resolved) {
+    throw new AttentionTransitionError('The selected attention item is no longer available.');
+  }
+  return {
+    ...snapshot,
+    attentionItems: snapshot.attentionItems.map((candidate) =>
+      candidate.id === attentionId ? { ...candidate, read: true } : candidate,
+    ),
+  };
+}
+
 function targetStatus(item: AttentionItem, action: AttentionAction): SessionStatus | null {
   if (item.type === 'approval' && action === 'approve') return 'running';
   if (item.type === 'approval' && action === 'reject') return 'stopped';

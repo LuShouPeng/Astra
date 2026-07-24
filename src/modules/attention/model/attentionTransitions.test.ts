@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoSnapshot } from '../../demo';
-import { resolveAttention } from './attentionTransitions';
+import { markAttentionRead, resolveAttention } from './attentionTransitions';
 
 describe('resolveAttention', () => {
   it('approves a pending request and resumes its session', () => {
@@ -34,5 +34,14 @@ describe('resolveAttention', () => {
       'running',
     );
     expect(snapshot.attentionItems[1].resolved).toBe(false);
+  });
+
+  it('marks an open item read without resolving it', () => {
+    const snapshot = createDemoSnapshot();
+    const next = markAttentionRead(snapshot, 'attention-frontend-approval');
+
+    expect(next.attentionItems[0]).toMatchObject({ read: true, resolved: false });
+    expect(snapshot.attentionItems[0].read).toBe(false);
+    expect(() => markAttentionRead(snapshot, 'missing')).toThrow('no longer available');
   });
 });

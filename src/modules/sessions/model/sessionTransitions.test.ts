@@ -33,6 +33,31 @@ describe('applyFollowUp', () => {
       'display-only',
     );
   });
+
+  it('resolves a related input request when the user replies', () => {
+    const snapshot = createDemoSnapshot();
+    snapshot.attentionItems.push({
+      id: 'attention-input',
+      sessionId: 'session-backend-claude',
+      projectId: 'project-backend-api',
+      type: 'input',
+      priority: 'medium',
+      title: 'Input required',
+      description: 'Clarify the timeout behavior.',
+      createdAt: '2026-07-24T14:20:00.000Z',
+      read: false,
+      resolved: false,
+    });
+
+    const next = applyFollowUp(
+      snapshot,
+      'session-backend-claude',
+      'Keep the current public API.',
+      '2026-07-24T15:00:00.000Z',
+    );
+
+    expect(next.attentionItems.at(-1)).toMatchObject({ read: true, resolved: true });
+  });
 });
 
 describe('stopSession', () => {

@@ -60,6 +60,17 @@ export function applyFollowUp(
   nextSession.updatedAt = timestamp;
   nextSession.completedAt = undefined;
   nextSession.unread = false;
+  next.attentionItems.forEach((item) => {
+    if (item.sessionId === sessionId && item.type === 'input' && !item.resolved) {
+      item.read = true;
+      item.resolved = true;
+    }
+  });
+  next.notifications.forEach((notification) => {
+    if (notification.sessionId === sessionId && notification.event === 'waiting_input') {
+      notification.read = true;
+    }
+  });
   next.timelineEvents.push(...newEvents);
   return next;
 }

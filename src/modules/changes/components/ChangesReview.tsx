@@ -23,9 +23,11 @@ function statusLabel(status: ReviewStatus) {
 export function ChangesReview({
   sessionId,
   service,
+  requestOnOpen = false,
 }: {
   sessionId?: SessionId;
   service?: ChangesService;
+  requestOnOpen?: boolean;
 }) {
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const availableSessionIds = useMemo(
@@ -39,7 +41,7 @@ export function ChangesReview({
     [selectedSessionId, snapshot?.fileChanges],
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(requestOnOpen);
   const [feedback, setFeedback] = useState('');
   const [severity, setSeverity] = useState<ReviewSeverity>('medium');
   const [rerunImmediately, setRerunImmediately] = useState(true);

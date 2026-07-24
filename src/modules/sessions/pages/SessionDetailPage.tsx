@@ -8,7 +8,7 @@ import {
   Square,
   X,
 } from 'lucide-react';
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { appEventBus } from '../../../core/events/appEventBus';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
@@ -52,6 +52,9 @@ export function SessionDetailPage({
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const followUpRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (searchParams.get('focus') === 'message') followUpRef.current?.focus();
+  }, [searchParams]);
   if (!snapshot) return <div className="session-state">Loading session...</div>;
   const session = snapshot.sessions.find((item) => item.id === sessionId);
   if (!session)
@@ -270,7 +273,13 @@ export function SessionDetailPage({
 
       <div className={`session-content ${tab === 'changes' ? 'session-content--changes' : ''}`}>
         {tab === 'timeline' && <Timeline key={session.id} events={events} />}
-        {tab === 'changes' && <ChangesReview sessionId={session.id} service={changesService} />}
+        {tab === 'changes' && (
+          <ChangesReview
+            sessionId={session.id}
+            service={changesService}
+            requestOnOpen={searchParams.get('request') === 'changes'}
+          />
+        )}
         {tab === 'tests' && <TestsView events={tests} />}
         {tab === 'commands' && <CommandsView events={commands} />}
         {tab === 'context' && (
