@@ -23,6 +23,14 @@
   --color-info-text: #cfe2ff;
   --color-info-border: rgb(110 168 254 / 35%);
   --color-info-surface: rgb(110 168 254 / 8%);
+  --color-status-running: var(--color-info);
+  --color-status-running-text: var(--color-info-text);
+  --color-status-running-border: var(--color-info-border);
+  --color-status-running-surface: var(--color-info-surface);
+  --color-status-completed: var(--color-accent);
+  --color-status-completed-text: var(--color-accent-status);
+  --color-status-completed-border: var(--color-accent-border);
+  --color-status-completed-surface: var(--color-accent-surface-subtle);
   --color-brand: #9b8cff;
   --color-brand-border: rgb(155 140 255 / 32%);
   --color-brand-surface: rgb(155 140 255 / 8%);

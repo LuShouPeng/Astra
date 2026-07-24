@@ -94,8 +94,8 @@
 
 .status-metric[data-status='running'] svg,
 .session-row__status--running {
-  color: var(--color-accent);
-  background: var(--color-accent);
+  color: var(--color-status-running);
+  background: var(--color-status-running);
 }
 
 .status-metric[data-status='waiting'] svg,
@@ -112,8 +112,8 @@
 
 .status-metric[data-status='completed'] svg,
 .session-row__status--completed {
-  color: var(--color-info);
-  background: var(--color-info);
+  color: var(--color-status-completed);
+  background: var(--color-status-completed);
 }
 
 .attention-strip {

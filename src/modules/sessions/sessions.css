@@ -57,9 +57,9 @@
   text-transform: uppercase;
 }
 .session-status--running {
-  color: var(--color-accent-status);
-  border-color: var(--color-accent-border);
-  background: var(--color-accent-surface-subtle);
+  color: var(--color-status-running-text);
+  border-color: var(--color-status-running-border);
+  background: var(--color-status-running-surface);
 }
 .session-status--waiting {
   color: var(--color-warning);
@@ -70,8 +70,9 @@
   background: var(--color-danger-status-surface);
 }
 .session-status--completed {
-  color: var(--color-info-text);
-  background: var(--color-info-surface);
+  color: var(--color-status-completed-text);
+  border-color: var(--color-status-completed-border);
+  background: var(--color-status-completed-surface);
 }
 .session-status--stopped,
 .session-status--idle {
