@@ -62,7 +62,7 @@ function createDefaultDesktopNotificationService(): DesktopNotificationService {
 }
 
 function ProjectsRoute({ service }: { service: ProjectService }) {
-  const { chooseAndOpen } = useWorkspace();
+  const { chooseAndOpen, error: addProjectError } = useWorkspace();
   const { snapshot, saveSnapshot } = useWorkbench();
 
   async function addProject() {
@@ -98,7 +98,9 @@ function ProjectsRoute({ service }: { service: ProjectService }) {
     appEventBus.emit('project:added', project);
   }
 
-  return <ProjectsPage service={service} onAddProject={addProject} />;
+  return (
+    <ProjectsPage service={service} onAddProject={addProject} addProjectError={addProjectError} />
+  );
 }
 
 function AppRouter({

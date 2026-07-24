@@ -11,15 +11,18 @@ import type { ProjectService } from '../services/projectService';
 export function ProjectsPage({
   service,
   onAddProject,
+  addProjectError,
 }: {
   service: ProjectService;
   onAddProject?: () => Promise<void>;
+  addProjectError?: string | null;
 }) {
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<ProjectSort>('recent');
   const [removeTarget, setRemoveTarget] = useState<Project | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const projects = useMemo(
     () => selectProjects(snapshot?.projects ?? [], search, sort),
     [search, snapshot?.projects, sort],
@@ -58,6 +61,19 @@ export function ProjectsPage({
     }
   }
 
+  async function addProject() {
+    if (!onAddProject || adding) return;
+    setMessage(null);
+    setAdding(true);
+    try {
+      await onAddProject();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'The project could not be added.');
+    } finally {
+      setAdding(false);
+    }
+  }
+
   if (!snapshot) return <div className="projects-state">Loading projects...</div>;
 
   return (
@@ -69,8 +85,13 @@ export function ProjectsPage({
           <span>{snapshot.projects.length} projects</span>
         </div>
         {onAddProject && (
-          <button className="button button--primary" onClick={() => void onAddProject()}>
-            <Plus size={16} aria-hidden="true" /> Add Project
+          <button
+            className="button button--primary"
+            disabled={adding || saving}
+            onClick={() => void addProject()}
+          >
+            {adding ? <span className="spinner" /> : <Plus size={16} aria-hidden="true" />}
+            {adding ? 'Adding Project' : 'Add Project'}
           </button>
         )}
       </header>
@@ -96,9 +117,9 @@ export function ProjectsPage({
         </label>
       </div>
 
-      {message && (
+      {(message || addProjectError) && (
         <div className="project-message" role="alert">
-          {message}
+          {message ?? addProjectError}
         </div>
       )}
 

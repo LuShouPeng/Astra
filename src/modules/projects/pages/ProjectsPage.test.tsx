@@ -106,4 +106,45 @@ describe('ProjectsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Clear search' }));
     expect(screen.getByRole('heading', { name: 'backend-api' })).toBeVisible();
   });
+
+  it('shows feedback while adding a project and exposes picker failures', async () => {
+    const user = userEvent.setup();
+    let finishAdd: (() => void) | undefined;
+    const onAddProject = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishAdd = resolve;
+        }),
+    );
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => createDemoSnapshot()),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => createDemoSnapshot()),
+      consumeWarning: vi.fn(() => null),
+    };
+    const adapter: ProjectNativeAdapter = {
+      gitSummary: vi.fn(),
+      openDirectory: vi.fn(),
+    };
+
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository}>
+          <ProjectsPage
+            service={createProjectService(adapter)}
+            onAddProject={onAddProject}
+            addProjectError="The folder picker could not be opened."
+          />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The folder picker could not be opened.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Add Project' }));
+    expect(screen.getByRole('button', { name: 'Adding Project' })).toBeDisabled();
+    finishAdd?.();
+    expect(await screen.findByRole('button', { name: 'Add Project' })).toBeEnabled();
+  });
 });
