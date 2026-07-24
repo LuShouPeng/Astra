@@ -14,7 +14,7 @@ import { Link } from 'react-router-dom';
 import type { AttentionType } from '../../../core/contracts/attention';
 import { appEventBus } from '../../../core/events/appEventBus';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
-import { acceptSessionChanges, nextReviewTimestamp } from '../../changes/model/reviewTransitions';
+import { acceptSessionChanges, nextReviewTimestamp } from '../../changes';
 import {
   markAttentionRead,
   resolveAttention,

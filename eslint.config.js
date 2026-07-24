@@ -22,6 +22,32 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/modules/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '../../attention/**',
+                '../../changes/**',
+                '../../command-center/**',
+                '../../demo/**',
+                '../../notifications/**',
+                '../../projects/**',
+                '../../sessions/**',
+                '../../settings/**',
+                '../../workspace/**',
+              ],
+              message: 'Import another business module through its public index.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['**/*.test.{ts,tsx}'],
     rules: {
       '@typescript-eslint/require-await': 'off',
