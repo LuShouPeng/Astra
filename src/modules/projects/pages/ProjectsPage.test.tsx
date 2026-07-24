@@ -174,4 +174,42 @@ describe('ProjectsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Project registry unavailable.');
     expect(screen.getByRole('alertdialog', { name: 'Remove project?' })).toBeVisible();
   });
+
+  it('prevents duplicate directory opens while the native action is pending', async () => {
+    const user = userEvent.setup();
+    const snapshot = createDemoSnapshot();
+    snapshot.projects[0] = { ...snapshot.projects[0], source: 'local' };
+    let finishOpen: (() => void) | undefined;
+    const adapter: ProjectNativeAdapter = {
+      gitSummary: vi.fn(),
+      openDirectory: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishOpen = resolve;
+          }),
+      ),
+    };
+
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repositoryFor(snapshot)}>
+          <ProjectsPage service={createProjectService(adapter)} />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Open backend-api directory' }));
+    expect(screen.getByRole('button', { name: 'Opening backend-api directory' })).toBeDisabled();
+    finishOpen?.();
+    expect(await screen.findByRole('button', { name: 'Open backend-api directory' })).toBeEnabled();
+  });
 });
+
+function repositoryFor(snapshot = createDemoSnapshot()): PrototypeRepository {
+  return {
+    load: vi.fn(async () => snapshot),
+    save: vi.fn(async () => undefined),
+    reset: vi.fn(async () => snapshot),
+    consumeWarning: vi.fn(() => null),
+  };
+}

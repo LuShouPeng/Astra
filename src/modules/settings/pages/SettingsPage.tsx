@@ -45,6 +45,7 @@ export function SettingsPage({
   const [theme, setTheme] = useState<ThemePreference>(() => loadThemePreference());
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sendingTest, setSendingTest] = useState(false);
 
   if (!snapshot) return <div className="settings-state">Loading settings...</div>;
 
@@ -62,7 +63,8 @@ export function SettingsPage({
   }
 
   async function sendTestNotification() {
-    if (!desktopNotifications) return;
+    if (!desktopNotifications || sendingTest) return;
+    setSendingTest(true);
     try {
       setError(null);
       const result = await desktopNotifications.notify(
@@ -78,6 +80,8 @@ export function SettingsPage({
       );
     } catch {
       setError('The desktop notification could not be sent.');
+    } finally {
+      setSendingTest(false);
     }
   }
 
@@ -230,12 +234,19 @@ export function SettingsPage({
               <button
                 className="button button--secondary"
                 disabled={
-                  saving || !desktopNotifications || !snapshot.notificationSettings.desktopEnabled
+                  saving ||
+                  sendingTest ||
+                  !desktopNotifications ||
+                  !snapshot.notificationSettings.desktopEnabled
                 }
                 onClick={() => void sendTestNotification()}
               >
-                <BellRing size={16} aria-hidden="true" />
-                Send test notification
+                {sendingTest ? (
+                  <span className="spinner" aria-hidden="true" />
+                ) : (
+                  <BellRing size={16} aria-hidden="true" />
+                )}
+                {sendingTest ? 'Sending notification' : 'Send test notification'}
               </button>
             </div>
           </section>

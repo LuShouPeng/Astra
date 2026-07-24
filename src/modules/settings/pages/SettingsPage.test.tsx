@@ -107,4 +107,30 @@ describe('SettingsPage', () => {
     expect(store.reset).toHaveBeenCalledOnce();
     expect(await screen.findByText('Step 0 of 3')).toBeVisible();
   });
+
+  it('shows progress while sending a test desktop notification', async () => {
+    const user = userEvent.setup();
+    let finishNotification: ((result: 'sent') => void) | undefined;
+    const desktop: DesktopNotificationService = {
+      notify: vi.fn(
+        () =>
+          new Promise<'sent'>((resolve) => {
+            finishNotification = resolve;
+          }),
+      ),
+    };
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository()}>
+          <SettingsPage desktopNotifications={desktop} />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Notifications' }));
+    await user.click(screen.getByRole('button', { name: 'Send test notification' }));
+    expect(screen.getByRole('button', { name: 'Sending notification' })).toBeDisabled();
+    finishNotification?.('sent');
+    expect(await screen.findByRole('button', { name: 'Send test notification' })).toBeEnabled();
+  });
 });

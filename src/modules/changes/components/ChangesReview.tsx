@@ -47,6 +47,7 @@ export function ChangesReview({
   const [rerunImmediately, setRerunImmediately] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nativeAction, setNativeAction] = useState<'copy' | 'open' | null>(null);
 
   if (!snapshot) return <div className="changes-state">Loading changes...</div>;
   const session = snapshot.sessions.find((candidate) => candidate.id === selectedSessionId);
@@ -126,27 +127,34 @@ export function ChangesReview({
   }
 
   async function copyDiff() {
+    if (nativeAction) return;
     if (!selected.diff || !navigator.clipboard?.writeText) {
       setError('Clipboard access is unavailable.');
       return;
     }
+    setNativeAction('copy');
     try {
       await navigator.clipboard.writeText(selected.diff);
       setError(null);
       setNotice('Diff copied');
     } catch {
       setError('The diff could not be copied.');
+    } finally {
+      setNativeAction(null);
     }
   }
 
   async function openFile() {
-    if (!service || !project) return;
+    if (!service || !project || nativeAction) return;
+    setNativeAction('open');
     try {
       setError(null);
       await service.openFile(project, selected.relativePath);
       setNotice('File opened');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The file could not be opened.');
+    } finally {
+      setNativeAction(null);
     }
   }
 
@@ -202,20 +210,28 @@ export function ChangesReview({
           <div className="diff-actions">
             <button
               className="button button--compact"
-              disabled={saving || selected.binary || !selected.diff}
+              disabled={saving || Boolean(nativeAction) || selected.binary || !selected.diff}
               onClick={() => void copyDiff()}
             >
-              <Copy size={15} aria-hidden="true" />
-              Copy Diff
+              {nativeAction === 'copy' ? (
+                <span className="spinner" aria-hidden="true" />
+              ) : (
+                <Copy size={15} aria-hidden="true" />
+              )}
+              {nativeAction === 'copy' ? 'Copying Diff' : 'Copy Diff'}
             </button>
             <button
               className="button button--compact"
-              disabled={saving || !canOpenFile}
+              disabled={saving || Boolean(nativeAction) || !canOpenFile}
               title={canOpenFile ? undefined : 'Only available for registered local text files'}
               onClick={() => void openFile()}
             >
-              <ExternalLink size={15} aria-hidden="true" />
-              Open File
+              {nativeAction === 'open' ? (
+                <span className="spinner" aria-hidden="true" />
+              ) : (
+                <ExternalLink size={15} aria-hidden="true" />
+              )}
+              {nativeAction === 'open' ? 'Opening File' : 'Open File'}
             </button>
             <button
               className="button button--compact"

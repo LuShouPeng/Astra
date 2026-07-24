@@ -51,6 +51,7 @@ export function SessionDetailPage({
   const tab = sessionTab(searchParams.get('tab'));
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [openingProject, setOpeningProject] = useState(false);
   const followUpRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (searchParams.get('focus') === 'message') followUpRef.current?.focus();
@@ -74,7 +75,9 @@ export function SessionDetailPage({
   );
   const canStop =
     !capability.displayOnly && (session.status === 'running' || session.status === 'waiting');
-  const canOpenProject = Boolean(projectService && project?.source === 'local');
+  const canOpenProject = Boolean(
+    projectService && project?.source === 'local' && project.status === 'available',
+  );
   const duration = formatDuration(session.startedAt, session.completedAt ?? session.updatedAt);
 
   function selectTab(nextTab: SessionTab) {
@@ -130,12 +133,15 @@ export function SessionDetailPage({
   }
 
   async function openProject() {
-    if (!projectService || !project) return;
+    if (!projectService || !project || openingProject) return;
     setError(null);
+    setOpeningProject(true);
     try {
       await projectService.openDirectory(project);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The project directory could not open.');
+    } finally {
+      setOpeningProject(false);
     }
   }
 
@@ -206,12 +212,16 @@ export function SessionDetailPage({
         <button
           className="button button--secondary button--compact"
           type="button"
-          disabled={!canOpenProject}
+          disabled={!canOpenProject || openingProject}
           title={canOpenProject ? undefined : 'Only local projects can be opened.'}
           onClick={() => void openProject()}
         >
-          <FolderOpen size={15} aria-hidden="true" />
-          Open Project
+          {openingProject ? (
+            <span className="spinner" aria-hidden="true" />
+          ) : (
+            <FolderOpen size={15} aria-hidden="true" />
+          )}
+          {openingProject ? 'Opening Project' : 'Open Project'}
         </button>
         <button
           className="button button--secondary button--compact"

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrototypeRepository } from '../../../core/data/prototypeRepository';
 import { WorkbenchProvider } from '../../../core/state/WorkbenchContext';
 import { createDemoSnapshot } from '../../demo';
+import { requestSessionChanges } from '../../changes';
 import { CommandCenterPage } from './CommandCenterPage';
 
 describe('CommandCenterPage', () => {
@@ -147,5 +148,36 @@ describe('CommandCenterPage', () => {
 
     expect(await screen.findByText(/Unknown project/)).toBeVisible();
     expect(screen.getByText('running', { selector: '.session-row__action' })).toBeVisible();
+  });
+
+  it('identifies submitted review feedback in recent activity', async () => {
+    const timestamp = '2026-07-24T14:30:00.000Z';
+    const snapshot = requestSessionChanges(createDemoSnapshot(), {
+      sessionId: 'session-backend-claude',
+      fileChangeId: 'change-session-timeout',
+      feedback: 'Cover timeout boundaries.',
+      severity: 'high',
+      rerunImmediately: true,
+      timestamp,
+    });
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => snapshot),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => snapshot),
+      consumeWarning: vi.fn(() => null),
+    };
+
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository}>
+          <CommandCenterPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    const activity = await screen.findByRole('region', { name: 'Recent Activity' });
+    expect(
+      within(activity).getByRole('link', { name: /Review.*Fix intermittent login timeout/s }),
+    ).toBeVisible();
   });
 });

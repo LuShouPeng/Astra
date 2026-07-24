@@ -23,6 +23,7 @@ export function ProjectsPage({
   const [removeTarget, setRemoveTarget] = useState<Project | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const projects = useMemo(
     () => selectProjects(snapshot?.projects ?? [], search, sort),
     [search, snapshot?.projects, sort],
@@ -58,11 +59,15 @@ export function ProjectsPage({
   }
 
   async function openProject(project: Project) {
+    if (openingProjectId) return;
     setMessage(null);
+    setOpeningProjectId(project.id);
     try {
       await service.openDirectory(project);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The project could not be opened.');
+    } finally {
+      setOpeningProjectId(null);
     }
   }
 
@@ -131,6 +136,7 @@ export function ProjectsPage({
       <section className="project-grid" aria-label="Projects list">
         {projects.map((project) => {
           const stats = selectProjectCardStats(snapshot, project.id);
+          const opening = openingProjectId === project.id;
           return (
             <article className="project-card" key={project.id}>
               <div className="project-card__heading">
@@ -186,12 +192,20 @@ export function ProjectsPage({
               <div className="project-card__actions">
                 <button
                   className="icon-button"
-                  aria-label={`Open ${project.name} directory`}
-                  title="Open directory"
-                  disabled={project.source !== 'local' || project.status !== 'available'}
+                  aria-label={`${opening ? 'Opening' : 'Open'} ${project.name} directory`}
+                  title={opening ? 'Opening directory' : 'Open directory'}
+                  disabled={
+                    Boolean(openingProjectId) ||
+                    project.source !== 'local' ||
+                    project.status !== 'available'
+                  }
                   onClick={() => void openProject(project)}
                 >
-                  <FolderOpen size={16} aria-hidden="true" />
+                  {opening ? (
+                    <span className="spinner" aria-hidden="true" />
+                  ) : (
+                    <FolderOpen size={16} aria-hidden="true" />
+                  )}
                 </button>
                 <button
                   className="icon-button project-card__remove"

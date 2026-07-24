@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrototypeRepository } from '../../../core/data/prototypeRepository';
 import { WorkbenchProvider } from '../../../core/state/WorkbenchContext';
 import { createDemoSnapshot } from '../../demo';
+import type { ChangesService } from '../services/changesService';
 import { ChangesPage } from './ChangesPage';
 
 function repository(snapshot = createDemoSnapshot()): PrototypeRepository {
@@ -131,5 +132,61 @@ describe('ChangesPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Prototype store unavailable.');
     expect(screen.getByRole('form', { name: 'Request Changes' })).toBeVisible();
     expect(screen.getByLabelText('Requested changes')).toHaveValue('Keep this feedback for retry.');
+  });
+
+  it('prevents duplicate clipboard writes while copying a diff', async () => {
+    const user = userEvent.setup();
+    let finishCopy: (() => void) | undefined;
+    const writeText = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishCopy = resolve;
+        }),
+    );
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository()}>
+          <ChangesPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Copy Diff' }));
+    expect(screen.getByRole('button', { name: 'Copying Diff' })).toBeDisabled();
+    finishCopy?.();
+    expect(await screen.findByRole('button', { name: 'Copy Diff' })).toBeEnabled();
+  });
+
+  it('shows progress while opening a registered local file', async () => {
+    const user = userEvent.setup();
+    const snapshot = createDemoSnapshot();
+    snapshot.projects[0].source = 'local';
+    let finishOpen: (() => void) | undefined;
+    const service: ChangesService = {
+      list: vi.fn(),
+      diff: vi.fn(),
+      openFile: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishOpen = resolve;
+          }),
+      ),
+    };
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository(snapshot)}>
+          <ChangesPage service={service} />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Open File' }));
+    expect(screen.getByRole('button', { name: 'Opening File' })).toBeDisabled();
+    finishOpen?.();
+    expect(await screen.findByRole('button', { name: 'Open File' })).toBeEnabled();
   });
 });

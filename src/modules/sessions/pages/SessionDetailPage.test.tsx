@@ -154,4 +154,54 @@ describe('SessionDetailPage', () => {
     expect(screen.getByText('demo://backend-api')).toBeVisible();
     expect(screen.getByText('Deterministic mock')).toBeVisible();
   });
+
+  it('shows native project-open progress and blocks missing projects', async () => {
+    const user = userEvent.setup();
+    const snapshot = createDemoSnapshot();
+    snapshot.projects[0].source = 'local';
+    let finishOpen: (() => void) | undefined;
+    const projectService: ProjectService = {
+      inspectGit: vi.fn(),
+      inspectRoot: vi.fn(),
+      openDirectory: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishOpen = resolve;
+          }),
+      ),
+    };
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/sessions/session-backend-claude']}>
+        <WorkbenchProvider repository={createRepository(snapshot)}>
+          <Routes>
+            <Route
+              path="sessions/:sessionId"
+              element={<SessionDetailPage projectService={projectService} />}
+            />
+          </Routes>
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Open Project' }));
+    expect(screen.getByRole('button', { name: 'Opening Project' })).toBeDisabled();
+    finishOpen?.();
+    expect(await screen.findByRole('button', { name: 'Open Project' })).toBeEnabled();
+
+    unmount();
+    snapshot.projects[0].status = 'missing';
+    render(
+      <MemoryRouter initialEntries={['/sessions/session-backend-claude']}>
+        <WorkbenchProvider repository={createRepository(snapshot)}>
+          <Routes>
+            <Route
+              path="sessions/:sessionId"
+              element={<SessionDetailPage projectService={projectService} />}
+            />
+          </Routes>
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole('button', { name: 'Open Project' })).toBeDisabled();
+  });
 });

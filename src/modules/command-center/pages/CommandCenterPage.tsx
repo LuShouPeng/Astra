@@ -56,6 +56,21 @@ const activityLabels: Record<TimelineEvent['type'], string> = {
   status: 'Status',
 };
 
+function activityLabel(
+  event: TimelineEvent,
+  snapshot: NonNullable<ReturnType<typeof useWorkbench>['snapshot']>,
+) {
+  const isReviewFeedback =
+    event.type === 'user_message' &&
+    snapshot.notifications.some(
+      (notification) =>
+        notification.event === 'review_requested' &&
+        notification.sessionId === event.sessionId &&
+        notification.createdAt === event.timestamp,
+    );
+  return isReviewFeedback ? 'Review' : activityLabels[event.type];
+}
+
 export function CommandCenterPage() {
   const { loadState, snapshot, error } = useWorkbench();
   const [searchParams] = useSearchParams();
@@ -248,7 +263,7 @@ export function CommandCenterPage() {
             const session = sessions.get(event.sessionId);
             return (
               <Link className="activity-row" key={event.id} to={`/sessions/${event.sessionId}`}>
-                <span>{activityLabels[event.type]}</span>
+                <span>{activityLabel(event, snapshot)}</span>
                 <strong>{session?.title ?? 'Unknown Session'}</strong>
                 <time dateTime={event.timestamp}>
                   {new Intl.DateTimeFormat('en', {
