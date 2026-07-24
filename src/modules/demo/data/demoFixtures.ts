@@ -217,6 +217,15 @@ const timelineEvents: TimelineEvent[] = (
       content: 'I will trace session refresh behavior and add focused timeout coverage.',
     },
     {
+      id: 'event-session-running',
+      sessionId: 'session-backend-claude',
+      type: 'status',
+      timestamp: '2026-07-24T13:38:00.000Z',
+      from: 'idle',
+      to: 'running',
+      content: 'Claude started the deterministic demo session.',
+    },
+    {
       id: 'event-search-command',
       sessionId: 'session-backend-claude',
       type: 'command',

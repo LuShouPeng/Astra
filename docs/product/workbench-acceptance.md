@@ -9,9 +9,9 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | ID     | Capability                                                                | Required evidence                 | Status   |
 | ------ | ------------------------------------------------------------------------- | --------------------------------- | -------- |
 | US-001 | Add and persist a local project with Git information                      | Service, native and restart tests | verified |
-| US-002 | Expand projects and open Agent Sessions                                   | Component and E2E tests           | pending  |
+| US-002 | Expand projects and open Agent Sessions                                   | Component and E2E tests           | verified |
 | US-003 | Synchronize Session status across tree and dashboard                      | Transition and selector tests     | pending  |
-| US-004 | Render all seven Timeline event types in time order                       | Contract and component tests      | pending  |
+| US-004 | Render all seven Timeline event types in time order                       | Contract and component tests      | verified |
 | US-005 | Render changed files, text diff and binary fallback                       | Rust, adapter and component tests | pending  |
 | US-006 | Process filtered Attention items and deep-link to Session                 | Store, component and E2E tests    | pending  |
 | US-007 | Emit configured desktop notifications and navigate from app notifications | Adapter and E2E tests             | pending  |
@@ -38,8 +38,8 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | Application starts without crashing | verified |
 | All primary pages navigate          | pending  |
 | Frozen demo data loads              | verified |
-| Session detail opens                | pending  |
-| Timeline renders                    | pending  |
+| Session detail opens                | verified |
+| Timeline renders                    | verified |
 | Diff renders                        | pending  |
 | Needs Attention actions work        | pending  |
 | Desktop notification can trigger    | pending  |

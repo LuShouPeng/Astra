@@ -17,6 +17,7 @@ import {
   TauriProjectNativeAdapter,
   type ProjectService,
 } from '../modules/projects';
+import { SessionDetailPage } from '../modules/sessions';
 import { WelcomePage } from '../modules/workspace';
 import { createTauriWorkspaceAdapters } from '../modules/workspace/services/workspaceAdapters';
 import { createWorkspaceService } from '../modules/workspace/services/workspaceService';
@@ -94,7 +95,7 @@ function AppRouter({
           <Route path="command-center" element={<CommandCenterPage />} />
           <Route path="projects" element={<ProjectsRoute service={projectService} />} />
           <Route path="projects/:projectId" element={<ComingSoonPage />} />
-          <Route path="sessions/:sessionId" element={<ComingSoonPage />} />
+          <Route path="sessions/:sessionId" element={<SessionDetailPage />} />
           <Route path="attention" element={<ComingSoonPage />} />
           <Route path="changes" element={<ComingSoonPage />} />
           <Route path="settings" element={<ComingSoonPage />} />

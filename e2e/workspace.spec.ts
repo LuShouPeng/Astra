@@ -75,3 +75,25 @@ test('manages projects without deleting local files', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'backend-api' })).toHaveCount(0);
   await expectNoDocumentOverflow(page);
 });
+
+test('opens a session timeline and records a deterministic follow-up', async ({ page }) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  const tree = page.getByRole('tree', { name: 'Projects and sessions' });
+  await tree.getByRole('link', { name: 'Fix intermittent login timeout Unread' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Fix intermittent login timeout' })).toBeVisible();
+  await expect(page.getByText('Claude started the deterministic demo session.')).toBeVisible();
+  await expect(page.getByText('rg "session timeout" src/auth')).toBeVisible();
+  await expect(page.getByText('0 passed, 0 failed')).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Changes 4' }).click();
+  await expect(page.getByText('src/auth/session.ts')).toBeVisible();
+  await page.getByRole('tab', { name: 'Timeline 6' }).click();
+
+  await page.getByLabel('Follow-up message').fill('Check the refresh token boundary.');
+  await page.getByRole('button', { name: 'Send follow-up' }).click();
+  await expect(page.getByText('Check the refresh token boundary.')).toBeVisible();
+  await expect(page.locator('.session-status')).toHaveText('running');
+  await expectNoDocumentOverflow(page);
+});
