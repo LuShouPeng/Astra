@@ -21,7 +21,7 @@ function WorkbenchShellContent({
   workspaceName: string;
   onClose: () => void;
 }) {
-  const { snapshot, warning } = useWorkbench();
+  const { snapshot, warning, saving } = useWorkbench();
   useWorkbenchShortcuts();
 
   return (
@@ -57,7 +57,7 @@ function WorkbenchShellContent({
           <Outlet />
         </main>
       </div>
-      <StatusBar workspaceName={workspaceName} />
+      <StatusBar workspaceName={workspaceName} saving={saving} />
     </div>
   );
 }
