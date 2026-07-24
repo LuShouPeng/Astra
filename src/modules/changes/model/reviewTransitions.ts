@@ -144,8 +144,22 @@ export function requestSessionChanges(
     ),
     timelineEvents: [...snapshot.timelineEvents, ...events],
     attentionItems: resolveReviewAttention(snapshot, input.sessionId),
-    notifications: snapshot.notifications.map((notification) =>
-      notification.sessionId === input.sessionId ? { ...notification, read: true } : notification,
-    ),
+    notifications: [
+      ...snapshot.notifications.map((notification) =>
+        notification.sessionId === input.sessionId ? { ...notification, read: true } : notification,
+      ),
+      {
+        id: `notification-review-requested-${input.timestamp}`,
+        sessionId: input.sessionId,
+        projectId: session.projectId,
+        event: 'review_requested',
+        tone: 'info',
+        title: 'Changes requested',
+        message: 'Review feedback was submitted to the deterministic Agent simulation.',
+        createdAt: input.timestamp,
+        read: false,
+        target: { page: 'session', sessionId: input.sessionId },
+      },
+    ],
   };
 }

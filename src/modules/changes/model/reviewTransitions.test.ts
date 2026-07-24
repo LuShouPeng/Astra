@@ -93,6 +93,14 @@ describe('review transitions', () => {
         to: 'running',
       },
     ]);
+    expect(next.notifications.at(-1)).toMatchObject({
+      event: 'review_requested',
+      tone: 'info',
+      sessionId: 'session-backend-claude',
+      title: 'Changes requested',
+      read: false,
+      target: { page: 'session', sessionId: 'session-backend-claude' },
+    });
   });
 
   it('moves the session to waiting when immediate rerun is disabled', () => {
