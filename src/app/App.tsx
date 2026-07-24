@@ -10,6 +10,7 @@ import {
 import { TauriPrototypeStore } from '../core/data/tauriPrototypeStore';
 import { WorkbenchProvider, useWorkbench } from '../core/state/WorkbenchContext';
 import { CommandCenterPage } from '../modules/command-center';
+import { AttentionPage } from '../modules/attention';
 import { createDemoSnapshot } from '../modules/demo';
 import {
   createProjectService,
@@ -96,7 +97,7 @@ function AppRouter({
           <Route path="projects" element={<ProjectsRoute service={projectService} />} />
           <Route path="projects/:projectId" element={<ComingSoonPage />} />
           <Route path="sessions/:sessionId" element={<SessionDetailPage />} />
-          <Route path="attention" element={<ComingSoonPage />} />
+          <Route path="attention" element={<AttentionPage />} />
           <Route path="changes" element={<ComingSoonPage />} />
           <Route path="settings" element={<ComingSoonPage />} />
           <Route path="*" element={<Navigate replace to="/command-center" />} />

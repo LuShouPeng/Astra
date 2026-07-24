@@ -13,7 +13,7 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | US-003 | Synchronize Session status across tree and dashboard                      | Transition and selector tests     | pending  |
 | US-004 | Render all seven Timeline event types in time order                       | Contract and component tests      | verified |
 | US-005 | Render changed files, text diff and binary fallback                       | Rust, adapter and component tests | pending  |
-| US-006 | Process filtered Attention items and deep-link to Session                 | Store, component and E2E tests    | pending  |
+| US-006 | Process filtered Attention items and deep-link to Session                 | Store, component and E2E tests    | verified |
 | US-007 | Emit configured desktop notifications and navigate from app notifications | Adapter and E2E tests             | pending  |
 | US-008 | Accept or request changes and update Session/Timeline                     | Transition and E2E tests          | pending  |
 
@@ -26,7 +26,7 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | pending  |
 | Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | pending  |
 | Changes         | File statuses/counts, unified text diff, line numbers, review actions, binary fallback                  | pending  |
-| Needs Attention | Six filters and type-specific actions                                                                   | pending  |
+| Needs Attention | Six filters and type-specific actions                                                                   | verified |
 | Notifications   | Seven notification events, unread state, typed navigation target, settings                              | pending  |
 | Settings/About  | General, Notifications, Demo, version, description and stack                                            | pending  |
 | App Shell       | Primary navigation, project/Session tree, content slot, responsive optional inspector                   | verified |
@@ -41,7 +41,7 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | Session detail opens                | verified |
 | Timeline renders                    | verified |
 | Diff renders                        | pending  |
-| Needs Attention actions work        | pending  |
+| Needs Attention actions work        | verified |
 | Desktop notification can trigger    | pending  |
 | Windows installer builds            | pending  |
 

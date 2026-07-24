@@ -97,3 +97,22 @@ test('opens a session timeline and records a deterministic follow-up', async ({ 
   await expect(page.locator('.session-status')).toHaveText('running');
   await expectNoDocumentOverflow(page);
 });
+
+test('resolves attention and synchronizes command center counts', async ({ page }) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  await page.getByRole('link', { name: 'Needs Attention' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Needs Attention' })).toBeVisible();
+  await expect(page.getByRole('tab')).toHaveCount(6);
+  await page.getByRole('button', { name: 'Approve Dependency approval required' }).click();
+  await page.getByRole('button', { name: 'Retry TypeScript typecheck failed' }).click();
+  await expect(page.getByText('No open items in this filter.')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Command Center' }).click();
+  await expect(page.locator('[data-status="running"] strong')).toHaveText('4');
+  await expect(page.locator('[data-status="waiting"] strong')).toHaveText('0');
+  await expect(page.locator('[data-status="failed"] strong')).toHaveText('0');
+  await expect(page.getByText('0 items need attention')).toBeVisible();
+  await expectNoDocumentOverflow(page);
+});
