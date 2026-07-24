@@ -8,3 +8,9 @@ src-tauri/gen/
 .DS_Store
 *.log
 *.tsbuildinfo
+.tmp/
+artifacts/demo/astra-nexus-demo-raw.webm
+artifacts/demo/recording/
+artifacts/demo/screenshots/
+artifacts/demo/Astra-Nexus-Roadshow/
+artifacts/demo/*.inspect.ndjson

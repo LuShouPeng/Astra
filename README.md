@@ -1,73 +1,99 @@
-# Astra Nexus Workspace Shell
+# Astra Nexus
 
-A Tauri 2 desktop prototype for selecting, remembering, and reopening local workspaces before entering a modular AI coding workbench shell.
+Astra Nexus is a local-first AI Coding Workbench prototype built with Tauri 2, React, TypeScript,
+and Rust. It brings projects, deterministic Agent Sessions, attention items, notifications,
+read-only Git inspection, and review decisions into one desktop control plane.
 
-## Scope
+## Prototype Boundary
 
-This repository implements the Workspace and App Shell P0 from `AI-Coding-Workbench-Workspace-PRD (1).md`. It deliberately does not implement an editor, terminal, Git, diff, chat, or AI agent execution.
+- Claude and Codex use deterministic local mocks. No Agent CLI is launched.
+- Gemini is display-only and has no runtime adapter.
+- Git operations are read-only. Review actions update prototype metadata only.
+- Project content is not uploaded, API keys are not collected, and file access is confined to a
+  registered project root.
+
+## Included Workflows
+
+- Command Center with status totals, six bounded Active Sessions, Attention preview, Project
+  Matrix, and Recent Activity.
+- Local project registration, persistence, search, sort, Git summary, safe open, and removal of
+  registry metadata.
+- Project detail with Overview, Sessions, Changes, Activity, and Configuration views.
+- Session detail with Timeline, Changes, Tests, Commands, and Context deep links.
+- Seven Timeline event types and deterministic Session/Attention/Notification synchronization.
+- Unified text diff, binary fallback, Accept, Mark Reviewed, and Request Changes.
+- Application and desktop notifications with per-event settings.
+- Three-step demo playback with pause, single-step, reset, and `0.5x` / `1x` / `2x` speeds.
 
 ## Requirements
 
-- Node.js 20 or newer
-- npm 10 or newer
+- Node.js 20 or newer and npm 10 or newer
 - Rust 1.77.2 or newer with the MSVC toolchain on Windows
 - WebView2 on Windows
 
-## Install and Run
+## Install And Run
 
 ```powershell
-npm install
+npm ci
 npm run tauri dev
 ```
 
-Frontend-only checks can run without Rust:
+Frontend-only development:
+
+```powershell
+npm run dev
+```
+
+## Five-Minute Demo
+
+1. Open the populated demo workspace and review the Command Center.
+2. Open Needs Attention and approve the dependency request.
+3. Open the Claude timeout Session and inspect Timeline and Changes.
+4. Open Settings > Demo, reset, then advance all three deterministic steps.
+5. Open the completion notification, request changes, and return to Command Center.
+
+The full talk track is in `docs/product/demo-script.md`. Frozen data and state transitions are
+documented in `docs/product/demo-data.md`.
+
+## Verification
 
 ```powershell
 npm run format
 npm run lint
 npm run typecheck
-npm test
 npm run test:coverage
 npm run build
-```
+npm run test:e2e
 
-Native validation:
-
-```powershell
 cd src-tauri
-cargo check
+cargo fmt --check
 cargo test
 ```
 
+Build the Windows release:
+
+```powershell
+npm run tauri build -- --bundles nsis
+```
+
+## Release Artifacts
+
+- Portable executable: `artifacts/release/Astra-Nexus-0.1.0.exe`
+- Current-user NSIS installer: `artifacts/release/Astra-Nexus-0.1.0-x64-setup.exe`
+- Roadshow deck: `artifacts/demo/Astra-Nexus-Roadshow.pptx`
+- Backup demo video: `artifacts/demo/Astra-Nexus-backup-demo.mp4`
+
+The Windows binaries are unsigned. Checksums and reproducible build notes are in
+`docs/product/release.md`.
+
 ## Architecture
 
-- `src/core/contracts`: frozen cross-module data contracts
-- `src/core/events`: typed notification bus
-- `src/core/registry`: static workbench module registry
-- `src/modules/workspace`: recent workspace service, adapters, Context, and UI
-- `src/app/shell`: layout-only title bar, activity rail, slots, and status bar
-- `src-tauri/src/modules/workspace.rs`: read-only path inspection and availability checks
+- `src/core/contracts`: shared domain contracts
+- `src/core/data`: versioned prototype persistence
+- `src/core/events`: typed application event bus
+- `src/modules`: public business-module boundaries
+- `src/app/shell`: navigation and workbench layout
+- `src-tauri/src/modules`: confined workspace and read-only Git adapters
 
-The UI talks only to `WorkspaceService`. Tauri Dialog, Store, and Rust commands are isolated behind adapters. The selected project directory is never written to or deleted.
-
-## Manual Acceptance
-
-1. Delete the app data `workspaces.v1.json` and start the app. Verify the empty Recent Workspaces state.
-2. Select **Open Folder**, cancel the native dialog, and verify the page does not change or show an error.
-3. Select a readable local folder. Verify the shell displays its name and path.
-4. Return to Projects, select the same folder again, and verify only one recent row exists with a newer timestamp.
-5. Add a second folder, restart the app, and verify both rows persist in newest-first order.
-6. Move one folder outside the app, restart, and verify the row is marked Missing and cannot open.
-7. Use **Remove from Recent** and verify the confirmation says local files are not deleted. Confirm and verify the folder still exists on disk.
-8. At 1280x720 and 1440x900, verify there is no horizontal scrollbar and long paths truncate with a native title tooltip.
-9. Navigate the Projects screen by keyboard and verify visible focus indicators.
-
-## Dependencies
-
-- `@tauri-apps/plugin-dialog`: native directory selection
-- `@tauri-apps/plugin-store`: recent workspace metadata persistence
-- `lucide-react`: accessible, consistent interface icons
-- Vitest and Testing Library: service and user-visible component tests
-- Playwright: viewport and screenshot acceptance tests
-
-Implementation references and requirement evidence live in `docs/product/`.
+Product scope, acceptance evidence, known issues, and the implementation roadmap live in
+`docs/product/`.

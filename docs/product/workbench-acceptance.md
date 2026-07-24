@@ -2,26 +2,26 @@
 
 Source: `AI Coding Workbench 原型产品需求.docx`
 
-Status values: `pending`, `implemented`, `verified`, `excluded`.
+Status values: `pending`, `implemented`, `verified`, `deferred`, `excluded`.
 
 ## Product Flows
 
-| ID     | Capability                                                                | Required evidence                 | Status   |
-| ------ | ------------------------------------------------------------------------- | --------------------------------- | -------- |
-| US-001 | Add and persist a local project with Git information                      | Service, native and restart tests | verified |
-| US-002 | Expand projects and open Agent Sessions                                   | Component and E2E tests           | verified |
-| US-003 | Synchronize Session status across tree and dashboard                      | Transition and selector tests     | pending  |
-| US-004 | Render all seven Timeline event types in time order                       | Contract and component tests      | verified |
-| US-005 | Render changed files, text diff and binary fallback                       | Rust, adapter and component tests | verified |
-| US-006 | Process filtered Attention items and deep-link to Session                 | Store, component and E2E tests    | verified |
-| US-007 | Emit configured desktop notifications and navigate from app notifications | Adapter and E2E tests             | verified |
-| US-008 | Accept or request changes and update Session/Timeline                     | Transition and E2E tests          | verified |
+| ID     | Capability                                                                | Required evidence                  | Status   |
+| ------ | ------------------------------------------------------------------------- | ---------------------------------- | -------- |
+| US-001 | Add and persist a local project with Git information                      | Service, native and restart tests  | verified |
+| US-002 | Expand projects and open Agent Sessions                                   | Component and E2E tests            | verified |
+| US-003 | Synchronize Session status across tree and dashboard                      | Transition, selector and E2E tests | verified |
+| US-004 | Render all seven Timeline event types in time order                       | Contract and component tests       | verified |
+| US-005 | Render changed files, text diff and binary fallback                       | Rust, adapter and component tests  | verified |
+| US-006 | Process filtered Attention items and deep-link to Session                 | Store, component and E2E tests     | verified |
+| US-007 | Emit configured desktop notifications and navigate from app notifications | Adapter and E2E tests              | verified |
+| US-008 | Accept or request changes and update Session/Timeline                     | Transition and E2E tests           | verified |
 
 ## Pages And Modules
 
 | Surface         | Minimum scope                                                                                           | Status   |
 | --------------- | ------------------------------------------------------------------------------------------------------- | -------- |
-| Command Center  | Welcome header, four status totals, active Sessions, Attention preview, project matrix, recent activity | pending  |
+| Command Center  | Header actions, four status totals, Active Sessions, Attention preview, project matrix, recent activity | verified |
 | Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | verified |
 | Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | verified |
 | Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | verified |
@@ -43,7 +43,7 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | Diff renders                        | verified |
 | Needs Attention actions work        | verified |
 | Desktop notification can trigger    | verified |
-| Windows installer builds            | pending  |
+| Windows installer builds            | verified |
 
 ## P1 Release Gates
 
@@ -59,26 +59,26 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 
 ## P2 Polish Gates
 
-| Requirement              | Status      |
-| ------------------------ | ----------- |
-| Motion and visual polish | pending     |
-| Search and filters       | pending     |
-| Actionable empty states  | implemented |
-| Keyboard shortcuts       | pending     |
-| Multiple themes          | pending     |
-| Demo playback speed      | verified    |
+| Requirement              | Status   |
+| ------------------------ | -------- |
+| Motion and visual polish | verified |
+| Search and filters       | verified |
+| Actionable empty states  | verified |
+| Keyboard shortcuts       | deferred |
+| Multiple themes          | deferred |
+| Demo playback speed      | verified |
 
 ## Cross-Cutting Gates
 
-| Area            | Requirement                                                                | Status      |
-| --------------- | -------------------------------------------------------------------------- | ----------- |
-| Interaction     | Every action has feedback; async actions show loading; no dead buttons     | pending     |
-| Validation      | Project removal confirms; Request Changes requires text                    | verified    |
-| Synchronization | Status updates dashboard, tree, Session, Attention and notifications       | pending     |
-| Performance     | Cold start <5 s; page feedback <300 ms; 100 Sessions and 500 events usable | implemented |
-| Security        | No upload/key storage/Agent command execution/Git write/out-of-root reads  | pending     |
-| Packaging       | Source, installer, executable, README, PRD and prototype documentation     | pending     |
-| Demo kit        | Data guide, script, slide deck, backup video, known issues, roadmap        | pending     |
+| Area            | Requirement                                                                | Status   |
+| --------------- | -------------------------------------------------------------------------- | -------- |
+| Interaction     | Every action has feedback; async actions show loading; no dead buttons     | verified |
+| Validation      | Project removal confirms; Request Changes requires text                    | verified |
+| Synchronization | Status updates dashboard, tree, Session, Attention and notifications       | verified |
+| Performance     | Cold start <5 s; page feedback <300 ms; 100 Sessions and 500 events usable | verified |
+| Security        | No upload/key storage/Agent command execution/Git write/out-of-root reads  | verified |
+| Packaging       | Source, installer, executable, README, PRD and prototype documentation     | verified |
+| Demo kit        | Data guide, script, slide deck, backup video, known issues, roadmap        | verified |
 
 ## Explicit Exclusions
 
@@ -101,7 +101,20 @@ visual coverage; no Gemini CLI behavior may be implemented.
   provider runtime or native command.
 - The performance fixture creates exactly 100 Sessions and 500 Timeline events with stable IDs and
   timestamps.
-- Project trees render at most 30 Sessions per expanded project, Command Center renders the 20 most
-  recent Sessions, and Timeline reveals events in batches of 100.
-- Cold-start and page-feedback timing targets remain release-audit measurements; therefore the
-  aggregate Performance gate is implemented rather than verified.
+- Project trees render at most 30 Sessions per expanded project, Command Center renders six Active
+  Sessions and five Attention preview items, and Timeline reveals events in batches of 100.
+- The rebuilt portable executable opened a responsive `Astra Nexus` window within the 5-second
+  release probe. Both configured desktop viewports completed the Command Center E2E flow without
+  document overflow.
+
+## Release Evidence
+
+- Frontend unit/component suite: 112 tests after the final Command Center slice.
+- E2E suite: two desktop projects at 1280x720 and 1440x900.
+- Rust tests cover path confinement and read-only Git behavior.
+- NSIS build produced a current-user installer; the portable EXE launch probe passed.
+- The backup MP4 passed full decode and montage review.
+- The eight-slide PPTX passed slide-by-slide visual review with no observed clipping or overlap.
+
+P2 shortcuts and multiple themes are deferred and documented in `known-issues.md`; they are not
+represented as active controls.

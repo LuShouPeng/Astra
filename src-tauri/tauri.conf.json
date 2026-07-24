@@ -22,11 +22,18 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all"
+    "active": true,
+    "targets": ["nsis"],
+    "shortDescription": "Local control plane for deterministic AI coding sessions",
+    "longDescription": "Astra Nexus organizes local projects, deterministic Agent sessions, attention, notifications, and read-only Git review in one desktop workbench.",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }

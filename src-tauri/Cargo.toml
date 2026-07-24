@@ -1,7 +1,7 @@
 [package]
 name = "astra-nexus-workbench"
 version = "0.1.0"
-description = "Local workspace shell for the Astra Nexus AI coding workbench"
+description = "Local control plane for deterministic AI coding sessions"
 authors = ["Astra Nexus"]
 edition = "2021"
 
