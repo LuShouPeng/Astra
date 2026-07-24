@@ -11,6 +11,38 @@ async function expectNoDocumentOverflow(page: Page) {
   expect(dimensions.scrollHeight).toBe(dimensions.clientHeight);
 }
 
+async function measureRouteTransition(page: Page, linkLabel: string, heading: string) {
+  return await page.evaluate(
+    ({ linkLabel, heading }) =>
+      new Promise<number>((resolve, reject) => {
+        const link = [...document.querySelectorAll<HTMLAnchorElement>('a')].find(
+          (candidate) => candidate.getAttribute('aria-label') === linkLabel,
+        );
+        if (!link) {
+          reject(new Error(`Navigation link not found: ${linkLabel}`));
+          return;
+        }
+        const targetIsVisible = () =>
+          [...document.querySelectorAll('h1')].some(
+            (candidate) => candidate.textContent?.trim() === heading,
+          );
+        const startedAt = performance.now();
+        const observer = new MutationObserver(() => {
+          if (!targetIsVisible()) return;
+          observer.disconnect();
+          resolve(performance.now() - startedAt);
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        link.click();
+        if (targetIsVisible()) {
+          observer.disconnect();
+          resolve(performance.now() - startedAt);
+        }
+      }),
+    { linkLabel, heading },
+  );
+}
+
 test('cold start renders an empty projects screen', async ({ page }) => {
   await page.goto('/?scenario=empty');
 
@@ -254,4 +286,23 @@ test('deep-links settings, persists theme, and navigates with shortcuts', async 
   await page.keyboard.press('Alt+3');
   await expect(page.getByRole('heading', { name: 'Needs Attention' })).toBeVisible();
   await expectNoDocumentOverflow(page);
+});
+
+test('keeps every primary client-side page transition below 300ms', async ({ page }) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  await expect(page.getByRole('heading', { name: 'Command Center' })).toBeVisible();
+
+  const routes = [
+    ['Projects', 'Projects'],
+    ['Needs Attention', 'Needs Attention'],
+    ['Notifications', 'Notifications'],
+    ['Changes', 'Review Changes'],
+    ['Settings', 'Settings'],
+    ['Command Center', 'Command Center'],
+  ] as const;
+  for (const [linkLabel, heading] of routes) {
+    const elapsedMs = await measureRouteTransition(page, linkLabel, heading);
+    expect(elapsedMs, `${linkLabel} transition took ${elapsedMs.toFixed(1)}ms`).toBeLessThan(300);
+  }
 });
