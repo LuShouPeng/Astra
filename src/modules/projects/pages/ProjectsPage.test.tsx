@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,35 @@ import { createProjectService, type ProjectNativeAdapter } from '../services/pro
 import { ProjectsPage } from './ProjectsPage';
 
 describe('ProjectsPage', () => {
+  it('shows every project-card field required by the PRD', async () => {
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => createDemoSnapshot()),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => createDemoSnapshot()),
+      consumeWarning: vi.fn(() => null),
+    };
+    const adapter: ProjectNativeAdapter = {
+      gitSummary: vi.fn(),
+      openDirectory: vi.fn(),
+    };
+
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository}>
+          <ProjectsPage service={createProjectService(adapter)} />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    const heading = await screen.findByRole('heading', { name: 'backend-api' });
+    const card = heading.closest('article');
+    expect(card).not.toBeNull();
+    const project = within(card!);
+    expect(project.getByText('demo://backend-api')).toBeVisible();
+    expect(project.getByText('Active Agents').nextElementSibling).toHaveTextContent('1');
+    expect(project.getByText('Changed Files').nextElementSibling).toHaveTextContent('7');
+  });
+
   it('filters, sorts, and removes registry metadata after confirmation', async () => {
     const user = userEvent.setup();
     const repository: PrototypeRepository = {

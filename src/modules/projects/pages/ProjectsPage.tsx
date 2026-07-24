@@ -5,7 +5,7 @@ import type { Project, ProjectSort } from '../../../core/contracts/projects';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import { ConfirmDialog } from '../../../shared/components/ConfirmDialog';
 import { appEventBus } from '../../../core/events/appEventBus';
-import { selectProjects } from '../selectors/projectSelectors';
+import { selectProjectCardStats, selectProjects } from '../selectors/projectSelectors';
 import type { ProjectService } from '../services/projectService';
 
 export function ProjectsPage({
@@ -104,9 +104,7 @@ export function ProjectsPage({
 
       <section className="project-grid" aria-label="Projects list">
         {projects.map((project) => {
-          const sessionCount = snapshot.sessions.filter(
-            (session) => session.projectId === project.id,
-          ).length;
+          const stats = selectProjectCardStats(snapshot, project.id);
           return (
             <article className="project-card" key={project.id}>
               <div className="project-card__heading">
@@ -114,7 +112,10 @@ export function ProjectsPage({
                   <Link to={`/projects/${project.id}`}>
                     <h2>{project.name}</h2>
                   </Link>
-                  <p>{project.description ?? project.rootPath}</p>
+                  {project.description && <p>{project.description}</p>}
+                  <code className="project-card__path" title={project.rootPath}>
+                    {project.rootPath}
+                  </code>
                 </div>
                 <span className={`project-source project-source--${project.source}`}>
                   {project.source}
@@ -134,7 +135,15 @@ export function ProjectsPage({
                 </div>
                 <div>
                   <dt>Sessions</dt>
-                  <dd>{sessionCount}</dd>
+                  <dd>{stats.sessionCount}</dd>
+                </div>
+                <div>
+                  <dt>Active Agents</dt>
+                  <dd>{stats.activeAgentCount}</dd>
+                </div>
+                <div>
+                  <dt>Changed Files</dt>
+                  <dd>{stats.changedFileCount}</dd>
                 </div>
                 <div>
                   <dt>Activity</dt>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoSnapshot } from '../../demo';
-import { selectProjects } from './projectSelectors';
+import { selectProjectCardStats, selectProjects } from './projectSelectors';
 
 describe('selectProjects', () => {
   it('searches names, descriptions, and branches case-insensitively', () => {
@@ -28,5 +28,15 @@ describe('selectProjects', () => {
       'ai-service',
     ]);
     expect(projects[0].name).toBe('backend-api');
+  });
+
+  it('derives active Agent and changed-file totals for a project card', () => {
+    const snapshot = createDemoSnapshot();
+
+    expect(selectProjectCardStats(snapshot, 'project-backend-api')).toEqual({
+      sessionCount: 3,
+      activeAgentCount: 1,
+      changedFileCount: 7,
+    });
   });
 });

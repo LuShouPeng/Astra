@@ -1,4 +1,25 @@
-import type { Project, ProjectSort } from '../../../core/contracts/projects';
+import type { Project, ProjectId, ProjectSort } from '../../../core/contracts/projects';
+import type { WorkbenchSnapshot } from '../../../core/contracts/workbenchData';
+
+export interface ProjectCardStats {
+  sessionCount: number;
+  activeAgentCount: number;
+  changedFileCount: number;
+}
+
+export function selectProjectCardStats(
+  snapshot: WorkbenchSnapshot,
+  projectId: ProjectId,
+): ProjectCardStats {
+  const sessions = snapshot.sessions.filter((session) => session.projectId === projectId);
+  return {
+    sessionCount: sessions.length,
+    activeAgentCount: sessions.filter(
+      (session) => session.status === 'running' || session.status === 'waiting',
+    ).length,
+    changedFileCount: sessions.reduce((total, session) => total + session.changedFilesCount, 0),
+  };
+}
 
 export function selectProjects(
   projects: readonly Project[],

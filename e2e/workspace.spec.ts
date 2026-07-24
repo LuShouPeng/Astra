@@ -68,6 +68,12 @@ test('manages projects without deleting local files', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search projects' }).fill('frontend');
+  const frontendCard = page.locator('article').filter({
+    has: page.getByRole('heading', { name: 'frontend' }),
+  });
+  await expect(frontendCard.getByText('demo://frontend')).toBeVisible();
+  await expect(frontendCard.getByText('Active Agents').locator('..')).toContainText('1');
+  await expect(frontendCard.getByText('Changed Files').locator('..')).toContainText('4');
   await expect(page.getByRole('heading', { name: 'frontend' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'backend-api' })).toHaveCount(0);
   await page.getByRole('searchbox', { name: 'Search projects' }).fill('');
