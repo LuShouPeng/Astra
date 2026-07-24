@@ -23,18 +23,19 @@
     "@tauri-apps/plugin-store": "^2",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@playwright/test": "^1.49.0",
+    "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
-    "@tauri-apps/cli": "^2",
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/coverage-v8": "^4.0.0",
     "eslint": "^9.0.0",

@@ -19,17 +19,17 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 
 ## Pages And Modules
 
-| Surface         | Minimum scope                                                                                           | Status  |
-| --------------- | ------------------------------------------------------------------------------------------------------- | ------- |
-| Command Center  | Welcome header, four status totals, active Sessions, Attention preview, project matrix, recent activity | pending |
-| Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | pending |
-| Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | pending |
-| Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | pending |
-| Changes         | File statuses/counts, unified text diff, line numbers, review actions, binary fallback                  | pending |
-| Needs Attention | Six filters and type-specific actions                                                                   | pending |
-| Notifications   | Seven notification events, unread state, typed navigation target, settings                              | pending |
-| Settings/About  | General, Notifications, Demo, version, description and stack                                            | pending |
-| App Shell       | Primary navigation, project/Session tree, content slot, responsive optional inspector                   | pending |
+| Surface         | Minimum scope                                                                                           | Status   |
+| --------------- | ------------------------------------------------------------------------------------------------------- | -------- |
+| Command Center  | Welcome header, four status totals, active Sessions, Attention preview, project matrix, recent activity | pending  |
+| Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | pending  |
+| Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | pending  |
+| Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | pending  |
+| Changes         | File statuses/counts, unified text diff, line numbers, review actions, binary fallback                  | pending  |
+| Needs Attention | Six filters and type-specific actions                                                                   | pending  |
+| Notifications   | Seven notification events, unread state, typed navigation target, settings                              | pending  |
+| Settings/About  | General, Notifications, Demo, version, description and stack                                            | pending  |
+| App Shell       | Primary navigation, project/Session tree, content slot, responsive optional inspector                   | verified |
 
 ## P0 Release Gates
 
@@ -37,7 +37,7 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | ----------------------------------- | -------- |
 | Application starts without crashing | verified |
 | All primary pages navigate          | pending  |
-| Frozen demo data loads              | pending  |
+| Frozen demo data loads              | verified |
 | Session detail opens                | pending  |
 | Timeline renders                    | pending  |
 | Diff renders                        | pending  |

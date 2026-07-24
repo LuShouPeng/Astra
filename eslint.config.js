@@ -29,7 +29,10 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/modules/workspace/state/WorkspaceContext.tsx'],
+    files: [
+      'src/modules/workspace/state/WorkspaceContext.tsx',
+      'src/core/state/WorkbenchContext.tsx',
+    ],
     rules: {
       'react-refresh/only-export-components': 'off',
     },

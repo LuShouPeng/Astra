@@ -1,32 +1,29 @@
-import { Bot, Files, GitCompare, MessageSquare, TerminalSquare } from 'lucide-react';
+import { Bell, FolderKanban, GitCompare, LayoutDashboard, Settings } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 
-const futureActivities = [
-  { label: 'Agents', icon: Bot },
-  { label: 'Chat', icon: MessageSquare },
-  { label: 'Terminal', icon: TerminalSquare },
-  { label: 'Source Control and Diff', icon: GitCompare },
-];
+const activities = [
+  { label: 'Command Center', icon: LayoutDashboard, to: '/command-center' },
+  { label: 'Projects', icon: FolderKanban, to: '/projects' },
+  { label: 'Needs Attention', icon: Bell, to: '/attention' },
+  { label: 'Changes', icon: GitCompare, to: '/changes' },
+  { label: 'Settings', icon: Settings, to: '/settings' },
+] as const;
 
 export function ActivityRail() {
   return (
     <nav className="activity-rail" aria-label="Workbench activities">
-      <button
-        className="activity-button activity-button--active"
-        aria-label="Explorer"
-        aria-current="page"
-      >
-        <Files size={21} />
-      </button>
-      {futureActivities.map(({ label, icon: Icon }) => (
-        <button
+      {activities.map(({ label, icon: Icon, to }) => (
+        <NavLink
           key={label}
-          className="activity-button activity-button--disabled"
-          aria-label={`${label} (Coming soon)`}
-          data-tooltip={`${label} · Coming soon`}
-          disabled
+          className={({ isActive }) =>
+            `activity-button${isActive ? ' activity-button--active' : ''}`
+          }
+          aria-label={label}
+          data-tooltip={label}
+          to={to}
         >
-          <Icon size={20} />
-        </button>
+          <Icon size={20} aria-hidden="true" />
+        </NavLink>
       ))}
     </nav>
   );

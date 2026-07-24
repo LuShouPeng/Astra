@@ -24,9 +24,13 @@ test('opens a recent workspace and returns to Projects', async ({ page }) => {
   await page.goto('/?scenario=populated');
 
   await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
-  await expect(page.getByRole('heading', { name: 'Workspace ready' })).toBeVisible();
-  await expect(page.getByText('C:\\Users\\developer\\Projects\\Astra Nexus')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Agents (Coming soon)' })).toBeDisabled();
+  await expect(page.getByRole('heading', { name: 'Command Center' })).toBeVisible();
+  await expect(page.getByRole('tree', { name: 'Projects and sessions' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Command Center' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await expect(page.getByText('2 items need attention')).toBeVisible();
   await expectNoDocumentOverflow(page);
 
   await page.getByRole('button', { name: 'Back to Projects' }).click();

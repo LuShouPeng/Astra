@@ -1,16 +1,26 @@
 import { ArrowLeft, Orbit } from 'lucide-react';
-import { getEnabledModules } from '../../core/registry/moduleRegistry';
+import { Outlet } from 'react-router-dom';
+import { useWorkbench } from '../../core/state/WorkbenchContext';
 import { useWorkspace } from '../../modules/workspace/state/WorkspaceContext';
 import { ActivityRail } from './ActivityRail';
-import { MainSlot } from './MainSlot';
-import { SidebarSlot } from './SidebarSlot';
+import { ProjectSessionTree } from './ProjectSessionTree';
 import { StatusBar } from './StatusBar';
 
 export function WorkbenchShell() {
   const { activeWorkspace, closeWorkspace } = useWorkspace();
   if (!activeWorkspace) return null;
-  const [activeModule] = getEnabledModules({ workspace: activeWorkspace });
-  if (!activeModule) return null;
+
+  return <WorkbenchShellContent workspaceName={activeWorkspace.name} onClose={closeWorkspace} />;
+}
+
+function WorkbenchShellContent({
+  workspaceName,
+  onClose,
+}: {
+  workspaceName: string;
+  onClose: () => void;
+}) {
+  const { snapshot, warning } = useWorkbench();
 
   return (
     <div className="workbench-shell">
@@ -19,20 +29,33 @@ export function WorkbenchShell() {
           <Orbit size={16} aria-hidden="true" />
           <span>Astra Nexus</span>
         </div>
-        <div className="title-bar__workspace" title={activeWorkspace.name}>
-          {activeWorkspace.name}
+        <div className="title-bar__workspace" title={workspaceName}>
+          {workspaceName}
         </div>
-        <button className="title-bar__back" onClick={closeWorkspace} aria-label="Back to Projects">
-          <ArrowLeft size={15} />
+        <button className="title-bar__back" onClick={onClose} aria-label="Back to Projects">
+          <ArrowLeft size={15} aria-hidden="true" />
           <span>Projects</span>
         </button>
       </header>
       <div className="workbench-shell__body">
         <ActivityRail />
-        <SidebarSlot component={activeModule.sidebar} />
-        <MainSlot component={activeModule.main} />
+        <aside className="sidebar-slot">
+          {snapshot ? (
+            <ProjectSessionTree projects={snapshot.projects} sessions={snapshot.sessions} />
+          ) : (
+            <div className="slot-loading" aria-label="Loading project tree" />
+          )}
+        </aside>
+        <main className="main-slot">
+          {warning && (
+            <div className="workbench-warning" role="status">
+              {warning}
+            </div>
+          )}
+          <Outlet />
+        </main>
       </div>
-      <StatusBar workspaceName={activeWorkspace.name} />
+      <StatusBar workspaceName={workspaceName} />
     </div>
   );
 }
