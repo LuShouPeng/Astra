@@ -10,6 +10,7 @@ describe('selectCommandCenterSummary', () => {
 
     expect(summary.counts).toEqual({ running: 2, waiting: 1, completed: 2, failed: 1 });
     expect(summary.openAttentionCount).toBe(2);
+    expect(summary.sessionTotal).toBe(6);
     expect(summary.recentSessions.map((session) => session.id)).toEqual([
       'session-backend-claude',
       'session-frontend-codex',

@@ -4,6 +4,8 @@ import { NavLink } from 'react-router-dom';
 import type { Project } from '../../core/contracts/projects';
 import type { AgentSession } from '../../core/contracts/sessions';
 
+const SESSION_RENDER_LIMIT = 30;
+
 export function ProjectSessionTree({
   projects,
   sessions,
@@ -56,7 +58,7 @@ export function ProjectSessionTree({
               </div>
               {!isCollapsed && (
                 <div className="project-tree__sessions" role="group">
-                  {projectSessions.map((session) => (
+                  {projectSessions.slice(0, SESSION_RENDER_LIMIT).map((session) => (
                     <div key={session.id} role="treeitem">
                       <NavLink className="project-tree__session" to={`/sessions/${session.id}`}>
                         <Circle
@@ -69,6 +71,11 @@ export function ProjectSessionTree({
                       </NavLink>
                     </div>
                   ))}
+                  {projectSessions.length > SESSION_RENDER_LIMIT && (
+                    <span className="project-tree__more">
+                      {projectSessions.length - SESSION_RENDER_LIMIT} more sessions
+                    </span>
+                  )}
                 </div>
               )}
             </div>

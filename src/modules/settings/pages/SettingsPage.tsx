@@ -1,7 +1,8 @@
-import { BellRing, Info, MonitorCog, Play, RotateCcw } from 'lucide-react';
+import { BellRing, Info, MonitorCog, Play } from 'lucide-react';
 import { useState } from 'react';
 import type { AppNotification, NotificationSettings } from '../../../core/contracts/notifications';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
+import { DemoControls } from '../../demo';
 import type { DesktopNotificationService } from '../../notifications';
 
 type SettingsTab = 'general' | 'notifications' | 'demo' | 'about';
@@ -229,23 +230,7 @@ export function SettingsPage({
                 <p>Deterministic presentation controls</p>
               </div>
             </header>
-            <div className="settings-row">
-              <div>
-                <strong>Reset Demo Data</strong>
-                <small>Restore frozen projects, Sessions, and activity</small>
-              </div>
-              <button className="button button--compact" disabled>
-                <RotateCcw size={15} aria-hidden="true" />
-                Coming soon
-              </button>
-            </div>
-            <div className="settings-row">
-              <div>
-                <strong>Simulation Timeline</strong>
-                <small>Playback and speed controls</small>
-              </div>
-              <span className="coming-soon-badge">Coming soon</span>
-            </div>
+            <DemoControls />
           </section>
         )}
 

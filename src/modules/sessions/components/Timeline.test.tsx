@@ -79,4 +79,22 @@ describe('Timeline', () => {
     expect(screen.getByText('Install dependency')).toBeVisible();
     expect(screen.getByText('idle to running')).toBeVisible();
   });
+
+  it('bounds large timelines and reveals older batches on demand', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const manyEvents = Array.from({ length: 500 }, (_, index): TimelineEvent => ({
+      id: `event-${index}`,
+      sessionId: 's',
+      type: 'agent_message',
+      timestamp: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+      content: `Event ${index}`,
+    }));
+
+    render(<Timeline events={manyEvents} />);
+    expect(screen.getAllByRole('article')).toHaveLength(100);
+    expect(screen.getByText('Event 499')).toBeVisible();
+    expect(screen.queryByText('Event 0')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show 100 earlier events' }));
+    expect(screen.getAllByRole('article')).toHaveLength(200);
+  });
 });

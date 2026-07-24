@@ -5,7 +5,7 @@ import { createDemoSnapshot } from '../../modules/demo';
 import { WorkbenchProvider, useWorkbench } from './WorkbenchContext';
 
 function Probe() {
-  const { loadState, snapshot, warning, saveSnapshot } = useWorkbench();
+  const { loadState, snapshot, warning, saveSnapshot, resetSnapshot } = useWorkbench();
   return (
     <div>
       <span>{loadState}</span>
@@ -18,6 +18,7 @@ function Probe() {
       >
         Remove first
       </button>
+      <button onClick={() => void resetSnapshot()}>Reset snapshot</button>
     </div>
   );
 }
@@ -85,5 +86,27 @@ describe('WorkbenchProvider', () => {
     await user.click(screen.getByRole('button', { name: 'Remove first' }));
     expect(await screen.findByText('2 projects')).toBeVisible();
     expect(repository.save).toHaveBeenCalledOnce();
+  });
+
+  it('resets and publishes the frozen repository snapshot', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const reset = createDemoSnapshot();
+    reset.projects = reset.projects.slice(0, 1);
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => createDemoSnapshot()),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => reset),
+      consumeWarning: vi.fn(() => null),
+    };
+    render(
+      <WorkbenchProvider repository={repository}>
+        <Probe />
+      </WorkbenchProvider>,
+    );
+
+    expect(await screen.findByText('3 projects')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Reset snapshot' }));
+    expect(await screen.findByText('1 projects')).toBeVisible();
+    expect(repository.reset).toHaveBeenCalledOnce();
   });
 });

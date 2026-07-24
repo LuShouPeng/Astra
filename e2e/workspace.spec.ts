@@ -164,3 +164,34 @@ test('opens notifications, follows a target, and persists notification settings'
   await expect(page.getByRole('status')).toHaveText('Desktop notification sent');
   await expectNoDocumentOverflow(page);
 });
+
+test('plays, steps, and resets the deterministic demo', async ({ page }) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Demo' }).click();
+
+  await expect(page.getByText('Step 0 of 3')).toBeVisible();
+  await page.getByRole('radio', { name: '2x' }).click();
+  await page.getByRole('button', { name: 'Play demo' }).click();
+  await expect(page.getByText(/^Step [1-3] of 3$/)).toBeVisible({ timeout: 5_000 });
+  const pause = page.getByRole('button', { name: 'Pause demo' });
+  if (await pause.isVisible()) await pause.click();
+  await page.getByRole('button', { name: 'Reset Demo Data' }).click();
+  await expect(page.getByText('Step 0 of 3')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Next demo step' }).click();
+  await expect(page.getByText('Step 1 of 3')).toBeVisible();
+  await page.getByRole('button', { name: 'Next demo step' }).click();
+  await expect(page.getByText('Step 2 of 3')).toBeVisible();
+  await page.getByRole('button', { name: 'Next demo step' }).click();
+  await expect(page.getByText('Step 3 of 3')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Notifications' }).click();
+  await expect(page.getByText('Claude simulation completed')).toBeVisible();
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Demo' }).click();
+  await page.getByRole('button', { name: 'Reset Demo Data' }).click();
+  await expect(page.getByText('Step 0 of 3')).toBeVisible();
+  await expectNoDocumentOverflow(page);
+});

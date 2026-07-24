@@ -8,6 +8,9 @@ import {
   TestTube2,
 } from 'lucide-react';
 import type { TimelineEvent } from '../../../core/contracts/sessions';
+import { useState } from 'react';
+
+const EVENT_BATCH_SIZE = 100;
 
 const eventMeta = {
   user_message: { label: 'You', icon: MessageSquare },
@@ -68,10 +71,22 @@ function EventContent({ event }: { event: TimelineEvent }) {
 }
 
 export function Timeline({ events }: { events: readonly TimelineEvent[] }) {
+  const [visibleCount, setVisibleCount] = useState(EVENT_BATCH_SIZE);
   const ordered = [...events].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+  const visible = ordered.slice(-visibleCount);
+  const hiddenCount = Math.max(0, ordered.length - visible.length);
+  const nextBatch = Math.min(EVENT_BATCH_SIZE, hiddenCount);
   return (
     <section className="timeline" aria-label="Session timeline">
-      {ordered.map((event) => {
+      {hiddenCount > 0 && (
+        <button
+          className="timeline__load-earlier"
+          onClick={() => setVisibleCount((current) => current + EVENT_BATCH_SIZE)}
+        >
+          Show {nextBatch} earlier events
+        </button>
+      )}
+      {visible.map((event) => {
         const meta = eventMeta[event.type];
         const Icon = meta.icon;
         return (

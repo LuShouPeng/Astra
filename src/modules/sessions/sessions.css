@@ -130,6 +130,21 @@
   width: min(820px, 100%);
   margin: 0 auto;
 }
+.timeline__load-earlier {
+  display: block;
+  min-height: 32px;
+  margin: 0 auto var(--space-4);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  font-size: var(--text-xs);
+}
+.timeline__load-earlier:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
 .timeline-event {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);

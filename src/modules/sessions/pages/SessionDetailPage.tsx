@@ -92,7 +92,7 @@ export function SessionDetailPage({ changesService }: { changesService?: Changes
 
       <div className={`session-content ${tab === 'changes' ? 'session-content--changes' : ''}`}>
         {tab === 'timeline' ? (
-          <Timeline events={events} />
+          <Timeline key={session.id} events={events} />
         ) : (
           <ChangesReview sessionId={session.id} service={changesService} />
         )}

@@ -19,17 +19,17 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 
 ## Pages And Modules
 
-| Surface         | Minimum scope                                                                                           | Status      |
-| --------------- | ------------------------------------------------------------------------------------------------------- | ----------- |
-| Command Center  | Welcome header, four status totals, active Sessions, Attention preview, project matrix, recent activity | pending     |
-| Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | verified    |
-| Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | pending     |
-| Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | pending     |
-| Changes         | File statuses/counts, unified text diff, line numbers, review actions, binary fallback                  | verified    |
-| Needs Attention | Six filters and type-specific actions                                                                   | verified    |
-| Notifications   | Seven notification events, unread state, typed navigation target, settings                              | verified    |
-| Settings/About  | General, Notifications, Demo, version, description and stack                                            | implemented |
-| App Shell       | Primary navigation, project/Session tree, content slot, responsive optional inspector                   | verified    |
+| Surface         | Minimum scope                                                                                           | Status   |
+| --------------- | ------------------------------------------------------------------------------------------------------- | -------- |
+| Command Center  | Welcome header, four status totals, active Sessions, Attention preview, project matrix, recent activity | pending  |
+| Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | verified |
+| Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | pending  |
+| Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | pending  |
+| Changes         | File statuses/counts, unified text diff, line numbers, review actions, binary fallback                  | verified |
+| Needs Attention | Six filters and type-specific actions                                                                   | verified |
+| Notifications   | Seven notification events, unread state, typed navigation target, settings                              | verified |
+| Settings/About  | General, Notifications, Demo, version, description and stack                                            | verified |
+| App Shell       | Primary navigation, project/Session tree, content slot, responsive optional inspector                   | verified |
 
 ## P0 Release Gates
 
@@ -66,19 +66,19 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | Actionable empty states  | implemented |
 | Keyboard shortcuts       | pending     |
 | Multiple themes          | pending     |
-| Demo playback speed      | pending     |
+| Demo playback speed      | verified    |
 
 ## Cross-Cutting Gates
 
-| Area            | Requirement                                                                | Status   |
-| --------------- | -------------------------------------------------------------------------- | -------- |
-| Interaction     | Every action has feedback; async actions show loading; no dead buttons     | pending  |
-| Validation      | Project removal confirms; Request Changes requires text                    | verified |
-| Synchronization | Status updates dashboard, tree, Session, Attention and notifications       | pending  |
-| Performance     | Cold start <5 s; page feedback <300 ms; 100 Sessions and 500 events usable | pending  |
-| Security        | No upload/key storage/Agent command execution/Git write/out-of-root reads  | pending  |
-| Packaging       | Source, installer, executable, README, PRD and prototype documentation     | pending  |
-| Demo kit        | Data guide, script, slide deck, backup video, known issues, roadmap        | pending  |
+| Area            | Requirement                                                                | Status      |
+| --------------- | -------------------------------------------------------------------------- | ----------- |
+| Interaction     | Every action has feedback; async actions show loading; no dead buttons     | pending     |
+| Validation      | Project removal confirms; Request Changes requires text                    | verified    |
+| Synchronization | Status updates dashboard, tree, Session, Attention and notifications       | pending     |
+| Performance     | Cold start <5 s; page feedback <300 ms; 100 Sessions and 500 events usable | implemented |
+| Security        | No upload/key storage/Agent command execution/Git write/out-of-root reads  | pending     |
+| Packaging       | Source, installer, executable, README, PRD and prototype documentation     | pending     |
+| Demo kit        | Data guide, script, slide deck, backup video, known issues, roadmap        | pending     |
 
 ## Explicit Exclusions
 
@@ -92,3 +92,16 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 
 Gemini provider labels may remain in frozen demo fixtures because the PRD requires three-provider
 visual coverage; no Gemini CLI behavior may be implemented.
+
+## Demo And Performance Evidence
+
+- Frozen playback has three deterministic steps and supports pause, single-step, reset, and
+  `0.5x` / `1x` / `2x` speed selection.
+- Playback synchronizes Session status, Timeline, Attention, and Notifications without invoking a
+  provider runtime or native command.
+- The performance fixture creates exactly 100 Sessions and 500 Timeline events with stable IDs and
+  timestamps.
+- Project trees render at most 30 Sessions per expanded project, Command Center renders the 20 most
+  recent Sessions, and Timeline reveals events in batches of 100.
+- Cold-start and page-feedback timing targets remain release-audit measurements; therefore the
+  aggregate Performance gate is implemented rather than verified.

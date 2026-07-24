@@ -45,7 +45,7 @@ function reducer(state: WorkbenchState, action: WorkbenchAction): WorkbenchState
         saving: false,
       };
     case 'failed':
-      return { ...state, loadState: 'error', error: action.message };
+      return { ...state, loadState: 'error', error: action.message, saving: false };
     case 'saving':
       return { ...state, saving: true, error: null };
     case 'saved':
@@ -56,6 +56,7 @@ function reducer(state: WorkbenchState, action: WorkbenchAction): WorkbenchState
 interface WorkbenchContextValue extends WorkbenchState {
   repository: PrototypeRepository;
   saveSnapshot: (snapshot: WorkbenchSnapshot) => Promise<void>;
+  resetSnapshot: () => Promise<WorkbenchSnapshot>;
 }
 
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
@@ -107,9 +108,21 @@ export function WorkbenchProvider({
     [repository],
   );
 
+  const resetSnapshot = useCallback(async () => {
+    dispatch({ type: 'saving' });
+    try {
+      const snapshot = await repository.reset();
+      dispatch({ type: 'saved', snapshot });
+      return snapshot;
+    } catch (error) {
+      dispatch({ type: 'failed', message: errorMessage(error) });
+      throw error;
+    }
+  }, [repository]);
+
   const value = useMemo(
-    () => ({ ...state, repository, saveSnapshot }),
-    [repository, saveSnapshot, state],
+    () => ({ ...state, repository, resetSnapshot, saveSnapshot }),
+    [repository, resetSnapshot, saveSnapshot, state],
   );
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
 }

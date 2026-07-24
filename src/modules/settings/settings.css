@@ -156,6 +156,43 @@
   color: var(--color-danger-status);
   background: var(--color-danger-status-surface);
 }
+.demo-controls__commands {
+  display: flex !important;
+  grid-auto-flow: column;
+  gap: var(--space-2) !important;
+}
+.demo-speed {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(3, 44px);
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+.demo-speed button {
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--color-border-strong);
+  color: var(--color-text-muted);
+  background: var(--color-surface-raised);
+  font-size: var(--text-xs);
+}
+.demo-speed button:last-child {
+  border-right: 0;
+}
+.demo-speed button[aria-checked='true'] {
+  color: var(--color-text);
+  background: var(--color-active-surface);
+}
+.demo-controls__feedback {
+  margin: var(--space-3) 0 0;
+  color: var(--color-accent-status);
+  font-size: var(--text-xs);
+}
+.demo-controls__feedback.is-error {
+  color: var(--color-danger-status);
+}
 .settings-state {
   display: grid;
   height: 100%;

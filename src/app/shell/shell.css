@@ -255,6 +255,13 @@
 .project-tree__sessions {
   padding-bottom: var(--space-1);
 }
+.project-tree__more {
+  display: block;
+  min-height: 26px;
+  padding: 5px var(--space-2) 5px 38px;
+  color: var(--color-text-subtle);
+  font-size: 0.6875rem;
+}
 
 .project-tree__session {
   display: grid;

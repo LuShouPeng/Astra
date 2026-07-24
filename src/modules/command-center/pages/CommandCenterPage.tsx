@@ -66,7 +66,7 @@ export function CommandCenterPage() {
             <p className="eyebrow">Latest activity</p>
             <h2 id="recent-sessions-title">Recent sessions</h2>
           </div>
-          <span>{summary.recentSessions.length} total</span>
+          <span>{summary.sessionTotal} total</span>
         </div>
         <div className="session-list">
           {summary.recentSessions.map((session) => (

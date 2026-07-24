@@ -45,4 +45,22 @@ describe('ProjectSessionTree', () => {
     await user.click(screen.getByRole('button', { name: 'Expand backend-api' }));
     expect(screen.getByText('Fix intermittent login timeout')).toBeVisible();
   });
+
+  it('bounds sessions per expanded project for large workspaces', () => {
+    const snapshot = createDemoSnapshot();
+    const sessions = Array.from({ length: 100 }, (_, index) => ({
+      ...snapshot.sessions[0],
+      id: `session-${index}`,
+      projectId: snapshot.projects[0].id,
+      title: `Performance session ${index}`,
+    }));
+    render(
+      <MemoryRouter>
+        <ProjectSessionTree projects={[snapshot.projects[0]]} sessions={sessions} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByRole('treeitem')).toHaveLength(31);
+    expect(screen.getByText('70 more sessions')).toBeVisible();
+  });
 });

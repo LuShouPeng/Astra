@@ -5,6 +5,7 @@ export interface CommandCenterSummary {
   counts: Record<'running' | 'waiting' | 'completed' | 'failed', number>;
   openAttentionCount: number;
   recentSessions: AgentSession[];
+  sessionTotal: number;
 }
 
 const countedStatuses = [
@@ -25,8 +26,9 @@ export function selectCommandCenterSummary(snapshot: WorkbenchSnapshot): Command
   return {
     counts,
     openAttentionCount: snapshot.attentionItems.filter((item) => !item.resolved).length,
-    recentSessions: [...snapshot.sessions].sort((left, right) =>
-      right.updatedAt.localeCompare(left.updatedAt),
-    ),
+    recentSessions: [...snapshot.sessions]
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, 20),
+    sessionTotal: snapshot.sessions.length,
   };
 }

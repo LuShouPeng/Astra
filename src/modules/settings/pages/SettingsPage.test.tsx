@@ -57,4 +57,31 @@ describe('SettingsPage', () => {
     expect(screen.getByText('0.1.0')).toBeVisible();
     expect(screen.getByText(/Tauri 2/)).toBeVisible();
   });
+
+  it('controls deterministic demo playback and resets frozen data', async () => {
+    const user = userEvent.setup();
+    const store = repository();
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={store}>
+          <SettingsPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'Settings' });
+    await user.click(screen.getByRole('tab', { name: 'Demo' }));
+    expect(screen.getByText('Step 0 of 3')).toBeVisible();
+    await user.click(screen.getByRole('radio', { name: '2x' }));
+    await user.click(screen.getByRole('button', { name: 'Next demo step' }));
+    expect(await screen.findByText('Step 1 of 3')).toBeVisible();
+    expect(store.save).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole('button', { name: 'Play demo' }));
+    expect(await screen.findByRole('button', { name: 'Pause demo' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Pause demo' }));
+    await user.click(screen.getByRole('button', { name: 'Reset Demo Data' }));
+    expect(store.reset).toHaveBeenCalledOnce();
+    expect(await screen.findByText('Step 0 of 3')).toBeVisible();
+  });
 });
