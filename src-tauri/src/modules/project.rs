@@ -428,11 +428,11 @@ mod tests {
                 .is_some_and(|name| name.starts_with("astra-")),
             "temporary cleanup must remain scoped to an Astra test directory"
         );
-        for attempt in 0..20 {
+        for attempt in 0..40 {
             match fs::remove_dir_all(&path) {
                 Ok(()) => return,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
-                Err(_) if attempt < 19 => thread::sleep(Duration::from_millis(10)),
+                Err(_) if attempt < 39 => thread::sleep(Duration::from_millis(50)),
                 Err(error) => panic!("remove temporary repository: {error}"),
             }
         }

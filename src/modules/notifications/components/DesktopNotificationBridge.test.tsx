@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrototypeRepository } from '../../../core/data/prototypeRepository';
 import { appEventBus } from '../../../core/events/appEventBus';
@@ -35,7 +35,7 @@ describe('DesktopNotificationBridge', () => {
 
     expect(await screen.findByText('Bridge ready')).toBeVisible();
     const snapshot = createDemoSnapshot();
-    appEventBus.emit('notification:created', snapshot.notifications[0]);
+    act(() => appEventBus.emit('notification:created', snapshot.notifications[0]));
 
     await waitFor(() =>
       expect(service.notify).toHaveBeenCalledWith(
