@@ -101,8 +101,10 @@ running -> stopped
 - Approval resolves the related Attention item and returns the Session to `running`.
 - Rejection records an approval event and moves the Session to `stopped`.
 - Completion creates changed files, a test result, a notification, and Review attention.
-- Request Changes requires non-empty feedback, records a user message and review event, and moves
-  the Session to `running` when immediate rerun is selected, otherwise `waiting`.
+- Request Changes requires non-empty feedback, records a user-message Timeline event, persists the
+  file's `changes_requested` review state, and records a status Timeline event when the Session
+  changes state. It moves the Session to `running` when immediate rerun is selected, otherwise
+  `waiting`.
 
 ### Attention
 

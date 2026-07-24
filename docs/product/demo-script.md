@@ -32,7 +32,8 @@ Open the completion notification, return to Changes, and choose Request Changes.
 
 > Add timeout-boundary unit tests without changing the public API.
 
-Submit with immediate rerun enabled. Show the new user message, review event, and Running status.
+Submit with immediate rerun enabled. Show the new user-message event, changes-requested review
+state, status event, and Running status.
 
 ## 4:40 - Close
 
