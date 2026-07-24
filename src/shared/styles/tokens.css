@@ -66,10 +66,10 @@
   --z-tooltip: 20;
   --z-dialog: 50;
   --transition-fast: 160ms ease;
-  --titlebar-height: 40px;
+  --titlebar-height: 48px;
   --statusbar-height: 24px;
   --activity-rail-width: 48px;
-  --sidebar-width: 264px;
+  --sidebar-width: 260px;
 }
 
 :root[data-theme='light'] {
