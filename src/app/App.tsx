@@ -1,14 +1,22 @@
 import { useMemo } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { WorkspaceService } from '../core/contracts/workspace';
+import type { Project, ProjectGitSummary } from '../core/contracts/projects';
+import { appEventBus } from '../core/events/appEventBus';
 import {
   createPrototypeRepository,
   type PrototypeRepository,
 } from '../core/data/prototypeRepository';
 import { TauriPrototypeStore } from '../core/data/tauriPrototypeStore';
-import { WorkbenchProvider } from '../core/state/WorkbenchContext';
+import { WorkbenchProvider, useWorkbench } from '../core/state/WorkbenchContext';
 import { CommandCenterPage } from '../modules/command-center';
 import { createDemoSnapshot } from '../modules/demo';
+import {
+  createProjectService,
+  ProjectsPage,
+  TauriProjectNativeAdapter,
+  type ProjectService,
+} from '../modules/projects';
 import { WelcomePage } from '../modules/workspace';
 import { createTauriWorkspaceAdapters } from '../modules/workspace/services/workspaceAdapters';
 import { createWorkspaceService } from '../modules/workspace/services/workspaceService';
@@ -28,7 +36,53 @@ function createDefaultRepository(): PrototypeRepository {
   });
 }
 
-function AppRouter({ repository }: { repository: PrototypeRepository }) {
+function ProjectsRoute({ service }: { service: ProjectService }) {
+  const { chooseAndOpen } = useWorkspace();
+  const { snapshot, saveSnapshot } = useWorkbench();
+
+  async function addProject() {
+    const record = await chooseAndOpen();
+    if (!record || !snapshot) return;
+    let git: ProjectGitSummary;
+    try {
+      git = await service.inspectRoot(record.rootPath);
+    } catch {
+      git = { gitRepository: false, gitStatus: 'unknown' };
+    }
+    const project: Project = {
+      id: record.id,
+      name: record.name,
+      rootPath: record.rootPath,
+      normalizedPath: record.normalizedPath,
+      source: 'local',
+      status: record.status,
+      gitRepository: git.gitRepository,
+      branch: git.branch,
+      gitStatus: git.gitStatus,
+      createdAt: record.createdAt,
+      lastActivityAt: record.lastOpenedAt,
+    };
+    const projects = snapshot.projects.some(
+      (item) => item.normalizedPath === project.normalizedPath,
+    )
+      ? snapshot.projects.map((item) =>
+          item.normalizedPath === project.normalizedPath ? project : item,
+        )
+      : [project, ...snapshot.projects];
+    await saveSnapshot({ ...snapshot, projects });
+    appEventBus.emit('project:added', project);
+  }
+
+  return <ProjectsPage service={service} onAddProject={addProject} />;
+}
+
+function AppRouter({
+  repository,
+  projectService,
+}: {
+  repository: PrototypeRepository;
+  projectService: ProjectService;
+}) {
   const { activeWorkspace } = useWorkspace();
   if (resolveAppRoute(activeWorkspace) === 'projects') return <WelcomePage />;
 
@@ -38,7 +92,7 @@ function AppRouter({ repository }: { repository: PrototypeRepository }) {
         <Route element={<WorkbenchShell />}>
           <Route index element={<Navigate replace to="/command-center" />} />
           <Route path="command-center" element={<CommandCenterPage />} />
-          <Route path="projects" element={<ComingSoonPage />} />
+          <Route path="projects" element={<ProjectsRoute service={projectService} />} />
           <Route path="projects/:projectId" element={<ComingSoonPage />} />
           <Route path="sessions/:sessionId" element={<ComingSoonPage />} />
           <Route path="attention" element={<ComingSoonPage />} />
@@ -54,16 +108,22 @@ function AppRouter({ repository }: { repository: PrototypeRepository }) {
 export function App({
   service,
   repository,
+  projectService: suppliedProjectService,
 }: {
   service?: WorkspaceService;
   repository?: PrototypeRepository;
+  projectService?: ProjectService;
 }) {
   const workspaceService = useMemo(() => service ?? createDefaultService(), [service]);
   const prototypeRepository = useMemo(() => repository ?? createDefaultRepository(), [repository]);
+  const projectService = useMemo(
+    () => suppliedProjectService ?? createProjectService(new TauriProjectNativeAdapter()),
+    [suppliedProjectService],
+  );
   return (
     <HashRouter>
       <WorkspaceProvider service={workspaceService}>
-        <AppRouter repository={prototypeRepository} />
+        <AppRouter repository={prototypeRepository} projectService={projectService} />
       </WorkspaceProvider>
     </HashRouter>
   );

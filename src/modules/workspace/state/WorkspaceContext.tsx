@@ -88,7 +88,7 @@ function reducer(state: WorkspaceState, action: WorkspaceAction): WorkspaceState
 }
 
 interface WorkspaceContextValue extends WorkspaceState {
-  chooseAndOpen: () => Promise<void>;
+  chooseAndOpen: () => Promise<WorkspaceRecord | null>;
   openRecent: (id: WorkspaceId) => Promise<void>;
   removeRecent: (id: WorkspaceId) => Promise<void>;
   selectWorkspace: (id: WorkspaceId | null) => void;
@@ -136,20 +136,22 @@ export function WorkspaceProvider({
   }, [reload, service]);
 
   const chooseAndOpen = useCallback(async () => {
-    if (state.pendingAction) return;
+    if (state.pendingAction) return null;
     dispatch({ type: 'pending', action: 'choose' });
     try {
       const record = await service.chooseAndAdd();
       if (!record) {
         dispatch({ type: 'updated', workspaces: await reload() });
-        return;
+        return null;
       }
       const workspace = { id: record.id, name: record.name, rootPath: record.rootPath };
       const workspaces = await reload();
       dispatch({ type: 'opened', workspace, workspaces });
       appEventBus.emit('workspace:opened', workspace);
+      return record;
     } catch (error) {
       dispatch({ type: 'error', message: errorMessage(error), workspaces: await reload() });
+      return null;
     }
   }, [reload, service, state.pendingAction]);
 

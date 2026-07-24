@@ -52,3 +52,26 @@ test('blocks and safely removes a missing workspace', async ({ page }) => {
   await expect(page.getByText('Archived Prototype')).toHaveCount(0);
   await expect(page.getByText('1 workspace')).toBeVisible();
 });
+
+test('manages projects without deleting local files', async ({ page }) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  await page.getByRole('link', { name: 'Projects', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Search projects' }).fill('frontend');
+  await expect(page.getByRole('heading', { name: 'frontend' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'backend-api' })).toHaveCount(0);
+  await page.getByRole('searchbox', { name: 'Search projects' }).fill('');
+
+  await page.getByRole('button', { name: 'Add Project' }).click();
+  await expect(page.getByRole('heading', { name: 'Astra Nexus' })).toBeVisible();
+  await expect(page.getByText('4 projects')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Remove backend-api' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Remove project?' });
+  await expect(dialog).toContainText('Files on disk will not be deleted');
+  await dialog.getByRole('button', { name: 'Remove' }).click();
+  await expect(page.getByRole('heading', { name: 'backend-api' })).toHaveCount(0);
+  await expectNoDocumentOverflow(page);
+});

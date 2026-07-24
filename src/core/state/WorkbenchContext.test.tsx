@@ -5,12 +5,19 @@ import { createDemoSnapshot } from '../../modules/demo';
 import { WorkbenchProvider, useWorkbench } from './WorkbenchContext';
 
 function Probe() {
-  const { loadState, snapshot, warning } = useWorkbench();
+  const { loadState, snapshot, warning, saveSnapshot } = useWorkbench();
   return (
     <div>
       <span>{loadState}</span>
       <span>{snapshot?.projects.length ?? 0} projects</span>
       {warning && <span>{warning}</span>}
+      <button
+        onClick={() => {
+          if (snapshot) void saveSnapshot({ ...snapshot, projects: snapshot.projects.slice(1) });
+        }}
+      >
+        Remove first
+      </button>
     </div>
   );
 }
@@ -58,5 +65,25 @@ describe('WorkbenchProvider', () => {
     expect(() => renderHook(() => useWorkbench())).toThrow(
       'useWorkbench must be used within WorkbenchProvider.',
     );
+  });
+
+  it('persists and publishes an updated snapshot', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => createDemoSnapshot()),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => createDemoSnapshot()),
+      consumeWarning: vi.fn(() => null),
+    };
+    render(
+      <WorkbenchProvider repository={repository}>
+        <Probe />
+      </WorkbenchProvider>,
+    );
+
+    expect(await screen.findByText('3 projects')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Remove first' }));
+    expect(await screen.findByText('2 projects')).toBeVisible();
+    expect(repository.save).toHaveBeenCalledOnce();
   });
 });

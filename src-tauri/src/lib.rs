@@ -4,10 +4,13 @@ mod modules;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             modules::workspace::workspace_inspect_path,
-            modules::workspace::workspace_check_exists
+            modules::workspace::workspace_check_exists,
+            modules::project::project_git_summary,
+            modules::project::system_open_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running Astra Nexus");

@@ -42,7 +42,7 @@ fn map_io_error(error: io::Error, fallback: &str) -> WorkspaceError {
     }
 }
 
-fn canonical_directory(path: &Path) -> Result<PathBuf, WorkspaceError> {
+pub(crate) fn canonical_directory(path: &Path) -> Result<PathBuf, WorkspaceError> {
     let metadata = fs::metadata(path)
         .map_err(|error| map_io_error(error, "The selected path could not be inspected."))?;
     if !metadata.is_dir() {
@@ -53,6 +53,10 @@ fn canonical_directory(path: &Path) -> Result<PathBuf, WorkspaceError> {
     }
     dunce::canonicalize(path)
         .map_err(|error| map_io_error(error, "The selected folder could not be normalized."))
+}
+
+pub(crate) fn safe_directory(path: &Path) -> Result<PathBuf, String> {
+    canonical_directory(path).map_err(|error| error.message)
 }
 
 fn normalize_for_identity(path: &Path) -> String {

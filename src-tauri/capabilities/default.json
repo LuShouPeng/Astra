@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Minimal desktop permissions for workspace selection and recent metadata.",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open", "store:default"]
+  "permissions": ["core:default", "dialog:allow-open", "store:default", "opener:allow-open-path"]
 }

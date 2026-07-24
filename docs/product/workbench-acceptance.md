@@ -6,23 +6,23 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 
 ## Product Flows
 
-| ID     | Capability                                                                | Required evidence                 | Status  |
-| ------ | ------------------------------------------------------------------------- | --------------------------------- | ------- |
-| US-001 | Add and persist a local project with Git information                      | Service, native and restart tests | pending |
-| US-002 | Expand projects and open Agent Sessions                                   | Component and E2E tests           | pending |
-| US-003 | Synchronize Session status across tree and dashboard                      | Transition and selector tests     | pending |
-| US-004 | Render all seven Timeline event types in time order                       | Contract and component tests      | pending |
-| US-005 | Render changed files, text diff and binary fallback                       | Rust, adapter and component tests | pending |
-| US-006 | Process filtered Attention items and deep-link to Session                 | Store, component and E2E tests    | pending |
-| US-007 | Emit configured desktop notifications and navigate from app notifications | Adapter and E2E tests             | pending |
-| US-008 | Accept or request changes and update Session/Timeline                     | Transition and E2E tests          | pending |
+| ID     | Capability                                                                | Required evidence                 | Status   |
+| ------ | ------------------------------------------------------------------------- | --------------------------------- | -------- |
+| US-001 | Add and persist a local project with Git information                      | Service, native and restart tests | verified |
+| US-002 | Expand projects and open Agent Sessions                                   | Component and E2E tests           | pending  |
+| US-003 | Synchronize Session status across tree and dashboard                      | Transition and selector tests     | pending  |
+| US-004 | Render all seven Timeline event types in time order                       | Contract and component tests      | pending  |
+| US-005 | Render changed files, text diff and binary fallback                       | Rust, adapter and component tests | pending  |
+| US-006 | Process filtered Attention items and deep-link to Session                 | Store, component and E2E tests    | pending  |
+| US-007 | Emit configured desktop notifications and navigate from app notifications | Adapter and E2E tests             | pending  |
+| US-008 | Accept or request changes and update Session/Timeline                     | Transition and E2E tests          | pending  |
 
 ## Pages And Modules
 
 | Surface         | Minimum scope                                                                                           | Status   |
 | --------------- | ------------------------------------------------------------------------------------------------------- | -------- |
 | Command Center  | Welcome header, four status totals, active Sessions, Attention preview, project matrix, recent activity | pending  |
-| Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | pending  |
+| Projects        | Cards, add/remove/open, search, sort, Git/session/activity fields                                       | verified |
 | Project detail  | Overview, Sessions, Changes, Activity, basic configuration                                              | pending  |
 | Session detail  | Header, Timeline and Changes primary tabs, Tests/Commands/Context secondary tabs                        | pending  |
 | Changes         | File statuses/counts, unified text diff, line numbers, review actions, binary fallback                  | pending  |
@@ -50,8 +50,8 @@ Status values: `pending`, `implemented`, `verified`, `excluded`.
 | Requirement                     | Status   |
 | ------------------------------- | -------- |
 | Add a local project             | verified |
-| Read Git branch                 | pending  |
-| Read Git status                 | pending  |
+| Read Git branch                 | verified |
+| Read Git status                 | verified |
 | Read real text diff             | pending  |
 | Request Changes updates Session | pending  |
 | Notification click navigates    | pending  |

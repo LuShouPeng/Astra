@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  type ReactNode,
+} from 'react';
 import type { WorkbenchSnapshot } from '../contracts/workbenchData';
 import type { PrototypeRepository } from '../data/prototypeRepository';
 
@@ -9,17 +17,21 @@ interface WorkbenchState {
   snapshot: WorkbenchSnapshot | null;
   warning: string | null;
   error: string | null;
+  saving: boolean;
 }
 
 type WorkbenchAction =
   | { type: 'loaded'; snapshot: WorkbenchSnapshot; warning: string | null }
-  | { type: 'failed'; message: string };
+  | { type: 'failed'; message: string }
+  | { type: 'saving' }
+  | { type: 'saved'; snapshot: WorkbenchSnapshot };
 
 const initialState: WorkbenchState = {
   loadState: 'loading',
   snapshot: null,
   warning: null,
   error: null,
+  saving: false,
 };
 
 function reducer(state: WorkbenchState, action: WorkbenchAction): WorkbenchState {
@@ -30,14 +42,20 @@ function reducer(state: WorkbenchState, action: WorkbenchAction): WorkbenchState
         snapshot: action.snapshot,
         warning: action.warning,
         error: null,
+        saving: false,
       };
     case 'failed':
       return { ...state, loadState: 'error', error: action.message };
+    case 'saving':
+      return { ...state, saving: true, error: null };
+    case 'saved':
+      return { ...state, snapshot: action.snapshot, saving: false };
   }
 }
 
 interface WorkbenchContextValue extends WorkbenchState {
   repository: PrototypeRepository;
+  saveSnapshot: (snapshot: WorkbenchSnapshot) => Promise<void>;
 }
 
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
@@ -75,7 +93,24 @@ export function WorkbenchProvider({
     };
   }, [repository]);
 
-  const value = useMemo(() => ({ ...state, repository }), [repository, state]);
+  const saveSnapshot = useCallback(
+    async (snapshot: WorkbenchSnapshot) => {
+      dispatch({ type: 'saving' });
+      try {
+        await repository.save(snapshot);
+        dispatch({ type: 'saved', snapshot });
+      } catch (error) {
+        dispatch({ type: 'failed', message: errorMessage(error) });
+        throw error;
+      }
+    },
+    [repository],
+  );
+
+  const value = useMemo(
+    () => ({ ...state, repository, saveSnapshot }),
+    [repository, saveSnapshot, state],
+  );
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
 }
 

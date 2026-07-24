@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { WorkspaceRecord, WorkspaceService } from '../core/contracts/workspace';
 import type { PrototypeRepository } from '../core/data/prototypeRepository';
 import { createDemoSnapshot } from '../modules/demo';
+import type { ProjectService } from '../modules/projects';
 import { App } from './App';
 
 const record: WorkspaceRecord = {
@@ -57,5 +58,32 @@ describe('App workspace flow', () => {
 
     expect(await screen.findByRole('heading', { name: 'Recent Workspaces' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Command Center' })).not.toBeInTheDocument();
+  });
+
+  it('adds a local project and updates it without creating a duplicate', async () => {
+    const user = userEvent.setup();
+    const repository = createRepository();
+    const projectService: ProjectService = {
+      inspectGit: vi.fn(),
+      inspectRoot: vi.fn(async () => ({
+        gitRepository: true,
+        branch: 'main',
+        gitStatus: 'clean' as const,
+      })),
+      openDirectory: vi.fn(),
+    };
+    render(
+      <App service={createService()} repository={repository} projectService={projectService} />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Open Folder' }));
+    await user.click(await screen.findByRole('link', { name: 'Projects' }));
+    await user.click(await screen.findByRole('button', { name: 'Add Project' }));
+    expect(await screen.findByText('4 projects')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Astra Nexus' })).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Add Project' }));
+    expect(screen.getByText('4 projects')).toBeVisible();
+    expect(repository.save).toHaveBeenCalledTimes(2);
   });
 });

@@ -7,6 +7,7 @@ import './shared/styles/tokens.css';
 import './shared/styles/global.css';
 import './modules/workspace/workspace.css';
 import './modules/command-center/command-center.css';
+import './modules/projects/projects.css';
 import './app/shell/shell.css';
 
 const acceptanceService =
