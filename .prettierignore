@@ -1,0 +1,7 @@
+node_modules
+dist
+coverage
+src-tauri/target
+src-tauri/gen
+pnpm-lock.yaml
+AI-Coding-Workbench-Workspace-PRD (1).md
