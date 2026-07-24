@@ -64,8 +64,8 @@ Status values: `pending`, `implemented`, `verified`, `deferred`, `excluded`.
 | Motion and visual polish | verified |
 | Search and filters       | verified |
 | Actionable empty states  | verified |
-| Keyboard shortcuts       | deferred |
-| Multiple themes          | deferred |
+| Keyboard shortcuts       | verified |
+| Multiple themes          | verified |
 | Demo playback speed      | verified |
 
 ## Cross-Cutting Gates
@@ -109,12 +109,19 @@ visual coverage; no Gemini CLI behavior may be implemented.
 
 ## Release Evidence
 
-- Frontend unit/component suite: 112 tests after the final Command Center slice.
-- E2E suite: two desktop projects at 1280x720 and 1440x900.
+- Frontend unit/component suite: 124 tests passed with statements, branches, functions, and lines
+  above the required coverage threshold.
+- E2E suite: 22 tests passed across desktop projects at 1280x720 and 1440x900.
 - Rust tests cover path confinement and read-only Git behavior.
 - NSIS build produced a current-user installer; the portable EXE launch probe passed.
 - The backup MP4 passed full decode and montage review.
 - The eight-slide PPTX passed slide-by-slide visual review with no observed clipping or overlap.
 
-P2 shortcuts and multiple themes are deferred and documented in `known-issues.md`; they are not
-represented as active controls.
+- Command Center actions add projects, create deterministic simulated tasks, filter status results,
+  and expose full Active Session metadata without invoking an Agent runtime.
+- Session headers expose start time and duration plus message, approval, rejection, local stop,
+  project-open, and review navigation actions. Stop remains a local simulation only.
+- Every Attention type has a specific next action, Agent/Session/time context, and Mark Read support;
+  Request Changes also creates a `review_requested` application notification.
+- Dark, Light, and System themes persist locally. `Alt+1` through `Alt+6` navigate primary pages,
+  and `Ctrl+,` / `Cmd+,` opens Settings while editable controls retain normal keyboard behavior.

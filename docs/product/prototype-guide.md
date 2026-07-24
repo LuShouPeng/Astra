@@ -50,8 +50,19 @@ The application uses hash routes so desktop navigation does not depend on an HTT
 #/sessions/:sessionId?tab=timeline|changes|tests|commands|context
 #/attention
 #/notifications
-#/settings
+#/settings?tab=general|notifications|demo|about
 ```
+
+## Appearance And Shortcuts
+
+- Settings supports persistent Dark, Light, and System themes. System follows the Windows color
+  preference while selected.
+- `Alt+1` through `Alt+6` open Command Center, Projects, Needs Attention, Notifications, Changes,
+  and Settings respectively.
+- `Ctrl+,` on Windows and `Cmd+,` on macOS opens Settings.
+- Navigation shortcuts are ignored while focus is in an input, textarea, select, or editable area.
+- Settings links can open General, Notifications, Demo, or About directly with the `tab` query.
+- The interface and frozen prototype content are English only.
 
 ## Recovery
 

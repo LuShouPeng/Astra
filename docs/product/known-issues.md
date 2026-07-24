@@ -10,8 +10,9 @@
 
 - Claude and Codex are deterministic mocks; Gemini is display-only. Native CLI discovery,
   execution, and Session recovery are intentionally absent.
-- Theme and language selectors are display-only. System-startup integration is marked Coming soon.
-- Keyboard shortcuts beyond normal browser/desktop focus behavior are deferred.
+- Dark, Light, and System themes are functional and persist locally. Localization is not included;
+  the prototype is English only. System-startup integration remains marked Coming soon.
+- Workbench navigation shortcuts are available, but there is no user-configurable shortcut editor.
 - Desktop notifications depend on Windows permission and focus policy; application notifications
   remain available when permission is denied.
 
