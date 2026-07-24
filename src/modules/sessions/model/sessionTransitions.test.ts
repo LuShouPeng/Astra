@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoSnapshot } from '../../demo';
-import { applyFollowUp, SessionTransitionError } from './sessionTransitions';
+import { applyFollowUp, SessionTransitionError, stopSession } from './sessionTransitions';
 
 describe('applyFollowUp', () => {
   it('records a trimmed message and resumes a non-running session deterministically', () => {
@@ -32,5 +32,34 @@ describe('applyFollowUp', () => {
     expect(() => applyFollowUp(snapshot, 'session-backend-gemini', 'Continue', 'now')).toThrow(
       'display-only',
     );
+  });
+});
+
+describe('stopSession', () => {
+  it('stops an active deterministic session and records the transition', () => {
+    const snapshot = createDemoSnapshot();
+    const next = stopSession(snapshot, 'session-backend-claude', '2026-07-24T15:00:00.000Z');
+
+    expect(next.sessions.find((session) => session.id === 'session-backend-claude')).toMatchObject({
+      status: 'stopped',
+      currentAction: 'Stopped by user',
+      updatedAt: '2026-07-24T15:00:00.000Z',
+    });
+    expect(next.timelineEvents.at(-1)).toMatchObject({
+      type: 'status',
+      from: 'running',
+      to: 'stopped',
+      content: 'Session stopped in the local simulation.',
+    });
+    expect(snapshot.sessions[0].status).toBe('running');
+  });
+
+  it('rejects completed, display-only, and missing sessions', () => {
+    const snapshot = createDemoSnapshot();
+    expect(() => stopSession(snapshot, 'session-backend-codex', 'now')).toThrow(
+      'Only active Sessions can be stopped.',
+    );
+    expect(() => stopSession(snapshot, 'session-ai-gemini', 'now')).toThrow('display-only');
+    expect(() => stopSession(snapshot, 'missing', 'now')).toThrow('does not exist');
   });
 });

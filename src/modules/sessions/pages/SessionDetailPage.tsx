@@ -1,12 +1,23 @@
-import { ArrowLeft, Send } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import {
+  ArrowLeft,
+  Check,
+  FolderOpen,
+  GitCompareArrows,
+  MessageSquare,
+  Send,
+  Square,
+  X,
+} from 'lucide-react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { appEventBus } from '../../../core/events/appEventBus';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import { ChangesReview, type ChangesService } from '../../changes';
+import { resolveAttention } from '../../attention';
+import type { ProjectService } from '../../projects';
 import { CommandsView, ContextView, TestsView } from '../components/SessionEventViews';
 import { Timeline } from '../components/Timeline';
-import { applyFollowUp, nextSessionTimestamp } from '../model/sessionTransitions';
+import { applyFollowUp, nextSessionTimestamp, stopSession } from '../model/sessionTransitions';
 
 type SessionTab = 'timeline' | 'changes' | 'tests' | 'commands' | 'context';
 
@@ -16,13 +27,31 @@ function sessionTab(value: string | null): SessionTab {
     : 'timeline';
 }
 
-export function SessionDetailPage({ changesService }: { changesService?: ChangesService }) {
+function formatDuration(startedAt: string, endedAt: string): string {
+  const minutes = Math.max(
+    0,
+    Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 60_000),
+  );
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours === 0) return `${minutes}m`;
+  return remainder === 0 ? `${hours}h` : `${hours}h ${remainder}m`;
+}
+
+export function SessionDetailPage({
+  changesService,
+  projectService,
+}: {
+  changesService?: ChangesService;
+  projectService?: ProjectService;
+}) {
   const { sessionId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const tab = sessionTab(searchParams.get('tab'));
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const followUpRef = useRef<HTMLTextAreaElement>(null);
   if (!snapshot) return <div className="session-state">Loading session...</div>;
   const session = snapshot.sessions.find((item) => item.id === sessionId);
   if (!session)
@@ -37,6 +66,13 @@ export function SessionDetailPage({ changesService }: { changesService?: Changes
   const changes = snapshot.fileChanges.filter((change) => change.sessionId === session.id);
   const tests = events.filter((event) => event.type === 'test');
   const commands = events.filter((event) => event.type === 'command');
+  const approval = snapshot.attentionItems.find(
+    (item) => item.sessionId === session.id && item.type === 'approval' && !item.resolved,
+  );
+  const canStop =
+    !capability.displayOnly && (session.status === 'running' || session.status === 'waiting');
+  const canOpenProject = Boolean(projectService && project?.source === 'local');
+  const duration = formatDuration(session.startedAt, session.completedAt ?? session.updatedAt);
 
   function selectTab(nextTab: SessionTab) {
     setSearchParams(nextTab === 'timeline' ? {} : { tab: nextTab }, { replace: true });
@@ -57,6 +93,49 @@ export function SessionDetailPage({ changesService }: { changesService?: Changes
     }
   }
 
+  async function resolveApproval(action: 'approve' | 'reject') {
+    if (!approval) return;
+    setError(null);
+    try {
+      const previousStatus = session!.status;
+      const next = resolveAttention(snapshot!, approval.id, action);
+      await saveSnapshot(next);
+      const updated = next.sessions.find((item) => item.id === session!.id)!;
+      appEventBus.emit('attention:resolved', {
+        attentionId: approval.id,
+        sessionId: session!.id,
+      });
+      if (updated.status !== previousStatus) {
+        appEventBus.emit('session:status-changed', { session: updated, previousStatus });
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The approval could not be updated.');
+    }
+  }
+
+  async function stop() {
+    setError(null);
+    try {
+      const previousStatus = session!.status;
+      const next = stopSession(snapshot!, session!.id, nextSessionTimestamp(snapshot!));
+      await saveSnapshot(next);
+      const updated = next.sessions.find((item) => item.id === session!.id)!;
+      appEventBus.emit('session:status-changed', { session: updated, previousStatus });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The Session could not be stopped.');
+    }
+  }
+
+  async function openProject() {
+    if (!projectService || !project) return;
+    setError(null);
+    try {
+      await projectService.openDirectory(project);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The project directory could not open.');
+    }
+  }
+
   return (
     <div className="session-page">
       <header className="session-header">
@@ -69,7 +148,8 @@ export function SessionDetailPage({ changesService }: { changesService?: Changes
         </Link>
         <div className="session-header__title">
           <p>
-            {project?.name ?? 'Unknown project'} · {capability.label}
+            {project?.name ?? 'Unknown project'} /{' '}
+            <span className="session-header__provider">{capability.label}</span>
           </p>
           <h1>{session.title}</h1>
         </div>
@@ -77,10 +157,88 @@ export function SessionDetailPage({ changesService }: { changesService?: Changes
         {capability.displayOnly && <span className="display-only-badge">Display only</span>}
       </header>
 
+      <div className="session-header__actions" aria-label="Session actions">
+        <button
+          className="button button--secondary button--compact"
+          type="button"
+          disabled={capability.displayOnly}
+          onClick={() => followUpRef.current?.focus()}
+        >
+          <MessageSquare size={15} aria-hidden="true" />
+          Send Message
+        </button>
+        {approval && (
+          <>
+            <button
+              className="button button--primary button--compact"
+              type="button"
+              disabled={saving}
+              onClick={() => void resolveApproval('approve')}
+            >
+              <Check size={15} aria-hidden="true" />
+              Approve
+            </button>
+            <button
+              className="button button--secondary button--compact"
+              type="button"
+              disabled={saving}
+              onClick={() => void resolveApproval('reject')}
+            >
+              <X size={15} aria-hidden="true" />
+              Reject
+            </button>
+          </>
+        )}
+        {canStop && (
+          <button
+            className="button button--secondary button--compact"
+            type="button"
+            disabled={saving}
+            onClick={() => void stop()}
+          >
+            <Square size={14} aria-hidden="true" />
+            Stop
+          </button>
+        )}
+        <button
+          className="button button--secondary button--compact"
+          type="button"
+          disabled={!canOpenProject}
+          title={canOpenProject ? undefined : 'Only local projects can be opened.'}
+          onClick={() => void openProject()}
+        >
+          <FolderOpen size={15} aria-hidden="true" />
+          Open Project
+        </button>
+        <button
+          className="button button--secondary button--compact"
+          type="button"
+          onClick={() => selectTab('changes')}
+        >
+          <GitCompareArrows size={15} aria-hidden="true" />
+          Review Changes
+        </button>
+      </div>
+
       <div className="session-summary" aria-label="Session summary">
         <span>
           <small>Current action</small>
           {session.currentAction ?? 'No active operation'}
+        </span>
+        <span>
+          <small>Start time</small>
+          <time dateTime={session.startedAt}>
+            {new Intl.DateTimeFormat('en', {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }).format(new Date(session.startedAt))}
+          </time>
+        </span>
+        <span>
+          <small>Duration</small>
+          {duration}
         </span>
         <span>
           <small>Files changed</small>
@@ -123,6 +281,7 @@ export function SessionDetailPage({ changesService }: { changesService?: Changes
       <form className="follow-up" onSubmit={(event) => void submitFollowUp(event)}>
         <label htmlFor="follow-up-message">Follow-up message</label>
         <textarea
+          ref={followUpRef}
           id="follow-up-message"
           value={message}
           onChange={(event) => setMessage(event.target.value)}

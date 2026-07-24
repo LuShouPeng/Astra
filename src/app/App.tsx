@@ -128,7 +128,9 @@ function AppRouter({
           />
           <Route
             path="sessions/:sessionId"
-            element={<SessionDetailPage changesService={changesService} />}
+            element={
+              <SessionDetailPage changesService={changesService} projectService={projectService} />
+            }
           />
           <Route path="attention" element={<AttentionPage />} />
           <Route path="notifications" element={<NotificationsPage />} />

@@ -63,3 +63,43 @@ export function applyFollowUp(
   next.timelineEvents.push(...newEvents);
   return next;
 }
+
+export function stopSession(
+  snapshot: WorkbenchSnapshot,
+  sessionId: string,
+  timestamp: string,
+): WorkbenchSnapshot {
+  const session = snapshot.sessions.find((item) => item.id === sessionId);
+  if (!session) throw new SessionTransitionError('The selected session does not exist.');
+  if (snapshot.providerCapabilities[session.provider].displayOnly) {
+    throw new SessionTransitionError('This provider is display-only in the prototype.');
+  }
+  if (session.status !== 'running' && session.status !== 'waiting') {
+    throw new SessionTransitionError('Only active Sessions can be stopped.');
+  }
+
+  const next = structuredClone(snapshot);
+  const nextSession = next.sessions.find((item) => item.id === sessionId)!;
+  const previousStatus = nextSession.status;
+  nextSession.status = 'stopped';
+  nextSession.currentAction = 'Stopped by user';
+  nextSession.updatedAt = timestamp;
+  nextSession.completedAt = timestamp;
+  nextSession.unread = false;
+  next.attentionItems.forEach((item) => {
+    if (item.sessionId === sessionId && !item.resolved) {
+      item.read = true;
+      item.resolved = true;
+    }
+  });
+  next.timelineEvents.push({
+    id: `event-${sessionId}-stopped-${next.timelineEvents.length + 1}`,
+    sessionId,
+    type: 'status',
+    timestamp,
+    from: previousStatus,
+    to: 'stopped',
+    content: 'Session stopped in the local simulation.',
+  });
+  return next;
+}
