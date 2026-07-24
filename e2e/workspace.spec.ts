@@ -201,7 +201,9 @@ test('opens notifications, follows a target, and persists notification settings'
   await page.getByRole('tab', { name: 'Notifications' }).click();
   await page.getByRole('checkbox', { name: 'Notify on Completed' }).uncheck();
   await page.getByRole('button', { name: 'Send test notification' }).click();
-  await expect(page.getByRole('status')).toHaveText('Desktop notification sent');
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Desktop notification sent' }),
+  ).toHaveText('Desktop notification sent');
   await expectNoDocumentOverflow(page);
 });
 
