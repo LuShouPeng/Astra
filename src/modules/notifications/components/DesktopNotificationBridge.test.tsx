@@ -26,6 +26,7 @@ describe('DesktopNotificationBridge', () => {
     const service: DesktopNotificationService = {
       notify: vi.fn(async () => 'sent' as const),
     };
+    const subscribe = vi.spyOn(appEventBus, 'subscribe');
     render(
       <WorkbenchProvider repository={repository()}>
         <DesktopNotificationBridge service={service} />
@@ -34,6 +35,9 @@ describe('DesktopNotificationBridge', () => {
     );
 
     expect(await screen.findByText('Bridge ready')).toBeVisible();
+    await waitFor(() =>
+      expect(subscribe).toHaveBeenCalledWith('notification:created', expect.any(Function)),
+    );
     const snapshot = createDemoSnapshot();
     act(() => appEventBus.emit('notification:created', snapshot.notifications[0]));
 
