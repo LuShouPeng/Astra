@@ -61,7 +61,7 @@ export function ChangesReview({
     next: WorkbenchSnapshot,
     message: string,
     updates: Array<{ id: string; status: ReviewStatus }>,
-  ) {
+  ): Promise<boolean> {
     setError(null);
     try {
       await saveSnapshot(next);
@@ -73,8 +73,10 @@ export function ChangesReview({
         }),
       );
       setNotice(message);
+      return true;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The review could not be saved.');
+      return false;
     }
   }
 
@@ -108,7 +110,10 @@ export function ChangesReview({
         rerunImmediately,
         timestamp: nextReviewTimestamp(snapshot!),
       });
-      await persist(next, 'Changes requested', [{ id: selected.id, status: 'changes_requested' }]);
+      const saved = await persist(next, 'Changes requested', [
+        { id: selected.id, status: 'changes_requested' },
+      ]);
+      if (!saved) return;
       const updated = next.sessions.find((candidate) => candidate.id === selectedSessionId)!;
       if (updated.status !== previousStatus) {
         appEventBus.emit('session:status-changed', { session: updated, previousStatus });

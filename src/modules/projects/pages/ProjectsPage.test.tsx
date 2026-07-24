@@ -147,4 +147,31 @@ describe('ProjectsPage', () => {
     finishAdd?.();
     expect(await screen.findByRole('button', { name: 'Add Project' })).toBeEnabled();
   });
+
+  it('keeps a failed project removal recoverable', async () => {
+    const user = userEvent.setup();
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => createDemoSnapshot()),
+      save: vi.fn(async () => Promise.reject(new Error('Project registry unavailable.'))),
+      reset: vi.fn(async () => createDemoSnapshot()),
+      consumeWarning: vi.fn(() => null),
+    };
+    const adapter: ProjectNativeAdapter = {
+      gitSummary: vi.fn(),
+      openDirectory: vi.fn(),
+    };
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository}>
+          <ProjectsPage service={createProjectService(adapter)} />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Remove backend-api' }));
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Project registry unavailable.');
+    expect(screen.getByRole('alertdialog', { name: 'Remove project?' })).toBeVisible();
+  });
 });

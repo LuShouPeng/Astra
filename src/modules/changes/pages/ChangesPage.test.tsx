@@ -111,4 +111,25 @@ describe('ChangesPage', () => {
     await user.click(screen.getByRole('button', { name: 'Close request' }));
     expect(screen.queryByRole('form', { name: 'Request Changes' })).not.toBeInTheDocument();
   });
+
+  it('keeps review feedback available when persistence fails', async () => {
+    const user = userEvent.setup();
+    const store = repository();
+    vi.mocked(store.save).mockRejectedValueOnce(new Error('Prototype store unavailable.'));
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={store}>
+          <ChangesPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Request Changes' }));
+    await user.type(screen.getByLabelText('Requested changes'), 'Keep this feedback for retry.');
+    await user.click(screen.getByRole('button', { name: 'Submit request' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Prototype store unavailable.');
+    expect(screen.getByRole('form', { name: 'Request Changes' })).toBeVisible();
+    expect(screen.getByLabelText('Requested changes')).toHaveValue('Keep this feedback for retry.');
+  });
 });

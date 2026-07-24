@@ -47,9 +47,14 @@ export function ProjectsPage({
         (notification) => notification.projectId !== removeTarget.id,
       ),
     };
-    await saveSnapshot(next);
-    appEventBus.emit('project:removed', { projectId: removeTarget.id });
-    setRemoveTarget(null);
+    try {
+      setMessage(null);
+      await saveSnapshot(next);
+      appEventBus.emit('project:removed', { projectId: removeTarget.id });
+      setRemoveTarget(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'The project could not be removed.');
+    }
   }
 
   async function openProject(project: Project) {
