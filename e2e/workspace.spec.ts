@@ -31,6 +31,14 @@ test('opens a recent workspace and returns to Projects', async ({ page }) => {
     'page',
   );
   await expect(page.getByText('2 items need attention')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Active Sessions' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Needs Attention' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project Matrix' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Recent Activity' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /backend-api.*7 changed/s })).toHaveAttribute(
+    'href',
+    '#/projects/project-backend-api',
+  );
   await expectNoDocumentOverflow(page);
 
   await page.getByRole('button', { name: 'Back to Projects' }).click();

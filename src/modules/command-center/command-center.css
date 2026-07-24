@@ -30,6 +30,18 @@
   font-size: var(--text-xs);
 }
 
+.command-center__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.command-center__actions > span {
+  margin-right: var(--space-2);
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+
 .status-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -125,13 +137,23 @@
   font-size: var(--text-xs);
 }
 
-.recent-sessions {
+.dashboard-section {
   margin-top: var(--space-6);
 }
 
 .section-heading h2 {
   margin-top: var(--space-1);
   font-size: var(--text-lg);
+}
+
+.section-heading a {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  text-decoration: none;
+}
+
+.section-heading a:hover {
+  color: var(--color-text);
 }
 
 .session-list {
@@ -189,9 +211,144 @@
   font-size: var(--text-xs);
 }
 
+.dashboard-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: var(--space-6);
+}
+
+.dashboard-list,
+.project-matrix,
+.activity-list {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.dashboard-row {
+  display: grid;
+  min-height: 54px;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.dashboard-row:hover,
+.project-matrix__row:hover,
+.activity-row:hover {
+  background: var(--color-surface-hover);
+}
+
+.dashboard-row > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.dashboard-row strong,
+.dashboard-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-row strong {
+  font-size: var(--text-sm);
+}
+
+.dashboard-row small {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.dashboard-row > svg {
+  color: var(--color-text-subtle);
+}
+
+.priority-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-info);
+}
+
+.priority-dot--high {
+  background: var(--color-warning);
+}
+
+.priority-dot--critical {
+  background: var(--color-danger);
+}
+
+.project-matrix__header,
+.project-matrix__row {
+  display: grid;
+  min-height: 42px;
+  grid-template-columns: minmax(120px, 1fr) repeat(4, 32px) minmax(72px, auto);
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+}
+
+.project-matrix__header {
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-subtle);
+  font-size: 11px;
+}
+
+.project-matrix__row {
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  text-align: center;
+  text-decoration: none;
+}
+
+.project-matrix__header span:first-child,
+.project-matrix__row strong {
+  overflow: hidden;
+  color: var(--color-text);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-row {
+  display: grid;
+  min-height: 42px;
+  grid-template-columns: 110px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  text-decoration: none;
+}
+
+.activity-row strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-row time {
+  color: var(--color-text-subtle);
+}
+
 @media (max-width: 820px) {
   .status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-columns {
+    grid-template-columns: 1fr;
+    gap: 0;
   }
 }
 
@@ -200,9 +357,16 @@
     padding: var(--space-4);
   }
 
-  .command-center__header > span,
+  .command-center__actions > span,
+  .command-center__actions .button--secondary,
   .session-row__action {
     display: none;
+  }
+
+  .command-center__actions .button {
+    min-width: 36px;
+    padding: var(--space-2);
+    font-size: 0;
   }
 
   .session-row {
@@ -214,5 +378,19 @@
     overflow-wrap: anywhere;
     text-overflow: clip;
     white-space: normal;
+  }
+
+  .project-matrix__header,
+  .project-matrix__row {
+    grid-template-columns: minmax(100px, 1fr) repeat(4, 26px) minmax(64px, auto);
+    padding-inline: var(--space-2);
+  }
+
+  .activity-row {
+    grid-template-columns: 86px minmax(0, 1fr);
+  }
+
+  .activity-row time {
+    display: none;
   }
 }
