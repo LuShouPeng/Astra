@@ -146,7 +146,14 @@ export function ChangesReview({
   }
 
   if (!session || changes.length === 0) {
-    return <div className="changes-empty">No changed files are available for review.</div>;
+    return (
+      <div className="changes-empty">
+        <span>No changed files are available for review.</span>
+        <Link className="button button--secondary" to="/projects">
+          Browse Projects
+        </Link>
+      </div>
+    );
   }
 
   return (

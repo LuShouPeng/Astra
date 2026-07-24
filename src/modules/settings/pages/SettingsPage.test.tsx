@@ -73,6 +73,8 @@ describe('SettingsPage', () => {
     );
 
     expect(await screen.findByText('System')).toBeVisible();
+    expect(screen.getByText('English only')).toBeVisible();
+    expect(screen.queryByRole('combobox', { name: 'Language' })).not.toBeInTheDocument();
     expect(screen.getByText('Coming soon')).toBeVisible();
     await user.click(screen.getByRole('tab', { name: 'About' }));
     expect(screen.getByText('0.1.0')).toBeVisible();

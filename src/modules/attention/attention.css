@@ -124,9 +124,15 @@
   text-decoration: none;
 }
 .attention-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
   padding: var(--space-8);
   color: var(--color-text-muted);
   text-align: center;
+}
+.attention-empty .button {
+  text-decoration: none;
 }
 @media (max-width: 760px) {
   .attention-item {

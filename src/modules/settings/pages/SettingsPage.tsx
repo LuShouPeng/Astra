@@ -138,9 +138,7 @@ export function SettingsPage({
                 <strong>Language</strong>
                 <small>Interface language</small>
               </div>
-              <select aria-label="Language" value="en" disabled>
-                <option value="en">English</option>
-              </select>
+              <span className="settings-value">English only</span>
             </div>
             <div className="settings-row">
               <div>
@@ -154,7 +152,7 @@ export function SettingsPage({
                 <strong>Default Project Directory</strong>
                 <small>Selected independently when adding each project</small>
               </div>
-              <span className="settings-value">Folder picker</span>
+              <span className="settings-value">Per-project folder picker</span>
             </div>
           </section>
         )}

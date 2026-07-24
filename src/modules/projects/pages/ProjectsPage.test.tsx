@@ -74,5 +74,7 @@ describe('ProjectsPage', () => {
 
     await user.type(screen.getByRole('searchbox', { name: 'Search projects' }), 'no-match');
     expect(screen.getByText('No projects match this search.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(screen.getByRole('heading', { name: 'backend-api' })).toBeVisible();
   });
 });

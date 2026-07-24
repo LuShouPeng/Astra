@@ -102,6 +102,10 @@ describe('AttentionPage', () => {
     expect(screen.queryByText('Dependency approval required')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry TypeScript typecheck failed' }));
     expect(await screen.findByText('No open items in this filter.')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Return to Command Center' })).toHaveAttribute(
+      'href',
+      '/command-center',
+    );
     expect(store.save).toHaveBeenCalledTimes(2);
   });
 });

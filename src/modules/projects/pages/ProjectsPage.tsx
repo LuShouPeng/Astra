@@ -173,7 +173,14 @@ export function ProjectsPage({
       </section>
 
       {projects.length === 0 && (
-        <div className="projects-empty">No projects match this search.</div>
+        <div className="projects-empty">
+          <span>No projects match this search.</span>
+          {search && (
+            <button className="button button--secondary" onClick={() => setSearch('')}>
+              Clear search
+            </button>
+          )}
+        </div>
       )}
 
       <ConfirmDialog

@@ -34,6 +34,10 @@ describe('NotificationsPage', () => {
     expect(await screen.findByText('0 unread')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Clear read' }));
     expect(await screen.findByText('No notifications')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Open Command Center' })).toHaveAttribute(
+      'href',
+      '/command-center',
+    );
     expect(store.save).toHaveBeenCalledTimes(2);
   });
 

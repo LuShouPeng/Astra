@@ -7,9 +7,9 @@ import { WorkbenchProvider } from '../../../core/state/WorkbenchContext';
 import { createDemoSnapshot } from '../../demo';
 import { ChangesPage } from './ChangesPage';
 
-function repository(): PrototypeRepository {
+function repository(snapshot = createDemoSnapshot()): PrototypeRepository {
   return {
-    load: vi.fn(async () => createDemoSnapshot()),
+    load: vi.fn(async () => snapshot),
     save: vi.fn(async () => undefined),
     reset: vi.fn(async () => createDemoSnapshot()),
     consumeWarning: vi.fn(() => null),
@@ -17,6 +17,24 @@ function repository(): PrototypeRepository {
 }
 
 describe('ChangesPage', () => {
+  it('offers a next step when no changes are available', async () => {
+    const snapshot = createDemoSnapshot();
+    snapshot.fileChanges = [];
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository(snapshot)}>
+          <ChangesPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('No changed files are available for review.')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Browse Projects' })).toHaveAttribute(
+      'href',
+      '/projects',
+    );
+  });
+
   it('switches files, validates feedback, and persists a review request', async () => {
     const user = userEvent.setup();
     const store = repository();

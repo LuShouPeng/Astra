@@ -307,7 +307,12 @@ export function AttentionPage() {
         ))}
       </section>
       {visibleItems.length === 0 && (
-        <div className="attention-empty">No open items in this filter.</div>
+        <div className="attention-empty">
+          <span>No open items in this filter.</span>
+          <Link className="button button--secondary" to="/command-center">
+            Return to Command Center
+          </Link>
+        </div>
       )}
     </div>
   );

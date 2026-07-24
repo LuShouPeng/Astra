@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowUpRight, CheckCircle2, Info, Trash2, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { AppNotification } from '../../../core/contracts/notifications';
 import type { WorkbenchSnapshot } from '../../../core/contracts/workbenchData';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
@@ -157,6 +157,9 @@ export function NotificationsPage() {
           <div className="notifications-empty">
             <CheckCircle2 size={24} aria-hidden="true" />
             <strong>{filter === 'unread' ? 'No unread notifications' : 'No notifications'}</strong>
+            <Link className="button button--secondary" to="/command-center">
+              Open Command Center
+            </Link>
           </div>
         )}
       </section>
