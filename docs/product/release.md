@@ -24,8 +24,8 @@ The native outputs are created under `src-tauri/target/release/` and
 ## SHA-256
 
 ```text
-EBD1DE5D7C2E65BFD447DBC73BB796835602F9656EE903CFE7F8E1F1A9A29906  Astra-Nexus-0.1.0-x64-setup.exe
-6866CD66AE5B04AD1696772E62F18076F7755CA996C79950FD6E0564DF4132A0  Astra-Nexus-0.1.0.exe
+ADF0A47A01F2653F58E87864387EF0EC9E292C26B5A605FF6517CE52DEA4622D  Astra-Nexus-0.1.0-x64-setup.exe
+3EF214C4B49936636A3CC98F62B70BAF2FE4BBB35131BEBBFEBFAEABD59E3041  Astra-Nexus-0.1.0.exe
 14A9CADB534124B3A0E06D6AA417EDA4DADCE9382A7BD6F1C5BAAFB1E8243CC3  Astra-Nexus-backup-demo.mp4
 D8085F94261D7F8229395B04258C7F4D4FBA1A17E187D50F9B718BE156174DD9  Astra-Nexus-Roadshow.pptx
 ```
@@ -34,9 +34,9 @@ D8085F94261D7F8229395B04258C7F4D4FBA1A17E187D50F9B718BE156174DD9  Astra-Nexus-Ro
 
 - Portable EXE launched with window title `Astra Nexus` and reported a responsive process.
 - NSIS generation completed with current-user install mode.
-- Frontend verification passed 124 unit/component tests and 22 E2E tests across both configured
+- Frontend verification passed 132 unit/component tests and 22 E2E tests across both configured
   desktop viewports.
-- Rust formatting and all five native unit tests passed before packaging.
+- Rust formatting and all six native unit tests passed before packaging.
 - Demo MP4 fully decoded and was visually sampled across all application scenes.
 - PPTX was rendered and visually inspected slide by slide; speaker notes contain source blocks.
 - Final frontend, E2E, Rust, and release gates are recorded in `workbench-acceptance.md`.
