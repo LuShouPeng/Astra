@@ -301,27 +301,54 @@ fn file_diff(root: &Path, relative_path: &str) -> Result<ProjectFileDiff, Projec
 }
 
 #[tauri::command]
-pub fn project_git_summary(root_path: String) -> Result<ProjectGitSummary, ProjectError> {
-    let canonical = safe_directory(Path::new(&root_path))
-        .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-    inspect_git(&canonical)
+pub async fn project_git_summary(root_path: String) -> Result<ProjectGitSummary, ProjectError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        inspect_git(&canonical)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "Git information could not be read because the background task stopped.",
+        )
+    })?
 }
 
 #[tauri::command]
-pub fn project_git_changes(root_path: String) -> Result<Vec<ProjectGitChange>, ProjectError> {
-    let canonical = safe_directory(Path::new(&root_path))
-        .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-    git_changes(&canonical)
+pub async fn project_git_changes(root_path: String) -> Result<Vec<ProjectGitChange>, ProjectError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        git_changes(&canonical)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "Git changes could not be read because the background task stopped.",
+        )
+    })?
 }
 
 #[tauri::command]
-pub fn project_file_diff(
+pub async fn project_file_diff(
     root_path: String,
     relative_path: String,
 ) -> Result<ProjectFileDiff, ProjectError> {
-    let canonical = safe_directory(Path::new(&root_path))
-        .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-    file_diff(&canonical, &relative_path)
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        file_diff(&canonical, &relative_path)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "The file diff could not be read because the background task stopped.",
+        )
+    })?
 }
 
 #[tauri::command]
@@ -365,12 +392,24 @@ pub fn system_open_file(
 
 #[cfg(test)]
 mod tests {
-    use super::{file_diff, git_changes, inspect_git};
+    use super::{
+        file_diff, git_changes, inspect_git, project_file_diff, project_git_changes,
+        project_git_summary,
+    };
     use git2::{Repository, Signature};
     use std::fs;
     use std::thread;
     use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn assert_future<T: std::future::Future>(_future: T) {}
+
+    #[test]
+    fn git_commands_are_dispatched_as_async_work() {
+        assert_future(project_git_summary(".".to_owned()));
+        assert_future(project_git_changes(".".to_owned()));
+        assert_future(project_file_diff(".".to_owned(), "README.md".to_owned()));
+    }
 
     fn temporary_directory(label: &str) -> std::path::PathBuf {
         let suffix = SystemTime::now()
