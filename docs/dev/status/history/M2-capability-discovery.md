@@ -52,11 +52,31 @@
 | 5 | 真实 Session 创建/执行/停止/恢复 | 🔧 仅 mock | — |
 | 6 | 本地项目 ↔ 真实 Session 关联 | 🔧 数据断开 | — |
 
-## 可验证点（M2 后）
+## 真机验证（2026-07-25，已实测）
 
-- 装了 `claude` CLI 的机器上，启动 app 后 `providerCapabilities.claude.runtimeAvailable`
-  变为 `true`，且带 `version`/`discoveredAt`（此前恒 false）。
-- 未装的 CLI 保持 `runtimeAvailable:false`；gemini 未装时仍 `displayOnly:true`。
+方式：模块内临时测试直接调 `discover_agent_capabilities()` + `cargo test -- --nocapture`
+（不依赖 Tauri），验证后删除。本机三个 CLI 均已安装：
+
+| Provider | runtimeAvailable | version | displayOnly |
+|----------|:---:|---------|:---:|
+| claude | `true` | `2.1.195 (Claude Code)` | false |
+| codex | `true` | `codex-cli 0.145.0` | false |
+| gemini | `true` | `0.52.0` | false（探测到，解禁生效） |
+
+确认：
+- **claude 从 demo 默认 `false` → 探测 `true`**，version 正确解析——探测链路真机成立。
+- **Windows `.cmd` 包装器经 `cmd /C` 解析有效**（三者在 Windows 均为 `.cmd`）。
+
+## ⚠️ 语义边界：探测的是"装没装"，不是"能不能用"
+
+`runtimeAvailable:true` 的当前语义是**"可执行文件存在且 `--version` 成功"**，
+**不代表已授权、能实际运行 Agent**。实证：本机 codex/gemini 虽**未完成账户授权、
+无法实际使用**，但因 `--version` 不需登录仍返回 `true`。
+
+真正的"可用性"（授权、能否启动会话）要到 M3/M4 真正启动进程时才暴露——
+届时未授权的 CLI 会在运行时报授权错误。M3/M4 的错误处理设计需覆盖这一落差：
+**探测通过 ≠ 会话能成功启动**。
+
 - 注意：**目前尚无 UI 直接展示这些值**——变化体现在快照数据层，
   可经 devtools 或后续 UI（M6/M7）观察。能力探测本身已真实工作。
 
