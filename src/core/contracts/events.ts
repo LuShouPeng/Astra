@@ -1,4 +1,5 @@
 import type { AttentionItem } from './attention';
+import type { AgentStreamEvent } from './agents';
 import type { ReviewStatus } from './changes';
 import type { AppNotification } from './notifications';
 import type { Project } from './projects';
@@ -20,4 +21,6 @@ export interface AppEventMap {
   'notification:created': AppNotification;
   'review:updated': { sessionId: string; fileChangeId: string; status: ReviewStatus };
   'demo:reset': { timestamp: string };
+  /** Agent 进程流事件（从 Tauri 的 agent://stream/{id} 桥接而来，M4）。 */
+  'agent:stream': { sessionId: string; event: AgentStreamEvent };
 }

@@ -9,7 +9,11 @@ import {
 } from '../core/data/prototypeRepository';
 import { TauriPrototypeStore } from '../core/data/tauriPrototypeStore';
 import { WorkbenchProvider, useWorkbench } from '../core/state/WorkbenchContext';
-import { discoverCapabilities } from '../modules/agents';
+import {
+  discoverCapabilities,
+  createDefaultAgentRuntimeService,
+  type AgentRuntimeService,
+} from '../modules/agents';
 import { CommandCenterPage } from '../modules/command-center';
 import { AttentionPage } from '../modules/attention';
 import {
@@ -164,6 +168,19 @@ export function App({
   desktopNotifications?: DesktopNotificationService;
 }) {
   useEffect(() => startThemePreference(), []);
+  // M4: expose the agent runtime service on window in dev so the stream bridge
+  // (agent://stream → appEventBus) can be manually verified from devtools until
+  // the UI entry point lands (M6). No-op in production builds.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const runtime: AgentRuntimeService = createDefaultAgentRuntimeService(appEventBus);
+    (globalThis as unknown as { __astraAgentRuntime?: AgentRuntimeService }).__astraAgentRuntime =
+      runtime;
+    return () => {
+      delete (globalThis as unknown as { __astraAgentRuntime?: AgentRuntimeService })
+        .__astraAgentRuntime;
+    };
+  }, []);
   const workspaceService = useMemo(() => service ?? createDefaultService(), [service]);
   const prototypeRepository = useMemo(() => repository ?? createDefaultRepository(), [repository]);
   const projectService = useMemo(
