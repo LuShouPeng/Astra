@@ -322,8 +322,12 @@ fn spawn_process(
 }
 
 /// Starts an agent process for the given session.
+///
+/// Must be `async` so Tauri runs it on its managed tokio runtime — the inner
+/// `command.spawn()` (tokio::process) and `tokio::spawn` reader tasks panic with
+/// "no reactor running" if invoked from a plain sync command (no runtime context).
 #[tauri::command]
-pub fn agent_start(
+pub async fn agent_start(
     config: AgentLaunchConfig,
     app: tauri::AppHandle,
     registry: tauri::State<'_, AgentRegistry>,
