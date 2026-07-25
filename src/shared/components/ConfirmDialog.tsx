@@ -1,4 +1,5 @@
 import { AlertTriangle, X } from 'lucide-react';
+import { useI18n } from '../../core/i18n/I18nContext';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -19,6 +20,7 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
+  const { t } = useI18n();
   if (!open) return null;
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onCancel}>
@@ -30,7 +32,11 @@ export function ConfirmDialog({
         aria-describedby="confirm-dialog-description"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button className="icon-button confirm-dialog__close" aria-label="Close" onClick={onCancel}>
+        <button
+          className="icon-button confirm-dialog__close"
+          aria-label={t('common.close')}
+          onClick={onCancel}
+        >
           <X size={17} />
         </button>
         <div className="confirm-dialog__icon" aria-hidden="true">
@@ -40,10 +46,10 @@ export function ConfirmDialog({
         <p id="confirm-dialog-description">{description}</p>
         <div className="confirm-dialog__actions">
           <button className="button button--secondary" onClick={onCancel} disabled={pending}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button className="button button--danger" onClick={onConfirm} disabled={pending}>
-            {pending ? 'Removing...' : confirmLabel}
+            {pending ? t('common.removing') : confirmLabel}
           </button>
         </div>
       </section>

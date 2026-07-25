@@ -1,5 +1,6 @@
 import { ArrowLeft, Orbit } from 'lucide-react';
 import { Outlet } from 'react-router-dom';
+import { useI18n } from '../../core/i18n/I18nContext';
 import { useWorkbench } from '../../core/state/WorkbenchContext';
 import { useWorkspace } from '../../modules/workspace/state/WorkspaceContext';
 import { ActivityRail } from './ActivityRail';
@@ -22,6 +23,7 @@ function WorkbenchShellContent({
   onClose: () => void;
 }) {
   const { snapshot, warning, saving } = useWorkbench();
+  const { t } = useI18n();
   useWorkbenchShortcuts();
 
   return (
@@ -34,9 +36,13 @@ function WorkbenchShellContent({
         <div className="title-bar__workspace" title={workspaceName}>
           {workspaceName}
         </div>
-        <button className="title-bar__back" onClick={onClose} aria-label="Back to Projects">
+        <button
+          className="title-bar__back"
+          onClick={onClose}
+          aria-label={t('shell.backToProjects')}
+        >
           <ArrowLeft size={15} aria-hidden="true" />
-          <span>Projects</span>
+          <span>{t('nav.projects')}</span>
         </button>
       </header>
       <div className="workbench-shell__body">
@@ -45,7 +51,7 @@ function WorkbenchShellContent({
           {snapshot ? (
             <ProjectSessionTree projects={snapshot.projects} sessions={snapshot.sessions} />
           ) : (
-            <div className="slot-loading" aria-label="Loading project tree" />
+            <div className="slot-loading" aria-label={t('shell.loadingProjectTree')} />
           )}
         </aside>
         <main className="main-slot">

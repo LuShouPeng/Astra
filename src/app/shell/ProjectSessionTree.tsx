@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import type { Project } from '../../core/contracts/projects';
 import type { AgentSession } from '../../core/contracts/sessions';
+import { useI18n } from '../../core/i18n/I18nContext';
 
 const SESSION_RENDER_LIMIT = 30;
 
@@ -13,6 +14,7 @@ export function ProjectSessionTree({
   projects: readonly Project[];
   sessions: readonly AgentSession[];
 }) {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
 
   function toggleProject(projectId: string) {
@@ -25,12 +27,12 @@ export function ProjectSessionTree({
   }
 
   return (
-    <nav className="project-tree" aria-label="Project navigation">
+    <nav className="project-tree" aria-label={t('tree.navigation')}>
       <div className="project-tree__header">
-        <span>Projects</span>
+        <span>{t('nav.projects')}</span>
         <span>{projects.length}</span>
       </div>
-      <div className="project-tree__content" role="tree" aria-label="Projects and sessions">
+      <div className="project-tree__content" role="tree" aria-label={t('tree.projectsAndSessions')}>
         {projects.map((project) => {
           const projectSessions = sessions.filter((session) => session.projectId === project.id);
           const isCollapsed = collapsed.has(project.id);
@@ -45,7 +47,9 @@ export function ProjectSessionTree({
                 <button
                   className="project-tree__toggle"
                   onClick={() => toggleProject(project.id)}
-                  aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${project.name}`}
+                  aria-label={t(isCollapsed ? 'tree.expand' : 'tree.collapse', {
+                    name: project.name,
+                  })}
                 >
                   <ChevronDown className={isCollapsed ? 'is-collapsed' : ''} size={14} />
                 </button>
@@ -53,7 +57,7 @@ export function ProjectSessionTree({
                 <NavLink to={`/projects/${project.id}`}>{project.name}</NavLink>
                 <span
                   className={`git-dot git-dot--${project.gitStatus}`}
-                  title={`Git: ${project.gitStatus}`}
+                  title={t('tree.git', { status: project.gitStatus })}
                 />
               </div>
               {!isCollapsed && (
@@ -67,13 +71,15 @@ export function ProjectSessionTree({
                           fill="currentColor"
                         />
                         <span>{session.title}</span>
-                        {session.unread && <i aria-label="Unread" />}
+                        {session.unread && <i aria-label={t('tree.unread')} />}
                       </NavLink>
                     </div>
                   ))}
                   {projectSessions.length > SESSION_RENDER_LIMIT && (
                     <span className="project-tree__more">
-                      {projectSessions.length - SESSION_RENDER_LIMIT} more sessions
+                      {t('tree.moreSessions', {
+                        count: projectSessions.length - SESSION_RENDER_LIMIT,
+                      })}
                     </span>
                   )}
                 </div>

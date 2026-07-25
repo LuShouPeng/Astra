@@ -1,6 +1,7 @@
 import { FolderOpen, MoreHorizontal, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import type { WorkspaceRecord } from '../../../core/contracts/workspace';
+import { useI18n } from '../../../core/i18n/I18nContext';
 
 interface RecentWorkspaceRowProps {
   workspace: WorkspaceRecord;
@@ -12,8 +13,8 @@ interface RecentWorkspaceRowProps {
   onRemove: () => void;
 }
 
-function formatLastOpened(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+function formatLastOpened(value: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
@@ -28,6 +29,7 @@ export function RecentWorkspaceRow({
   onOpen,
   onRemove,
 }: RecentWorkspaceRowProps) {
+  const { language, t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const missing = workspace.status === 'missing';
 
@@ -49,14 +51,16 @@ export function RecentWorkspaceRow({
         <div className="recent-row__title-line">
           <h3>{workspace.name}</h3>
           <span className={`status-badge status-badge--${workspace.status}`}>
-            {missing ? 'Missing' : 'Available'}
+            {missing ? t('workspace.missing') : t('workspace.available')}
           </span>
         </div>
         <div className="recent-row__meta">
           <span className="recent-row__path" title={workspace.rootPath}>
             {workspace.rootPath}
           </span>
-          <time dateTime={workspace.lastOpenedAt}>{formatLastOpened(workspace.lastOpenedAt)}</time>
+          <time dateTime={workspace.lastOpenedAt}>
+            {formatLastOpened(workspace.lastOpenedAt, language)}
+          </time>
         </div>
       </div>
       <div className="recent-row__actions">
@@ -67,14 +71,14 @@ export function RecentWorkspaceRow({
             onOpen();
           }}
           disabled={missing || disabled}
-          aria-label={`Open ${workspace.name}`}
+          aria-label={t('workspace.openNamed', { name: workspace.name })}
         >
-          {opening ? 'Opening...' : 'Open'}
+          {opening ? t('workspace.opening') : t('workspace.open')}
         </button>
         <div className="menu-anchor">
           <button
             className="icon-button"
-            aria-label={`More actions for ${workspace.name}`}
+            aria-label={t('workspace.moreActions', { name: workspace.name })}
             aria-expanded={menuOpen}
             onClick={(event) => {
               event.stopPropagation();
@@ -93,7 +97,7 @@ export function RecentWorkspaceRow({
                   onRemove();
                 }}
               >
-                Remove from Recent
+                {t('workspace.removeRecent')}
               </button>
             </div>
           )}

@@ -1,13 +1,15 @@
 import { AlertCircle, FolderOpen, Orbit, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { WorkspaceRecord } from '../../../core/contracts/workspace';
+import { useI18n } from '../../../core/i18n/I18nContext';
 import { ConfirmDialog } from '../../../shared/components/ConfirmDialog';
 import { RecentWorkspaceRow } from '../components/RecentWorkspaceRow';
 import { useWorkspace } from '../state/WorkspaceContext';
 
 function LoadingRows() {
+  const { t } = useI18n();
   return (
-    <div className="recent-skeleton" aria-label="Loading recent workspaces">
+    <div className="recent-skeleton" aria-label={t('workspace.loadingRecent')}>
       {[0, 1, 2].map((item) => (
         <div className="recent-skeleton__row" key={item}>
           <span />
@@ -22,6 +24,7 @@ function LoadingRows() {
 }
 
 export function WelcomePage() {
+  const { t } = useI18n();
   const {
     loadState,
     workspaces,
@@ -47,24 +50,24 @@ export function WelcomePage() {
           </span>
           <div>
             <strong>Astra Nexus</strong>
-            <span>AI Coding Workbench</span>
+            <span>{t('workspace.productCategory')}</span>
           </div>
         </div>
         <div className="welcome-actions__body">
-          <p className="eyebrow">Projects</p>
-          <h1>Choose your workspace</h1>
-          <p>Open a local project and continue in a focused desktop workbench.</p>
+          <p className="eyebrow">{t('workspace.eyebrow')}</p>
+          <h1>{t('workspace.chooseTitle')}</h1>
+          <p>{t('workspace.chooseDescription')}</p>
           <button
             className="button button--primary button--open-folder"
             onClick={() => void chooseAndOpen()}
             disabled={busy || loadState === 'loading'}
           >
             {pendingAction === 'choose' ? <span className="spinner" /> : <Plus size={18} />}
-            {pendingAction === 'choose' ? 'Opening...' : 'Open Folder'}
+            {pendingAction === 'choose' ? t('workspace.opening') : t('workspace.openFolder')}
           </button>
         </div>
         <footer>
-          <span>Prototype</span>
+          <span>{t('status.prototype')}</span>
           <span>v0.1.0</span>
         </footer>
       </aside>
@@ -72,11 +75,13 @@ export function WelcomePage() {
       <main className="recent-panel">
         <header className="recent-panel__header">
           <div>
-            <p className="eyebrow">Local projects</p>
-            <h2>Recent Workspaces</h2>
+            <p className="eyebrow">{t('workspace.localProjects')}</p>
+            <h2>{t('workspace.recentTitle')}</h2>
           </div>
           <span>
-            {workspaces.length} {workspaces.length === 1 ? 'workspace' : 'workspaces'}
+            {t(workspaces.length === 1 ? 'workspace.countOne' : 'workspace.countMany', {
+              count: workspaces.length,
+            })}
           </span>
         </header>
 
@@ -84,7 +89,11 @@ export function WelcomePage() {
           <div className="notice" role={error ? 'alert' : 'status'}>
             <AlertCircle size={17} aria-hidden="true" />
             <span>{error ?? warning}</span>
-            <button className="icon-button" aria-label="Dismiss message" onClick={dismissMessage}>
+            <button
+              className="icon-button"
+              aria-label={t('workspace.dismissMessage')}
+              onClick={dismissMessage}
+            >
               <X size={16} />
             </button>
           </div>
@@ -97,11 +106,11 @@ export function WelcomePage() {
             <div className="empty-state__icon" aria-hidden="true">
               <FolderOpen size={24} />
             </div>
-            <h3>No recent workspaces</h3>
-            <p>Open a local folder to add it here. Your project files stay untouched.</p>
+            <h3>{t('workspace.emptyTitle')}</h3>
+            <p>{t('workspace.emptyDescription')}</p>
           </section>
         ) : (
-          <section className="recent-list" aria-label="Recent workspace list">
+          <section className="recent-list" aria-label={t('workspace.recentList')}>
             {workspaces.map((workspace) => (
               <RecentWorkspaceRow
                 key={workspace.id}
@@ -120,9 +129,11 @@ export function WelcomePage() {
 
       <ConfirmDialog
         open={Boolean(removeTarget)}
-        title="Remove from Recent?"
-        description={`This removes ${removeTarget?.name ?? 'the workspace'} from Astra Nexus only. It will not delete the local folder or any files inside it.`}
-        confirmLabel="Remove"
+        title={t('workspace.removeTitle')}
+        description={t('workspace.removeDescription', {
+          name: removeTarget?.name ?? t('workspace.recentTitle'),
+        })}
+        confirmLabel={t('workspace.remove')}
         pending={removeTarget ? pendingAction === `remove:${removeTarget.id}` : false}
         onCancel={() => setRemoveTarget(null)}
         onConfirm={() => {
