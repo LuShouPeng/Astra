@@ -37,6 +37,18 @@ export function LiveSessionProvider({
 
   useEffect(() => () => service.dispose(), [service]);
 
+  // M5 dev 钩子：M6 尚未提供启动 UI，dev 下把 live 服务挂到 window，
+  // 便于 devtools 手动驱动 createLiveSession 做真机验证。生产 no-op。
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (globalThis as unknown as { __astraLiveSessions?: LiveSessionService }).__astraLiveSessions =
+      service;
+    return () => {
+      delete (globalThis as unknown as { __astraLiveSessions?: LiveSessionService })
+        .__astraLiveSessions;
+    };
+  }, [service]);
+
   return <LiveSessionContext.Provider value={service}>{children}</LiveSessionContext.Provider>;
 }
 

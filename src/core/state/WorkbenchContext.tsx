@@ -283,6 +283,17 @@ export function WorkbenchProvider({
     }),
     [flushPending, repository, resetSnapshot, saveSnapshot, state, updateSnapshot],
   );
+  // [B1] dev 钩子：把 updateSnapshot 挂到 window，便于 devtools 制造 memory-only
+  // 脏状态验证关闭前落盘。生产 no-op。
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (globalThis as unknown as { __astraUpdateSnapshot?: typeof updateSnapshot }).__astraUpdateSnapshot =
+      updateSnapshot;
+    return () => {
+      delete (globalThis as unknown as { __astraUpdateSnapshot?: typeof updateSnapshot })
+        .__astraUpdateSnapshot;
+    };
+  }, [updateSnapshot]);
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
 }
 

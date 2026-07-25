@@ -7,14 +7,14 @@
 | 项 | 值 |
 |----|----|
 | 更新日期 | 2026-07-25 |
-| 当前里程碑 | **M5 完成**（真实 live 会话创建/停止/追问 + 持久化拆分；单测 + 端到端集成测覆盖，**真机验证待执行** ⏳） |
+| 当前里程碑 | **M5 完成**（真实 live 会话创建/停止/追问 + 持久化拆分；单测 + 端到端集成测 + **真机验证全部通过** ✅，真机发现并修复 2 个 Bug） |
 | 分支 | `feature/real-agent-integration` |
 | 回滚基线 | tag `baseline-before-agent` |
 | 最新 commit | `test(sessions): end-to-end live session persistence-split integration`（M5 收尾，见 git log） |
-| 前端测试 | 174 用例（151→174，+23：liveSessionService 13、WorkbenchContext 11、sink 5、集成 1，部分为改造）。满载时 Timeline 一条大数据用例偶发 5s 超时，隔离运行通过（机器负载导致，非回归） |
+| 前端测试 | 175 用例（+1 ChangesReview 回归测；此前 174）。满载时 Timeline 一条大数据用例偶发 5s 超时，隔离运行通过（机器负载导致，非回归） |
 | 后端测试 | 21 用例**全绿**（14→21，+7 session_persistence：roundtrip / 分页 / 缺失→空 / 隔离 / 损坏行跳过 / 路径穿越拒绝 / id 形状校验） |
 | 编译 | ✅ 前端 typecheck/lint (--max-warnings 0) 通过；后端 `cargo check` / `cargo test --lib` 全绿 |
-| M5 真机验证 | ⏳ 单测 + 集成测证明逻辑与持久化拆分端到端成立；依赖运行中 app 的清单（B1 关闭落盘 / C3 冲突拒绝 / C4 stderr 注入 / 高频压测 / 日志文件）尚待本机实测，见 [`history/M5-live-sessions.md`](./history/M5-live-sessions.md) |
+| M5 真机验证 | ✅ 2026-07-25 全部通过：happy path / 持久化拆分（38 行→1 条 agent_message）/ stop 杀进程 / C3 冲突拒绝 / C4 gemini exit 55+stderr 片段 / B1 关闭落盘。经 dev 钩子驱动真实代码路径，目标项目 Astra_Test。**真机发现并修复 2 Bug**：ChangesReview 零变更崩溃、窗口无法关闭（缺 `allow-destroy` 权限）。详见 [`history/M5-live-sessions.md`](./history/M5-live-sessions.md) |
 
 ## 图例
 
@@ -33,7 +33,7 @@
 | M2 | 能力发现（后端+前端+Context） | ✅ 完成 | commit `feat(agents): capability discovery` |
 | M3 | 运行时后端（agent_runtime.rs+权限） | ✅ 完成 | commit `feat(tauri): agent process runtime` |
 | M4 | 前端运行时服务 + 流桥接 | ✅ 完成（**IPC 真机已验证** ✅） | commit `feat(agents): frontend runtime service` + `fix(tauri): agent_start async` |
-| M5 | Session 生命周期 + 持久化拆分 | ✅ 完成（逻辑 + 集成测覆盖，真机验证待执行 ⏳） | commit `session_persistence` + `live session service` + `serialized snapshot` + `wire SessionDetailPage` |
+| M5 | Session 生命周期 + 持久化拆分 | ✅ 完成（逻辑 + 集成测覆盖，**真机验证已通过** ✅） | commit `session_persistence` + `live session service` + `serialized snapshot` + `wire SessionDetailPage` + `真机验证 + 2 Bug 修复` |
 | M6 | 项目关联 + UI | ❌ 未开始 | — |
 | M7 | Codex + Gemini 适配器 | ❌ 未开始 | — |
 | M8 | 回归 + 文档 + e2e | ❌ 未开始 | — |

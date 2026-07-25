@@ -55,7 +55,7 @@ export function ChangesReview({
   const project = snapshot.projects.find((candidate) => candidate.id === session?.projectId);
   const displayOnly = session ? snapshot.providerCapabilities[session.provider].displayOnly : false;
   const canOpenFile = Boolean(
-    service && project?.source === 'local' && project.status === 'available' && !selected.binary,
+    service && project?.source === 'local' && project.status === 'available' && !selected?.binary,
   );
 
   async function persist(

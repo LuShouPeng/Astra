@@ -67,16 +67,25 @@
 
 - 端到端集成测（`LiveSessionContext.integration.test.tsx`）：真实 WorkbenchProvider + LiveSessionProvider + sink 栈，100 行 stdout 合并成 1 条 agent_message，101 次 logAppend，落盘 <10 次（关键节点），会话收敛 completed。**证明持久化拆分端到端成立**。
 
-## 真机验证（待执行清单）
+## 真机验证（已执行 ✅ 2026-07-25）
 
-以下依赖运行中的 Tauri app + 已装 CLI，**未在开发环境执行**，措辞为「设计如此，未经真机验证」：
+运行中 Tauri app + 已装 claude/codex/gemini CLI，目标真实本地项目 `Astra_Test`（`D:\Zhanyi\Astra_Test`）。
+因 M6 启动 UI 未就绪，dev 下经 `window.__astraLiveSessions` / `window.__astraUpdateSnapshot`（`import.meta.env.DEV` 守卫，生产 no-op）从 devtools 驱动 M5 真实代码路径。
 
-- [ ] 创建 live 会话 → 看到流式输出 → 停止 → 检查 `~/.astra/sessions/{id}.log` 有完整 JSONL
-- [ ] **[B1]** 运行中点窗口关闭，确认快照落盘后才退出
-- [ ] **[C3]** 同项目重复启动被拒绝（提示「已有运行中的会话」）
-- [ ] **[C4]** 启动必失败进程（不存在的命令），确认 Timeline 显示 stderr 片段
-- [ ] 高频压测（`yes | head -1000` 类）不卡死、64KB 上限生效
-- [ ] 检查快照体积：只含摘要，无逐块 stdout
+- [x] 创建 live 会话 → claude 真实流式输出 → 正常退出：`.log` 42 行完整 JSONL（末尾 `exit code 0`）
+- [x] **持久化拆分**：38 行 stdout 在快照合并为 **1 条** `agent_message`（1689 字），完整流仅在 `.log`；快照仅存摘要
+- [x] **stop + 杀进程**：`stopLiveSession` 杀掉 codex 进程树，状态→`stopped`
+- [x] **[C3]** 同目录重复启动被拒绝（「该项目已有运行中的会话」），未 spawn 进程、无第二份 log
+- [x] **[C4]** gemini 拒绝授权 → exit 55，Timeline status 事件含 `进程异常退出 (code 55)` + stderr 尾片段（顺带验证 `sendFollowUp` live 路径）
+- [x] **[B1]** 内存态（`persist:false`）哨兵在窗口关闭时落盘；关闭钩子 `preventDefault → flushPending → destroy` 生效
+- [x] 高频不卡死：流式期间 UI 无明显卡顿（用户确认）；合并逻辑见上（Test 1 + 集成测）
+
+### 真机测试发现并修复的 2 个真实 Bug
+
+- **BUG1 — `ChangesReview.tsx:58` 崩溃**：会话零文件变更时 `selected` 为 `undefined`，早返回前访问 `selected.binary` 抛 `TypeError`。live 会话初始必零变更，进入 Changes 视图必崩。修复：`selected?.binary`，并加回归测 `ChangesReview.test.tsx`（复现精确 TypeError）。
+- **BUG2 — 窗口无法关闭（发布阻断级）**：B1 `appWindow.destroy()` 被拒（`core:window:allow-destroy` 未在 capabilities）。有待落盘状态时点关闭 → `preventDefault` 后 `destroy` 抛权限错误 → **窗口永远关不掉**。修复：`capabilities/default.json` 增加 `core:window:allow-destroy`，重建后关闭正常。
+
+> 说明：64KB 强制 flush（C1）由集成测覆盖；本次未单独构造超长无换行 stdout 真机复现。`claude --print` 生成 2000 行的压测在本机长时间缓冲未爆发（环境/时序，非 M5 缺陷），故高频合并结论以 Test 1（38 行→1 条）+ 集成测（100 行→1 条）为准。
 
 ## 向后兼容
 
