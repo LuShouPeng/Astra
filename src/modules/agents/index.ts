@@ -9,7 +9,9 @@ export {
   type StreamListener,
   type StreamUnsubscribe,
 } from './services/agentRuntimeService';
+export { buildLaunchConfig, type AdapterInput } from './adapters/agentAdapter';
 export {
-  buildLaunchConfig,
-  type AdapterInput,
-} from './adapters/agentAdapter';
+  defaultAgentAuthService,
+  TauriAgentAuthService,
+  type AgentAuthService,
+} from './services/agentAuthService';

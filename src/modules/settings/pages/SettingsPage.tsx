@@ -1,27 +1,32 @@
-import { BellRing, Info, MonitorCog, Play } from 'lucide-react';
+import { BellRing, Bot, ExternalLink, Info, MonitorCog, Play } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { AppNotification, NotificationSettings } from '../../../core/contracts/notifications';
+import type { AgentProvider } from '../../../core/contracts/agents';
 import {
   loadThemePreference,
   saveThemePreference,
   type ThemePreference,
 } from '../../../core/preferences/appearance';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
+import { defaultAgentAuthService, type AgentAuthService } from '../../agents';
 import { DemoControls } from '../../demo';
 import type { DesktopNotificationService } from '../../notifications';
 
-type SettingsTab = 'general' | 'notifications' | 'demo' | 'about';
+type SettingsTab = 'general' | 'agents' | 'notifications' | 'demo' | 'about';
 
 const tabs: Array<{ id: SettingsTab; label: string }> = [
   { id: 'general', label: 'General' },
+  { id: 'agents', label: 'Agents' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'demo', label: 'Demo' },
   { id: 'about', label: 'About' },
 ];
 
 function settingsTab(value: string | null): SettingsTab {
-  return value === 'notifications' || value === 'demo' || value === 'about' ? value : 'general';
+  return value === 'agents' || value === 'notifications' || value === 'demo' || value === 'about'
+    ? value
+    : 'general';
 }
 
 const testNotification: AppNotification = {
@@ -36,8 +41,10 @@ const testNotification: AppNotification = {
 
 export function SettingsPage({
   desktopNotifications,
+  agentAuth = defaultAgentAuthService,
 }: {
   desktopNotifications?: DesktopNotificationService;
+  agentAuth?: AgentAuthService;
 }) {
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -46,6 +53,7 @@ export function SettingsPage({
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sendingTest, setSendingTest] = useState(false);
+  const [openingLogin, setOpeningLogin] = useState<AgentProvider | null>(null);
 
   if (!snapshot) return <div className="settings-state">Loading settings...</div>;
 
@@ -82,6 +90,24 @@ export function SettingsPage({
       setError('The desktop notification could not be sent.');
     } finally {
       setSendingTest(false);
+    }
+  }
+
+  async function openAgentLogin(provider: AgentProvider) {
+    if (openingLogin) return;
+    setOpeningLogin(provider);
+    setError(null);
+    setNotice(null);
+    try {
+      await agentAuth.openLogin(provider);
+      const label = provider === 'claude' ? 'Claude' : 'Codex';
+      setNotice(
+        `${label} login terminal opened. Complete authentication there, then return to Astra.`,
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Agent login terminal could not open.');
+    } finally {
+      setOpeningLogin(null);
     }
   }
 
@@ -249,6 +275,45 @@ export function SettingsPage({
                 {sendingTest ? 'Sending notification' : 'Send test notification'}
               </button>
             </div>
+          </section>
+        )}
+
+        {tab === 'agents' && (
+          <section className="settings-section" aria-labelledby="agent-settings-title">
+            <header>
+              <Bot size={20} aria-hidden="true" />
+              <div>
+                <h2 id="agent-settings-title">Agents</h2>
+                <p>Installed command-line providers</p>
+              </div>
+            </header>
+            {Object.values(snapshot.providerCapabilities).map((capability) => (
+              <div className="settings-row" key={capability.provider}>
+                <div>
+                  <strong>{capability.label}</strong>
+                  <small>
+                    {capability.runtimeAvailable
+                      ? (capability.version ?? 'CLI detected')
+                      : 'CLI not detected'}
+                  </small>
+                </div>
+                {capability.provider === 'claude' || capability.provider === 'codex' ? (
+                  <button
+                    className="button button--secondary"
+                    aria-label={`Log in to ${capability.label}`}
+                    disabled={!capability.runtimeAvailable || openingLogin !== null}
+                    onClick={() => void openAgentLogin(capability.provider)}
+                  >
+                    <ExternalLink size={15} aria-hidden="true" />
+                    {openingLogin === capability.provider ? 'Opening terminal' : 'Log in'}
+                  </button>
+                ) : (
+                  <span className="settings-value">
+                    {capability.runtimeAvailable ? 'Available' : 'Unavailable'}
+                  </span>
+                )}
+              </div>
+            ))}
           </section>
         )}
 

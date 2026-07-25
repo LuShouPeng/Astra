@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrototypeRepository } from '../../../core/data/prototypeRepository';
 import { WorkbenchProvider } from '../../../core/state/WorkbenchContext';
 import { createDemoSnapshot } from '../../demo';
+import type { AgentAuthService } from '../../agents';
 import type { DesktopNotificationService } from '../../notifications';
 import { SettingsPage } from './SettingsPage';
 
@@ -132,5 +133,35 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Sending notification' })).toBeDisabled();
     finishNotification?.('sent');
     expect(await screen.findByRole('button', { name: 'Send test notification' })).toBeEnabled();
+  });
+
+  it('opens Claude login in an interactive terminal from Agent settings', async () => {
+    const user = userEvent.setup();
+    const snapshot = createDemoSnapshot();
+    snapshot.providerCapabilities.claude.runtimeAvailable = true;
+    snapshot.providerCapabilities.claude.version = 'Claude Code 1.0';
+    snapshot.providerCapabilities.codex.runtimeAvailable = true;
+    const store: PrototypeRepository = {
+      ...repository(),
+      load: vi.fn(async () => snapshot),
+    };
+    const agentAuth: AgentAuthService = { openLogin: vi.fn(async () => undefined) };
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={store}>
+          <SettingsPage agentAuth={agentAuth} />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Agents' }));
+    expect(screen.getByText('Claude Code 1.0')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Log in to Claude' }));
+    expect(agentAuth.openLogin).toHaveBeenCalledWith('claude');
+    expect(await screen.findByRole('status')).toHaveTextContent('Claude login terminal opened');
+
+    await user.click(screen.getByRole('button', { name: 'Log in to Codex' }));
+    expect(agentAuth.openLogin).toHaveBeenLastCalledWith('codex');
+    expect(await screen.findByRole('status')).toHaveTextContent('Codex login terminal opened');
   });
 });

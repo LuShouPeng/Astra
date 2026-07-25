@@ -23,6 +23,7 @@ pub fn run() {
             modules::agent_runtime::agent_send_input,
             modules::agent_runtime::agent_stop,
             modules::agent_runtime::agent_list_running,
+            modules::agent_runtime::agent_open_login,
             modules::session_persistence::session_log_append,
             modules::session_persistence::session_log_read
         ])

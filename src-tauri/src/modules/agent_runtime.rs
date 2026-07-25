@@ -407,6 +407,50 @@ pub fn agent_list_running(registry: tauri::State<'_, AgentRegistry>) -> Vec<Stri
     registry.running_ids()
 }
 
+/// Opens Claude Code in a visible interactive terminal. Authentication cannot
+/// run through `agent_start`, whose stdin/stdout are piped for non-interactive sessions.
+#[tauri::command]
+pub fn agent_open_login(provider: String) -> Result<(), AgentError> {
+    let login_command = match provider.as_str() {
+        "claude" => "claude",
+        "codex" => "codex login",
+        _ => {
+            return Err(AgentError::new(
+                "LOGIN_UNSUPPORTED",
+                "Interactive login is currently available only for Claude and Codex.",
+            ));
+        }
+    };
+
+    #[cfg(windows)]
+    let result = {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        let mut command = std::process::Command::new("cmd.exe");
+        command
+            .args(["/K", login_command])
+            .creation_flags(CREATE_NEW_CONSOLE);
+        command.spawn()
+    };
+
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            &format!("tell application \"Terminal\" to do script \"{login_command}\""),
+        ])
+        .spawn();
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let result = std::process::Command::new("x-terminal-emulator")
+        .args(["-e", "sh", "-lc", login_command])
+        .spawn();
+
+    result
+        .map(|_| ())
+        .map_err(|error| AgentError::new("LOGIN_TERMINAL_FAILED", error.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -510,5 +554,11 @@ mod tests {
     #[test]
     fn provider_argv_rejects_unknown() {
         assert!(provider_argv("unknown", "test", None).is_none());
+    }
+
+    #[test]
+    fn login_rejects_unsupported_providers_before_spawning() {
+        let error = agent_open_login("gemini".to_owned()).unwrap_err();
+        assert_eq!(error.code, "LOGIN_UNSUPPORTED");
     }
 }
