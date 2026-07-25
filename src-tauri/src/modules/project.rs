@@ -1,6 +1,6 @@
 use git2::{
     BranchType, Delta, DiffFormat, DiffOptions, IndexAddOption, Oid, Patch, Repository,
-    ResetType, Signature, StatusOptions, Worktree,
+    ResetType, Signature, StatusOptions,
 };
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -455,11 +455,11 @@ pub struct GitWorktreeInfo {
     branch: Option<String>,
 }
 
-fn get_signature(
-    repository: &Repository,
-    author_name: Option<&str>,
-    author_email: Option<&str>,
-) -> Result<Signature, ProjectError> {
+fn get_signature<'a>(
+    repository: &'a Repository,
+    author_name: Option<&'a str>,
+    author_email: Option<&'a str>,
+) -> Result<Signature<'a>, ProjectError> {
     if let (Some(name), Some(email)) = (author_name, author_email) {
         return Signature::now(name, email).map_err(|_| {
             ProjectError::new("INVALID_SIGNATURE", "Invalid author name or email provided.")
@@ -474,7 +474,7 @@ fn get_signature(
     })
 }
 
-fn git_commit(root: &Path, request: GitCommitRequest) -> Result<GitCommitResult, ProjectError> {
+fn git_commit_impl(root: &Path, request: GitCommitRequest) -> Result<GitCommitResult, ProjectError> {
     let repository = open_repository(root)?;
     let mut index = repository.index().map_err(|_| {
         ProjectError::new("GIT_UNAVAILABLE", "Could not access git index.")
@@ -555,7 +555,7 @@ fn git_commit(root: &Path, request: GitCommitRequest) -> Result<GitCommitResult,
     })
 }
 
-fn git_checkout(root: &Path, request: GitCheckoutRequest) -> Result<(), ProjectError> {
+fn git_checkout_impl(root: &Path, request: GitCheckoutRequest) -> Result<(), ProjectError> {
     let repository = open_repository(root)?;
 
     if request.create_new {
@@ -609,7 +609,7 @@ fn git_checkout(root: &Path, request: GitCheckoutRequest) -> Result<(), ProjectE
     Ok(())
 }
 
-fn git_merge(root: &Path, request: GitMergeRequest) -> Result<GitMergeResult, ProjectError> {
+fn git_merge_impl(root: &Path, request: GitMergeRequest) -> Result<GitMergeResult, ProjectError> {
     let repository = open_repository(root)?;
 
     // Find the branch to merge
@@ -634,9 +634,13 @@ fn git_merge(root: &Path, request: GitMergeRequest) -> Result<GitMergeResult, Pr
         ProjectError::new("GIT_MERGE_FAILED", "Could not find HEAD commit.")
     })?;
 
+    let annotated_commit = repository
+        .find_annotated_commit(branch_commit.id())
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not resolve branch commit."))?;
+
     // Perform the merge analysis
     let analysis = repository
-        .merge_analysis(&[&branch_commit.as_object().id()])
+        .merge_analysis(&[&annotated_commit])
         .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not analyze merge."))?;
 
     if analysis.0.is_up_to_date() {
@@ -736,7 +740,7 @@ fn git_merge(root: &Path, request: GitMergeRequest) -> Result<GitMergeResult, Pr
     })
 }
 
-fn git_reset(root: &Path, request: GitResetRequest) -> Result<(), ProjectError> {
+fn git_reset_impl(root: &Path, request: GitResetRequest) -> Result<(), ProjectError> {
     let repository = open_repository(root)?;
 
     let reset_type = match request.reset_type.as_str() {
@@ -774,7 +778,7 @@ fn git_reset(root: &Path, request: GitResetRequest) -> Result<(), ProjectError> 
     Ok(())
 }
 
-fn git_worktree_list(root: &Path) -> Result<Vec<GitWorktreeInfo>, ProjectError> {
+fn git_worktree_list_impl(root: &Path) -> Result<Vec<GitWorktreeInfo>, ProjectError> {
     let repository = open_repository(root)?;
 
     let worktrees = repository.worktrees().map_err(|_| {
@@ -810,7 +814,7 @@ fn git_worktree_list(root: &Path) -> Result<Vec<GitWorktreeInfo>, ProjectError> 
     Ok(result)
 }
 
-fn git_worktree_create(
+fn git_worktree_create_impl(
     root: &Path,
     request: GitWorktreeCreateRequest,
 ) -> Result<GitWorktreeInfo, ProjectError> {
@@ -829,18 +833,24 @@ fn git_worktree_create(
         ProjectError::new("GIT_WORKTREE_FAILED", "Could not create worktree directory.")
     })?;
 
-    let branch_name = request.branch_name.as_deref().unwrap_or(&request.name);
+    let branch_name = request
+        .branch_name
+        .clone()
+        .unwrap_or_else(|| request.name.clone());
+
+    // Resolve the branch reference to attach the worktree to, if it exists.
+    let branch_ref = repository
+        .find_reference(&format!("refs/heads/{}", branch_name))
+        .ok();
+
+    let mut add_options = git2::WorktreeAddOptions::new();
+    if let Some(ref reference) = branch_ref {
+        add_options.reference(Some(reference));
+    }
 
     // Create the worktree
     repository
-        .worktree(
-            &request.name,
-            &worktree_path,
-            Some(
-                git2::WorktreeAddOptions::new()
-                    .reference(Some(&format!("refs/heads/{}", branch_name))),
-            ),
-        )
+        .worktree(&request.name, &worktree_path, Some(&add_options))
         .map_err(|e| {
             ProjectError::new(
                 "GIT_WORKTREE_FAILED",
@@ -855,7 +865,7 @@ fn git_worktree_create(
     })
 }
 
-fn git_worktree_remove(root: &Path, name: String) -> Result<(), ProjectError> {
+fn git_worktree_remove_impl(root: &Path, name: String) -> Result<(), ProjectError> {
     let repository = open_repository(root)?;
 
     let worktree = repository.find_worktree(&name).map_err(|_| {
@@ -896,7 +906,7 @@ pub async fn git_commit(
     tauri::async_runtime::spawn_blocking(move || {
         let canonical = safe_directory(Path::new(&root_path))
             .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-        git_commit(&canonical, request)
+        git_commit_impl(&canonical, request)
     })
     .await
     .map_err(|_| {
@@ -915,7 +925,7 @@ pub async fn git_checkout(
     tauri::async_runtime::spawn_blocking(move || {
         let canonical = safe_directory(Path::new(&root_path))
             .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-        git_checkout(&canonical, request)
+        git_checkout_impl(&canonical, request)
     })
     .await
     .map_err(|_| {
@@ -934,7 +944,7 @@ pub async fn git_merge(
     tauri::async_runtime::spawn_blocking(move || {
         let canonical = safe_directory(Path::new(&root_path))
             .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-        git_merge(&canonical, request)
+        git_merge_impl(&canonical, request)
     })
     .await
     .map_err(|_| {
@@ -950,7 +960,7 @@ pub async fn git_reset(root_path: String, request: GitResetRequest) -> Result<()
     tauri::async_runtime::spawn_blocking(move || {
         let canonical = safe_directory(Path::new(&root_path))
             .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-        git_reset(&canonical, request)
+        git_reset_impl(&canonical, request)
     })
     .await
     .map_err(|_| {
@@ -966,7 +976,7 @@ pub async fn git_worktree_list(root_path: String) -> Result<Vec<GitWorktreeInfo>
     tauri::async_runtime::spawn_blocking(move || {
         let canonical = safe_directory(Path::new(&root_path))
             .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-        git_worktree_list(&canonical)
+        git_worktree_list_impl(&canonical)
     })
     .await
     .map_err(|_| {
@@ -985,7 +995,7 @@ pub async fn git_worktree_create(
     tauri::async_runtime::spawn_blocking(move || {
         let canonical = safe_directory(Path::new(&root_path))
             .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-        git_worktree_create(&canonical, request)
+        git_worktree_create_impl(&canonical, request)
     })
     .await
     .map_err(|_| {
@@ -1001,7 +1011,7 @@ pub async fn git_worktree_remove(root_path: String, name: String) -> Result<(), 
     tauri::async_runtime::spawn_blocking(move || {
         let canonical = safe_directory(Path::new(&root_path))
             .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
-        git_worktree_remove(&canonical, name)
+        git_worktree_remove_impl(&canonical, name)
     })
     .await
     .map_err(|_| {
