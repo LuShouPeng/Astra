@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrototypeRepository } from '../../../core/data/prototypeRepository';
+import { I18nProvider } from '../../../core/i18n/I18nContext';
 import { WorkbenchProvider } from '../../../core/state/WorkbenchContext';
 import { createDemoSnapshot } from '../../demo';
 import type { DesktopNotificationService } from '../../notifications';
@@ -62,23 +63,26 @@ describe('SettingsPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Desktop notification sent');
   });
 
-  it('shows general and about product metadata without live controls', async () => {
+  it('switches and persists the interface language', async () => {
     const user = userEvent.setup();
+    localStorage.clear();
     render(
       <MemoryRouter>
-        <WorkbenchProvider repository={repository()}>
-          <SettingsPage />
-        </WorkbenchProvider>
+        <I18nProvider>
+          <WorkbenchProvider repository={repository()}>
+            <SettingsPage />
+          </WorkbenchProvider>
+        </I18nProvider>
       </MemoryRouter>,
     );
 
     expect(await screen.findByText('System')).toBeVisible();
-    expect(screen.getByText('English only')).toBeVisible();
-    expect(screen.queryByRole('combobox', { name: 'Language' })).not.toBeInTheDocument();
-    expect(screen.getByText('Coming soon')).toBeVisible();
-    await user.click(screen.getByRole('tab', { name: 'About' }));
-    expect(screen.getByText('0.1.0')).toBeVisible();
-    expect(screen.getByText(/Tauri 2/)).toBeVisible();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Language' }), 'zh-CN');
+
+    expect(await screen.findByRole('heading', { name: '设置' })).toBeVisible();
+    expect(screen.getByRole('tab', { name: '通用' })).toBeVisible();
+    expect(localStorage.getItem('astra-nexus.language')).toBe('zh-CN');
+    expect(document.documentElement.lang).toBe('zh-CN');
   });
 
   it('controls deterministic demo playback and resets frozen data', async () => {

@@ -58,6 +58,7 @@ export default tseslint.config(
     files: [
       'src/modules/workspace/state/WorkspaceContext.tsx',
       'src/core/state/WorkbenchContext.tsx',
+      'src/core/i18n/I18nContext.tsx',
     ],
     rules: {
       'react-refresh/only-export-components': 'off',

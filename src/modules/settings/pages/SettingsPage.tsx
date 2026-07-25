@@ -2,6 +2,8 @@ import { BellRing, Info, MonitorCog, Play } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { AppNotification, NotificationSettings } from '../../../core/contracts/notifications';
+import { useI18n } from '../../../core/i18n/I18nContext';
+import type { AppLanguage } from '../../../core/i18n/language';
 import {
   loadThemePreference,
   saveThemePreference,
@@ -12,13 +14,6 @@ import { DemoControls } from '../../demo';
 import type { DesktopNotificationService } from '../../notifications';
 
 type SettingsTab = 'general' | 'notifications' | 'demo' | 'about';
-
-const tabs: Array<{ id: SettingsTab; label: string }> = [
-  { id: 'general', label: 'General' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'demo', label: 'Demo' },
-  { id: 'about', label: 'About' },
-];
 
 function settingsTab(value: string | null): SettingsTab {
   return value === 'notifications' || value === 'demo' || value === 'about' ? value : 'general';
@@ -40,12 +35,19 @@ export function SettingsPage({
   desktopNotifications?: DesktopNotificationService;
 }) {
   const { snapshot, saveSnapshot, saving } = useWorkbench();
+  const { language, setLanguage, t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = settingsTab(searchParams.get('tab'));
   const [theme, setTheme] = useState<ThemePreference>(() => loadThemePreference());
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sendingTest, setSendingTest] = useState(false);
+  const tabs = [
+    { id: 'general' as const, label: t('settings.tabs.general') },
+    { id: 'notifications' as const, label: t('settings.tabs.notifications') },
+    { id: 'demo' as const, label: t('settings.tabs.demo') },
+    { id: 'about' as const, label: t('settings.tabs.about') },
+  ];
 
   if (!snapshot) return <div className="settings-state">Loading settings...</div>;
 
@@ -88,10 +90,10 @@ export function SettingsPage({
   return (
     <div className="settings-page">
       <header className="settings-header">
-        <p className="eyebrow">Workbench preferences</p>
-        <h1>Settings</h1>
+        <p className="eyebrow">{t('settings.eyebrow')}</p>
+        <h1>{t('settings.title')}</h1>
       </header>
-      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+      <div className="settings-tabs" role="tablist" aria-label={t('settings.sections')}>
         {tabs.map((item) => (
           <button
             key={item.id}
@@ -114,17 +116,17 @@ export function SettingsPage({
             <header>
               <MonitorCog size={20} aria-hidden="true" />
               <div>
-                <h2 id="general-settings-title">General</h2>
-                <p>Local application defaults</p>
+                <h2 id="general-settings-title">{t('settings.tabs.general')}</h2>
+                <p>{t('settings.general.description')}</p>
               </div>
             </header>
             <div className="settings-row">
               <div>
-                <strong>Theme</strong>
-                <small>Application appearance</small>
+                <strong>{t('settings.theme.label')}</strong>
+                <small>{t('settings.theme.description')}</small>
               </div>
               <select
-                aria-label="Theme"
+                aria-label={t('settings.theme.label')}
                 value={theme}
                 onChange={(event) => {
                   const preference = event.target.value as ThemePreference;
@@ -132,31 +134,38 @@ export function SettingsPage({
                   saveThemePreference(preference);
                 }}
               >
-                <option value="system">System</option>
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
+                <option value="system">{t('settings.theme.system')}</option>
+                <option value="dark">{t('settings.theme.dark')}</option>
+                <option value="light">{t('settings.theme.light')}</option>
               </select>
             </div>
             <div className="settings-row">
               <div>
-                <strong>Language</strong>
-                <small>Interface language</small>
+                <strong>{t('settings.language.label')}</strong>
+                <small>{t('settings.language.description')}</small>
               </div>
-              <span className="settings-value">English only</span>
+              <select
+                aria-label={t('settings.language.label')}
+                value={language}
+                onChange={(event) => setLanguage(event.target.value as AppLanguage)}
+              >
+                <option value="en">{t('settings.language.english')}</option>
+                <option value="zh-CN">{t('settings.language.chinese')}</option>
+              </select>
             </div>
             <div className="settings-row">
               <div>
-                <strong>Start on System Startup</strong>
-                <small>Launch Astra Nexus after signing in</small>
+                <strong>{t('settings.startup.label')}</strong>
+                <small>{t('settings.startup.description')}</small>
               </div>
-              <span className="coming-soon-badge">Coming soon</span>
+              <span className="coming-soon-badge">{t('settings.comingSoon')}</span>
             </div>
             <div className="settings-row">
               <div>
-                <strong>Default Project Directory</strong>
-                <small>Selected independently when adding each project</small>
+                <strong>{t('settings.directory.label')}</strong>
+                <small>{t('settings.directory.description')}</small>
               </div>
-              <span className="settings-value">Per-project folder picker</span>
+              <span className="settings-value">{t('settings.directory.value')}</span>
             </div>
           </section>
         )}

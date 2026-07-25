@@ -288,6 +288,23 @@ test('deep-links settings, persists theme, and navigates with shortcuts', async 
   await expectNoDocumentOverflow(page);
 });
 
+test('switches to Simplified Chinese and persists it after reload', async ({ page }) => {
+  await page.goto('/?scenario=populated');
+  await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+  await page.getByRole('link', { name: 'Settings' }).click();
+
+  await page.getByRole('combobox', { name: 'Language' }).selectOption('zh-CN');
+  await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '项目', exact: true })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+  await page.getByRole('button', { name: '打开 Astra Nexus' }).click();
+  await expect(page.getByRole('heading', { name: '控制中心' })).toBeVisible();
+  await expectNoDocumentOverflow(page);
+});
+
 test('keeps every primary client-side page transition below 300ms', async ({ page }) => {
   await page.goto('/?scenario=populated');
   await page.getByRole('button', { name: 'Open Astra Nexus' }).click();

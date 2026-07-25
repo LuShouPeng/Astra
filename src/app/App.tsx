@@ -41,6 +41,7 @@ import { WorkspaceProvider, useWorkspace } from '../modules/workspace/state/Work
 import { resolveAppRoute } from './routes';
 import { WorkbenchShell } from './shell/WorkbenchShell';
 import { startThemePreference } from '../core/preferences/appearance';
+import { I18nProvider } from '../core/i18n/I18nContext';
 
 function createDefaultService(): WorkspaceService {
   return createWorkspaceService(createTauriWorkspaceAdapters());
@@ -178,15 +179,17 @@ export function App({
     [suppliedDesktopNotifications],
   );
   return (
-    <HashRouter>
-      <WorkspaceProvider service={workspaceService}>
-        <AppRouter
-          repository={prototypeRepository}
-          projectService={projectService}
-          changesService={changesService}
-          desktopNotifications={desktopNotifications}
-        />
-      </WorkspaceProvider>
-    </HashRouter>
+    <I18nProvider>
+      <HashRouter>
+        <WorkspaceProvider service={workspaceService}>
+          <AppRouter
+            repository={prototypeRepository}
+            projectService={projectService}
+            changesService={changesService}
+            desktopNotifications={desktopNotifications}
+          />
+        </WorkspaceProvider>
+      </HashRouter>
+    </I18nProvider>
   );
 }
