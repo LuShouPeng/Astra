@@ -9,6 +9,7 @@ import {
 } from '../core/data/prototypeRepository';
 import { TauriPrototypeStore } from '../core/data/tauriPrototypeStore';
 import { WorkbenchProvider, useWorkbench } from '../core/state/WorkbenchContext';
+import { discoverCapabilities } from '../modules/agents';
 import { CommandCenterPage } from '../modules/command-center';
 import { AttentionPage } from '../modules/attention';
 import {
@@ -118,7 +119,7 @@ function AppRouter({
   if (resolveAppRoute(activeWorkspace) === 'projects') return <WelcomePage />;
 
   return (
-    <WorkbenchProvider repository={repository}>
+    <WorkbenchProvider repository={repository} discoverCapabilities={discoverCapabilities}>
       <DesktopNotificationBridge service={desktopNotifications} />
       <Routes>
         <Route element={<WorkbenchShell />}>

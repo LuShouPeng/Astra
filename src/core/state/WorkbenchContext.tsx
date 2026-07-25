@@ -7,8 +7,11 @@ import {
   useReducer,
   type ReactNode,
 } from 'react';
+import type { AgentProvider, ProviderCapability } from '../contracts/agents';
 import type { WorkbenchSnapshot } from '../contracts/workbenchData';
 import type { PrototypeRepository } from '../data/prototypeRepository';
+
+export type CapabilityDiscovery = () => Promise<Partial<Record<AgentProvider, ProviderCapability>>>;
 
 type WorkbenchLoadState = 'loading' | 'ready' | 'error';
 
@@ -24,7 +27,8 @@ type WorkbenchAction =
   | { type: 'loaded'; snapshot: WorkbenchSnapshot; warning: string | null }
   | { type: 'failed'; message: string }
   | { type: 'saving' }
-  | { type: 'saved'; snapshot: WorkbenchSnapshot };
+  | { type: 'saved'; snapshot: WorkbenchSnapshot }
+  | { type: 'capabilities'; capabilities: Partial<Record<AgentProvider, ProviderCapability>> };
 
 const initialState: WorkbenchState = {
   loadState: 'loading',
@@ -50,6 +54,18 @@ function reducer(state: WorkbenchState, action: WorkbenchAction): WorkbenchState
       return { ...state, saving: true, error: null };
     case 'saved':
       return { ...state, snapshot: action.snapshot, saving: false };
+    case 'capabilities':
+      if (!state.snapshot) return state;
+      return {
+        ...state,
+        snapshot: {
+          ...state.snapshot,
+          providerCapabilities: {
+            ...state.snapshot.providerCapabilities,
+            ...action.capabilities,
+          },
+        },
+      };
   }
 }
 
@@ -68,31 +84,44 @@ function errorMessage(error: unknown): string {
 export function WorkbenchProvider({
   children,
   repository,
+  discoverCapabilities,
 }: {
   children: ReactNode;
   repository: PrototypeRepository;
+  discoverCapabilities?: CapabilityDiscovery;
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   useEffect(() => {
     let cancelled = false;
-    void repository
-      .load()
-      .then((snapshot) => {
-        if (cancelled) return;
-        dispatch({
-          type: 'loaded',
-          snapshot,
-          warning: repository.consumeWarning()?.message ?? null,
-        });
-      })
-      .catch((error: unknown) => {
+    void (async () => {
+      let snapshot: WorkbenchSnapshot;
+      try {
+        snapshot = await repository.load();
+      } catch (error: unknown) {
         if (!cancelled) dispatch({ type: 'failed', message: errorMessage(error) });
+        return;
+      }
+      if (cancelled) return;
+      dispatch({
+        type: 'loaded',
+        snapshot,
+        warning: repository.consumeWarning()?.message ?? null,
       });
+      // 加载后追加一次能力探测；结果只更新内存快照，不落盘。
+      // 探测失败（CLI 未装 / 非 Tauri 环境）静默降级，保留现有能力值。
+      if (!discoverCapabilities) return;
+      try {
+        const capabilities = await discoverCapabilities();
+        if (!cancelled) dispatch({ type: 'capabilities', capabilities });
+      } catch {
+        /* 非致命：保留 demo 能力值 */
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [repository]);
+  }, [repository, discoverCapabilities]);
 
   const saveSnapshot = useCallback(
     async (snapshot: WorkbenchSnapshot) => {

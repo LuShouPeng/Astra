@@ -88,6 +88,68 @@ describe('WorkbenchProvider', () => {
     expect(repository.save).toHaveBeenCalledOnce();
   });
 
+  it('merges discovered capabilities over demo defaults after load', async () => {
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => createDemoSnapshot()),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => createDemoSnapshot()),
+      consumeWarning: vi.fn(() => null),
+    };
+    const discoverCapabilities = vi.fn(async () => ({
+      claude: {
+        provider: 'claude' as const,
+        label: 'Claude',
+        runtimeAvailable: true,
+        displayOnly: false,
+        version: '1.9.0',
+      },
+    }));
+
+    function CapabilityProbe() {
+      const { snapshot } = useWorkbench();
+      const claude = snapshot?.providerCapabilities.claude;
+      return <span>claude:{claude ? String(claude.runtimeAvailable) : 'none'}</span>;
+    }
+
+    render(
+      <WorkbenchProvider repository={repository} discoverCapabilities={discoverCapabilities}>
+        <CapabilityProbe />
+      </WorkbenchProvider>,
+    );
+
+    // demo 默认 claude.runtimeAvailable=false；探测覆盖为 true。
+    expect(await screen.findByText('claude:true')).toBeVisible();
+    expect(discoverCapabilities).toHaveBeenCalledOnce();
+  });
+
+  it('keeps demo capabilities when discovery rejects', async () => {
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => createDemoSnapshot()),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => createDemoSnapshot()),
+      consumeWarning: vi.fn(() => null),
+    };
+    const discoverCapabilities = vi.fn(async () => Promise.reject(new Error('no tauri')));
+
+    function CapabilityProbe() {
+      const { loadState, snapshot } = useWorkbench();
+      const gemini = snapshot?.providerCapabilities.gemini;
+      return (
+        <span>
+          {loadState}:{gemini ? String(gemini.displayOnly) : 'none'}
+        </span>
+      );
+    }
+
+    render(
+      <WorkbenchProvider repository={repository} discoverCapabilities={discoverCapabilities}>
+        <CapabilityProbe />
+      </WorkbenchProvider>,
+    );
+
+    expect(await screen.findByText('ready:true')).toBeVisible();
+  });
+
   it('resets and publishes the frozen repository snapshot', async () => {
     const user = (await import('@testing-library/user-event')).default.setup();
     const reset = createDemoSnapshot();

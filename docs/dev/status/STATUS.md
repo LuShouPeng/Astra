@@ -7,13 +7,13 @@
 | 项 | 值 |
 |----|----|
 | 更新日期 | 2026-07-25 |
-| 当前里程碑 | **M1 完成**（契约扩展就绪，尚无功能变为可用） |
+| 当前里程碑 | **M2 完成**（能力发现打通，首个用户可见变化） |
 | 分支 | `feature/real-agent-integration` |
 | 回滚基线 | tag `baseline-before-agent` |
-| 最新 commit | M1: feat(contracts) agent runtime types（见 git log） |
-| 前端测试 | 143 用例全通过（+5 契约测试；Timeline 用例本次通过） |
-| 后端测试 | 6 用例（4 通过；2 条路径校验用例失败，pre-existing，M1 未触及） |
-| 编译 | ✅ 前端 typecheck/lint 通过；后端未改动 |
+| 最新 commit | M2: feat(agents) capability discovery（见 git log） |
+| 前端测试 | 145 用例全通过（+2 能力合并测试；Timeline 偶发超时，重跑即过） |
+| 后端测试 | 9 用例（7 通过 +3 能力探测；2 条 project.rs 路径校验失败为 pre-existing） |
+| 编译 | ✅ 前端 typecheck/lint 通过；后端 `cargo test --lib` 通过（除 pre-existing） |
 
 ## 图例
 
@@ -29,7 +29,7 @@
 |--------|------|------|----------|
 | M0 | 分支 + 基线 + 开发文档 | ✅ 完成 | tag `baseline-before-agent` |
 | M1 | 契约扩展（agents/sessions） | ✅ 完成 | commit `feat(contracts): agent runtime types` |
-| M2 | 能力发现（后端+前端+Context） | ❌ 未开始 | — |
+| M2 | 能力发现（后端+前端+Context） | ✅ 完成 | commit `feat(agents): capability discovery` |
 | M3 | 运行时后端（agent_runtime.rs+权限） | ❌ 未开始 | — |
 | M4 | 前端运行时服务 + 流桥接 | ❌ 未开始 | — |
 | M5 | Session 生命周期 + 持久化拆分 | ❌ 未开始 | — |
@@ -46,7 +46,7 @@
 | 1 | Claude CLI 接入 | ❌ 未开发 | M3, M4 |
 | 2 | Codex CLI 接入 | ❌ 未开发 | M7 |
 | 3 | Gemini CLI / 运行时 / 适配器 | ❌ 未开发 | M3, M7 |
-| 4 | Agent 能力发现 | ❌ 未开发 | M2 |
+| 4 | Agent 能力发现 | ✅ **已实现**（M2） | M2 ✓ |
 | 5 | 真实 Session 创建/执行/停止/恢复 | 🔧 需修改（仅 mock） | M5 |
 | 6 | 本地项目 ↔ 真实 Session 关联 | 🔧 需修改（数据断开） | M6 |
 
@@ -66,6 +66,7 @@
 | 单文件 Diff | `changesService.ts` | `project_file_diff` | 真实 patch，越界路径被拒 |
 | 系统打开目录 / 文件 | project/changes service | `system_open_directory` / `system_open_file` | opener 插件 |
 | 桌面通知 | `desktopNotificationService.ts` | tauri-plugin-notification | 真实系统通知 |
+| **Agent 能力发现（M2）** | `agents/services/capabilityDiscovery.ts` → `WorkbenchContext` | `discover_agent_capabilities` | 启动时探测 claude/codex/gemini `--version`；结果覆盖内存快照能力值，不落盘；失败静默降级 |
 
 **关键守卫**：以上「项目级」能力仅对 `project.source === 'local'` 生效；demo 项目被显式拒绝。
 
@@ -73,7 +74,6 @@
 
 | 功能 | 位置 | 现状 | 目标改造 |
 |------|------|------|---------|
-| Provider 能力 | `demoFixtures.ts:9-23` | 硬编码 `runtimeAvailable:false`，gemini `displayOnly:true` | 由 M2 能力探测覆盖 |
 | Session 停止 | `sessionTransitions.ts` `stopSession` | 纯快照改写，注释「local simulation」 | 按 `origin` 分支：live 走真实 `agent_stop` |
 | Session 追问 | `sessionTransitions.ts` `applyFollowUp` | 纯快照改写 | live 走 `agent_send_input` |
 | Session 详情页 | `SessionDetailPage.tsx` | `canStop` 基于 mock 状态；无流订阅 | 接真实进程状态 + 订阅 `agent://stream` |
