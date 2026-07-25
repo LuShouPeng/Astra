@@ -14,3 +14,26 @@ artifacts/demo/recording/
 artifacts/demo/screenshots/
 artifacts/demo/Astra-Nexus-Roadshow/
 artifacts/demo/*.inspect.ndjson
+
+# 本地环境搭建脚本与报告（不纳入版本控制）
+.env.local
+.gitignore.local
+ENVIRONMENT.md
+ENVIRONMENT_COMPLETE.md
+ENVIRONMENT_SUMMARY.txt
+INSTALLATION_COMPLETE.txt
+MSVC_INSTALLATION_GUIDE.md
+MSVC_MANUAL_INSTALLATION.md
+QUICKSTART.md
+RUST_INSTALLATION_REPORT.md
+RUST_STATUS.txt
+SETUP.md
+install-msvc.ps1
+install-rust-complete.ps1
+install-rust.bat
+install-rust.ps1
+install_rust.ps1
+setup.ps1
+check-env.sh
+install-rust-manual.md
+test-project/
