@@ -19,16 +19,6 @@ function settingsTab(value: string | null): SettingsTab {
   return value === 'notifications' || value === 'demo' || value === 'about' ? value : 'general';
 }
 
-const testNotification: AppNotification = {
-  id: 'notification-settings-test',
-  event: 'waiting_input',
-  tone: 'info',
-  title: 'Astra Nexus notification test',
-  message: 'Desktop notifications are configured for this workbench.',
-  createdAt: '2026-07-24T14:21:00.000Z',
-  read: true,
-};
-
 export function SettingsPage({
   desktopNotifications,
 }: {
@@ -49,7 +39,7 @@ export function SettingsPage({
     { id: 'about' as const, label: t('settings.tabs.about') },
   ];
 
-  if (!snapshot) return <div className="settings-state">Loading settings...</div>;
+  if (!snapshot) return <div className="settings-state">{t('settings.loading')}</div>;
 
   async function updateNotifications(patch: Partial<NotificationSettings>) {
     try {
@@ -60,7 +50,7 @@ export function SettingsPage({
         notificationSettings: { ...snapshot!.notificationSettings, ...patch },
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Settings could not be saved.');
+      setError(caught instanceof Error ? caught.message : t('settings.saveError'));
     }
   }
 
@@ -69,19 +59,28 @@ export function SettingsPage({
     setSendingTest(true);
     try {
       setError(null);
+      const testNotification: AppNotification = {
+        id: 'notification-settings-test',
+        event: 'waiting_input',
+        tone: 'info',
+        title: t('settings.testTitle'),
+        message: t('settings.testMessage'),
+        createdAt: '2026-07-24T14:21:00.000Z',
+        read: true,
+      };
       const result = await desktopNotifications.notify(
         testNotification,
         snapshot!.notificationSettings,
       );
       setNotice(
         result === 'sent'
-          ? 'Desktop notification sent'
+          ? t('settings.notificationSent')
           : result === 'denied'
-            ? 'Desktop notification permission denied'
-            : 'Desktop notifications are disabled',
+            ? t('settings.notificationDenied')
+            : t('settings.notificationDisabled'),
       );
     } catch {
-      setError('The desktop notification could not be sent.');
+      setError(t('settings.notificationError'));
     } finally {
       setSendingTest(false);
     }
@@ -175,18 +174,18 @@ export function SettingsPage({
             <header>
               <BellRing size={20} aria-hidden="true" />
               <div>
-                <h2 id="notification-settings-title">Notifications</h2>
-                <p>Desktop delivery rules</p>
+                <h2 id="notification-settings-title">{t('settings.tabs.notifications')}</h2>
+                <p>{t('settings.notifications.description')}</p>
               </div>
             </header>
             <label className="settings-row settings-toggle">
               <span>
-                <strong>Enable Desktop Notifications</strong>
-                <small>Allow configured events to use operating system notifications</small>
+                <strong>{t('settings.notifications.enable')}</strong>
+                <small>{t('settings.notifications.enableDescription')}</small>
               </span>
               <input
                 type="checkbox"
-                aria-label="Enable Desktop Notifications"
+                aria-label={t('settings.notifications.enable')}
                 checked={snapshot.notificationSettings.desktopEnabled}
                 disabled={saving}
                 onChange={(event) =>
@@ -196,12 +195,12 @@ export function SettingsPage({
             </label>
             <label className="settings-row settings-toggle">
               <span>
-                <strong>Notify on Waiting</strong>
-                <small>Input and approval requests</small>
+                <strong>{t('settings.notifications.waiting')}</strong>
+                <small>{t('settings.notifications.waitingDescription')}</small>
               </span>
               <input
                 type="checkbox"
-                aria-label="Notify on Waiting"
+                aria-label={t('settings.notifications.waiting')}
                 checked={snapshot.notificationSettings.notifyOnWaiting}
                 disabled={saving}
                 onChange={(event) =>
@@ -211,12 +210,12 @@ export function SettingsPage({
             </label>
             <label className="settings-row settings-toggle">
               <span>
-                <strong>Notify on Completed</strong>
-                <small>Completed Agent simulations</small>
+                <strong>{t('settings.notifications.completed')}</strong>
+                <small>{t('settings.notifications.completedDescription')}</small>
               </span>
               <input
                 type="checkbox"
-                aria-label="Notify on Completed"
+                aria-label={t('settings.notifications.completed')}
                 checked={snapshot.notificationSettings.notifyOnCompleted}
                 disabled={saving}
                 onChange={(event) =>
@@ -226,12 +225,12 @@ export function SettingsPage({
             </label>
             <label className="settings-row settings-toggle">
               <span>
-                <strong>Notify on Failed</strong>
-                <small>Agent and test failures</small>
+                <strong>{t('settings.notifications.failed')}</strong>
+                <small>{t('settings.notifications.failedDescription')}</small>
               </span>
               <input
                 type="checkbox"
-                aria-label="Notify on Failed"
+                aria-label={t('settings.notifications.failed')}
                 checked={snapshot.notificationSettings.notifyOnFailed}
                 disabled={saving}
                 onChange={(event) =>
@@ -255,7 +254,9 @@ export function SettingsPage({
                 ) : (
                   <BellRing size={16} aria-hidden="true" />
                 )}
-                {sendingTest ? 'Sending notification' : 'Send test notification'}
+                {sendingTest
+                  ? t('settings.notifications.sending')
+                  : t('settings.notifications.sendTest')}
               </button>
             </div>
           </section>
@@ -266,8 +267,8 @@ export function SettingsPage({
             <header>
               <Play size={20} aria-hidden="true" />
               <div>
-                <h2 id="demo-settings-title">Demo</h2>
-                <p>Deterministic presentation controls</p>
+                <h2 id="demo-settings-title">{t('settings.tabs.demo')}</h2>
+                <p>{t('settings.demo.description')}</p>
               </div>
             </header>
             <DemoControls />
@@ -279,28 +280,26 @@ export function SettingsPage({
             <header>
               <Info size={20} aria-hidden="true" />
               <div>
-                <h2 id="about-title">About Astra Nexus</h2>
-                <p>AI Coding Workbench prototype</p>
+                <h2 id="about-title">{t('settings.about.title')}</h2>
+                <p>{t('settings.about.description')}</p>
               </div>
             </header>
             <dl>
               <div>
-                <dt>Version</dt>
+                <dt>{t('settings.about.version')}</dt>
                 <dd>0.1.0</dd>
               </div>
               <div>
-                <dt>Product</dt>
-                <dd>
-                  Local control plane for projects, mock Agent Sessions, Git changes, and review.
-                </dd>
+                <dt>{t('settings.about.product')}</dt>
+                <dd>{t('settings.about.productDescription')}</dd>
               </div>
               <div>
-                <dt>Technology Stack</dt>
+                <dt>{t('settings.about.stack')}</dt>
                 <dd>Tauri 2, Rust, React 19, TypeScript, Vite, and git2</dd>
               </div>
               <div>
-                <dt>Provider Runtime</dt>
-                <dd>Claude and Codex deterministic mocks; Gemini display only</dd>
+                <dt>{t('settings.about.runtime')}</dt>
+                <dd>{t('settings.about.runtimeDescription')}</dd>
               </div>
             </dl>
           </section>
