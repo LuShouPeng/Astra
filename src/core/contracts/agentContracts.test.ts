@@ -57,6 +57,7 @@ describe('M1 agent contract extensions', () => {
       workingDirectory: 'C:/Code/demo',
       prompt: 'do the thing',
       sessionId: 'session-live-1',
+      mode: 'resume',
     };
     const events: AgentStreamEvent[] = [
       { kind: 'stdout', chunk: 'hello' },
@@ -64,6 +65,7 @@ describe('M1 agent contract extensions', () => {
       { kind: 'exit', code: 0 },
     ];
     expect(config.provider).toBe('codex');
+    expect(config.mode).toBe('resume');
     expect(events.map((event) => event.kind)).toEqual(['stdout', 'stderr', 'exit']);
   });
 });

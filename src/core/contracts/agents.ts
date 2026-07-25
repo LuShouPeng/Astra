@@ -22,6 +22,8 @@ export interface AgentLaunchConfig {
   workingDirectory: string;
   prompt: string;
   sessionId: SessionId;
+  /** Provider-native continuation of the most recent session in this working directory. */
+  mode?: 'new' | 'resume';
 }
 
 /** 后端子进程流式事件（经 `agent://stream/{sessionId}` 推送）。 */

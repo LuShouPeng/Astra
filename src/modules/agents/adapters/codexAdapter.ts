@@ -2,7 +2,7 @@ import type { AgentLaunchConfig } from '../../../core/contracts/agents';
 import type { AdapterInput } from './claudeAdapter';
 
 /**
- * Codex 适配器：组装启动参数（后端 `codex exec <prompt>`）。
+ * Codex adapter. Resume maps to `codex exec resume --last <prompt>` in the backend.
  */
 export function buildCodexLaunchConfig(input: AdapterInput): AgentLaunchConfig {
   return {
@@ -10,5 +10,6 @@ export function buildCodexLaunchConfig(input: AdapterInput): AgentLaunchConfig {
     workingDirectory: input.workingDirectory,
     prompt: input.prompt,
     sessionId: input.sessionId,
+    ...(input.mode ? { mode: input.mode } : {}),
   };
 }

@@ -36,6 +36,7 @@ pub struct AgentLaunchConfig {
     working_directory: String,
     prompt: String,
     session_id: String,
+    mode: Option<String>,
 }
 
 /// Streaming payload mirrored from the `AgentStreamEvent` union.
@@ -158,17 +159,30 @@ fn kill_tree_blocking(pid: u32) {
 /// Maps a provider + prompt to the argv it should be launched with. Kept in one
 /// place so the three providers differ only by arguments — the backend landing
 /// point for the "adapter" pattern.
-fn provider_argv(provider: &str, prompt: &str) -> Option<(String, Vec<String>)> {
-    match provider {
-        "claude" => Some((
+fn provider_argv(
+    provider: &str,
+    prompt: &str,
+    mode: Option<&str>,
+) -> Option<(String, Vec<String>)> {
+    match (provider, mode) {
+        ("codex", Some("resume")) => Some((
+            "codex".to_owned(),
+            vec![
+                "exec".to_owned(),
+                "resume".to_owned(),
+                "--last".to_owned(),
+                prompt.to_owned(),
+            ],
+        )),
+        ("claude", _) => Some((
             "claude".to_owned(),
             vec!["--print".to_owned(), prompt.to_owned()],
         )),
-        "codex" => Some((
+        ("codex", _) => Some((
             "codex".to_owned(),
             vec!["exec".to_owned(), prompt.to_owned()],
         )),
-        "gemini" => Some((
+        ("gemini", _) => Some((
             "gemini".to_owned(),
             vec!["--prompt".to_owned(), prompt.to_owned()],
         )),
@@ -342,8 +356,9 @@ pub async fn agent_start(
     let working_dir = safe_directory(Path::new(&config.working_directory))
         .map_err(|message| AgentError::new("INVALID_DIRECTORY", message))?;
 
-    let (program, args) = provider_argv(&config.provider, &config.prompt)
-        .ok_or_else(|| AgentError::new("UNKNOWN_PROVIDER", "Unsupported agent provider."))?;
+    let (program, args) =
+        provider_argv(&config.provider, &config.prompt, config.mode.as_deref())
+            .ok_or_else(|| AgentError::new("UNKNOWN_PROVIDER", "Unsupported agent provider."))?;
 
     let command = build_command(&program, &args, &working_dir);
     let sink: Arc<dyn EventSink> = Arc::new(AppEventSink { app: app.clone() });
@@ -466,27 +481,34 @@ mod tests {
 
     #[test]
     fn provider_argv_maps_claude() {
-        let (prog, args) = provider_argv("claude", "test prompt").unwrap();
+        let (prog, args) = provider_argv("claude", "test prompt", None).unwrap();
         assert_eq!(prog, "claude");
         assert_eq!(args, vec!["--print", "test prompt"]);
     }
 
     #[test]
     fn provider_argv_maps_codex() {
-        let (prog, args) = provider_argv("codex", "do something").unwrap();
+        let (prog, args) = provider_argv("codex", "do something", None).unwrap();
         assert_eq!(prog, "codex");
         assert_eq!(args, vec!["exec", "do something"]);
     }
 
     #[test]
+    fn provider_argv_maps_codex_resume() {
+        let (prog, args) = provider_argv("codex", "continue", Some("resume")).unwrap();
+        assert_eq!(prog, "codex");
+        assert_eq!(args, vec!["exec", "resume", "--last", "continue"]);
+    }
+
+    #[test]
     fn provider_argv_maps_gemini() {
-        let (prog, args) = provider_argv("gemini", "analyze this").unwrap();
+        let (prog, args) = provider_argv("gemini", "analyze this", None).unwrap();
         assert_eq!(prog, "gemini");
         assert_eq!(args, vec!["--prompt", "analyze this"]);
     }
 
     #[test]
     fn provider_argv_rejects_unknown() {
-        assert!(provider_argv("unknown", "test").is_none());
+        assert!(provider_argv("unknown", "test", None).is_none());
     }
 }

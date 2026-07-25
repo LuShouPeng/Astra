@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentLaunchConfig, AgentStreamEvent } from '../../../core/contracts/agents';
 import type { Project } from '../../../core/contracts/projects';
-import type { SessionId } from '../../../core/contracts/sessions';
+import type { AgentSession, SessionId } from '../../../core/contracts/sessions';
 import type { StreamListener } from '../../agents';
 import type { SessionPersistence } from '../adapters/sessionPersistenceAdapter';
 import {
@@ -33,6 +33,7 @@ interface Harness {
   updates: Array<{ update: LiveSessionUpdate; persist: boolean }>;
   emit: (sessionId: SessionId, event: AgentStreamEvent) => void;
   logAppend: ReturnType<typeof vi.fn>;
+  logRead: ReturnType<typeof vi.fn>;
   runtime: {
     start: ReturnType<typeof vi.fn>;
     stop: ReturnType<typeof vi.fn>;
@@ -53,6 +54,7 @@ function makeHarness(options: { running?: SessionId[] } = {}): Harness {
   const listeners = new Map<SessionId, StreamListener>();
   const unsubscribe = vi.fn();
   const logAppend = vi.fn().mockResolvedValue(undefined);
+  const logRead = vi.fn().mockResolvedValue([]);
 
   const runtime = {
     start: vi.fn().mockResolvedValue(undefined),
@@ -67,7 +69,7 @@ function makeHarness(options: { running?: SessionId[] } = {}): Harness {
 
   const persistence: SessionPersistence = {
     logAppend,
-    logRead: vi.fn().mockResolvedValue([]),
+    logRead,
   };
 
   let counter = 0;
@@ -85,6 +87,7 @@ function makeHarness(options: { running?: SessionId[] } = {}): Harness {
     updates,
     emit: (sessionId, event) => listeners.get(sessionId)?.(event),
     logAppend,
+    logRead,
     runtime,
     unsubscribe,
   };
@@ -92,6 +95,26 @@ function makeHarness(options: { running?: SessionId[] } = {}): Harness {
 
 const startedConfigs = (runtimeStart: ReturnType<typeof vi.fn>): AgentLaunchConfig[] =>
   (runtimeStart.mock.calls as Array<[AgentLaunchConfig]>).map((call) => call[0]);
+
+function resumableSession(overrides: Partial<AgentSession> = {}): AgentSession {
+  return {
+    id: 'sess-resume',
+    projectId: 'project-1',
+    provider: 'codex',
+    title: 'Continue implementation',
+    status: 'stopped',
+    startedAt: '2026-07-25T10:00:00.000Z',
+    updatedAt: '2026-07-25T11:00:00.000Z',
+    completedAt: '2026-07-25T11:00:00.000Z',
+    changedFilesCount: 0,
+    testStatus: 'not_run',
+    unread: false,
+    origin: 'live',
+    runtimeProcessId: 'sess-resume',
+    workingDirectory: '/repo/demo',
+    ...overrides,
+  };
+}
 
 describe('createLiveSession', () => {
   beforeEach(() => vi.useRealTimers());
@@ -181,7 +204,11 @@ describe('stream handling', () => {
     h.emit('sess-1', { kind: 'stdout', chunk: 'line one\n' });
     h.emit('sess-1', { kind: 'stdout', chunk: 'line two\n' });
     // flush 前无 agent_message
-    expect(h.updates.some((u) => u.update.kind === 'timeline-event' && u.update.event.type === 'agent_message')).toBe(false);
+    expect(
+      h.updates.some(
+        (u) => u.update.kind === 'timeline-event' && u.update.event.type === 'agent_message',
+      ),
+    ).toBe(false);
 
     vi.advanceTimersByTime(500);
     const msg = h.updates.find(
@@ -273,9 +300,9 @@ describe('stopLiveSession / resume / dispose', () => {
     await h.service.sendFollowUp('sess-1', '  keep going  ');
 
     expect(h.runtime.sendInput).toHaveBeenCalledWith('sess-1', 'keep going');
-    const followUp = h.updates.slice(before).find(
-      (u) => u.update.kind === 'timeline-event' && u.update.event.type === 'user_message',
-    );
+    const followUp = h.updates
+      .slice(before)
+      .find((u) => u.update.kind === 'timeline-event' && u.update.event.type === 'user_message');
     expect(followUp?.persist).toBe(true);
     expect(followUp?.update).toMatchObject({
       event: { id: 'event-sess-1-user-2', content: 'keep going' },
@@ -291,9 +318,58 @@ describe('stopLiveSession / resume / dispose', () => {
     expect(h.runtime.sendInput).not.toHaveBeenCalled();
   });
 
-  it('resumeLiveSession rejects (M5 mock)', async () => {
+  it('resumes Codex from durable history using provider-native resume mode', async () => {
     const h = makeHarness();
-    await expect(h.service.resumeLiveSession('sess-1')).rejects.toThrow('恢复执行功能开发中');
+    h.logRead.mockResolvedValue([
+      { timestampMs: '1', event: { kind: 'stdout', chunk: 'Last completed step' } },
+    ]);
+
+    await h.service.resumeLiveSession(resumableSession());
+
+    expect(h.logRead).toHaveBeenCalledWith('sess-resume', undefined, 200);
+    const config = startedConfigs(h.runtime.start)[0];
+    expect(config).toMatchObject({
+      provider: 'codex',
+      workingDirectory: '/repo/demo',
+      sessionId: 'sess-resume',
+      mode: 'resume',
+    });
+    expect(config.prompt).toContain('Last completed step');
+    const runningUpdate = h.updates.find(
+      (item) => item.update.kind === 'session-status' && item.update.status === 'running',
+    );
+    expect(runningUpdate?.persist).toBe(true);
+    expect(runningUpdate?.update).toMatchObject({
+      kind: 'session-status',
+      sessionId: 'sess-resume',
+      clearCompletedAt: true,
+    });
+  });
+
+  it('rejects resume for demo, active, and non-Codex sessions', async () => {
+    const h = makeHarness();
+    await expect(h.service.resumeLiveSession(resumableSession({ origin: 'demo' }))).rejects.toThrow(
+      '真实会话',
+    );
+    await expect(
+      h.service.resumeLiveSession(resumableSession({ provider: 'claude' })),
+    ).rejects.toThrow('仅 Codex');
+    await expect(
+      h.service.resumeLiveSession(resumableSession({ status: 'running' })),
+    ).rejects.toThrow('仍在运行');
+    expect(h.runtime.start).not.toHaveBeenCalled();
+  });
+
+  it('marks a failed Codex resume and tears down its stream', async () => {
+    const h = makeHarness();
+    h.runtime.start.mockRejectedValueOnce(new Error('resume failed'));
+    await expect(h.service.resumeLiveSession(resumableSession())).rejects.toThrow('resume failed');
+    expect(h.unsubscribe).toHaveBeenCalled();
+    expect(
+      h.updates.some(
+        (item) => item.update.kind === 'session-status' && item.update.status === 'failed',
+      ),
+    ).toBe(true);
   });
 
   it('dispose tears down all active streams', async () => {

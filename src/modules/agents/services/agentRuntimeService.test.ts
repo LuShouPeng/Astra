@@ -55,6 +55,10 @@ describe('buildLaunchConfig', () => {
     });
     expect(buildLaunchConfig('codex', input).provider).toBe('codex');
     expect(buildLaunchConfig('gemini', input).provider).toBe('gemini');
+    expect(buildLaunchConfig('codex', { ...input, mode: 'resume' })).toMatchObject({
+      provider: 'codex',
+      mode: 'resume',
+    });
   });
 });
 
@@ -102,9 +106,7 @@ describe('createAgentRuntimeService', () => {
     await service.onStream('s1', () => {});
     listeners.get('s1')?.({ kind: 'stdout', chunk: 'bridged' });
 
-    expect(busEvents).toEqual([
-      { sessionId: 's1', event: { kind: 'stdout', chunk: 'bridged' } },
-    ]);
+    expect(busEvents).toEqual([{ sessionId: 's1', event: { kind: 'stdout', chunk: 'bridged' } }]);
   });
 
   it('does not emit to the bus when none is provided', async () => {

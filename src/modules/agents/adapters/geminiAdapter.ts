@@ -10,5 +10,6 @@ export function buildGeminiLaunchConfig(input: AdapterInput): AgentLaunchConfig 
     workingDirectory: input.workingDirectory,
     prompt: input.prompt,
     sessionId: input.sessionId,
+    ...(input.mode ? { mode: input.mode } : {}),
   };
 }

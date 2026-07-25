@@ -4,6 +4,7 @@ import {
   FolderOpen,
   GitCompareArrows,
   MessageSquare,
+  RotateCcw,
   Send,
   Square,
   X,
@@ -20,6 +21,7 @@ import { CommandsView, ContextView, TestsView } from '../components/SessionEvent
 import { Timeline } from '../components/Timeline';
 import { applyFollowUp, nextSessionTimestamp, stopSession } from '../model/sessionTransitions';
 import { useLiveSessions } from '../state/LiveSessionContext';
+import type { LiveSessionService } from '../services/liveSessionService';
 
 type SessionTab = 'timeline' | 'changes' | 'tests' | 'commands' | 'context';
 
@@ -44,15 +46,18 @@ export function SessionDetailPage({
   changesService,
   projectService,
   agentRuntime,
+  liveSessionService,
 }: {
   changesService?: ChangesService;
   projectService?: ProjectService;
   agentRuntime?: AgentRuntimeService;
+  liveSessionService?: LiveSessionService;
 }) {
   const { sessionId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
-  const liveSessions = useLiveSessions();
+  const contextLiveSessions = useLiveSessions();
+  const liveSessions = liveSessionService ?? contextLiveSessions;
   const tab = sessionTab(searchParams.get('tab'));
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +113,12 @@ export function SessionDetailPage({
     (session.status === 'running' || session.status === 'waiting') &&
     // live 会话还需真实进程在运行；demo 会话按状态即可停止。
     (!isLive || liveProcessRunning);
+  const canResume =
+    isLive &&
+    session.provider === 'codex' &&
+    capability.runtimeAvailable &&
+    !liveProcessRunning &&
+    (session.status === 'completed' || session.status === 'failed' || session.status === 'stopped');
   const canOpenProject = Boolean(
     projectService && project?.source === 'local' && project.status === 'available',
   );
@@ -181,6 +192,17 @@ export function SessionDetailPage({
       appEventBus.emit('session:status-changed', { session: updated, previousStatus });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The Session could not be stopped.');
+    }
+  }
+
+  async function resume() {
+    setError(null);
+    try {
+      if (!liveSessions) throw new Error('实时会话服务未就绪。');
+      await liveSessions.resumeLiveSession(session!);
+      setLiveProcessRunning(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The Session could not be resumed.');
     }
   }
 
@@ -259,6 +281,17 @@ export function SessionDetailPage({
           >
             <Square size={14} aria-hidden="true" />
             Stop
+          </button>
+        )}
+        {canResume && (
+          <button
+            className="button button--secondary button--compact"
+            type="button"
+            disabled={saving}
+            onClick={() => void resume()}
+          >
+            <RotateCcw size={14} aria-hidden="true" />
+            Resume
           </button>
         )}
         <button
@@ -356,14 +389,19 @@ export function SessionDetailPage({
           id="follow-up-message"
           value={message}
           onChange={(event) => setMessage(event.target.value)}
-          disabled={capability.displayOnly || saving}
+          disabled={capability.displayOnly || saving || (isLive && !liveProcessRunning)}
           rows={2}
         />
         <button
           className="button button--primary"
           type="submit"
           aria-label="Send follow-up"
-          disabled={capability.displayOnly || saving || message.trim().length === 0}
+          disabled={
+            capability.displayOnly ||
+            saving ||
+            (isLive && !liveProcessRunning) ||
+            message.trim().length === 0
+          }
         >
           <Send size={16} aria-hidden="true" />
           Send

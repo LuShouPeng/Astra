@@ -5,6 +5,7 @@ export interface AdapterInput {
   workingDirectory: string;
   prompt: string;
   sessionId: SessionId;
+  mode?: 'new' | 'resume';
 }
 
 /**
@@ -18,5 +19,6 @@ export function buildClaudeLaunchConfig(input: AdapterInput): AgentLaunchConfig 
     workingDirectory: input.workingDirectory,
     prompt: input.prompt,
     sessionId: input.sessionId,
+    ...(input.mode ? { mode: input.mode } : {}),
   };
 }

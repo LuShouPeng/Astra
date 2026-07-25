@@ -37,6 +37,8 @@ export type LiveSessionUpdate =
       status: SessionStatus;
       currentAction?: string;
       completedAt?: string;
+      clearCompletedAt?: boolean;
+      updatedAt?: string;
     };
 
 /** 快照写入抽象：`persist=true` 立即落盘（关键节点），否则仅更新内存。 */
@@ -78,7 +80,7 @@ export interface LiveSessionService {
   /** 向运行中的 live 会话进程发送后续输入，并把用户消息追加到 Timeline。 */
   sendFollowUp(sessionId: SessionId, text: string): Promise<void>;
   stopLiveSession(sessionId: SessionId): Promise<void>;
-  resumeLiveSession(sessionId: SessionId): Promise<never>;
+  resumeLiveSession(session: AgentSession): Promise<void>;
   /** 释放所有订阅与计时器（组件卸载时调用）。 */
   dispose(): void;
 }
@@ -93,6 +95,29 @@ export function createLiveSessionService(deps: LiveSessionDeps): LiveSessionServ
   const now = deps.now ?? (() => new Date().toISOString());
   const flushIntervalMs = deps.flushIntervalMs ?? STDOUT_FLUSH_INTERVAL_MS;
   const streams = new Map<SessionId, StreamState>();
+  let resumeSequence = 0;
+
+  async function attachStream(
+    sessionId: SessionId,
+    provider: AgentProvider,
+    workingDirectory: string,
+    messageSeq = 0,
+  ): Promise<void> {
+    const unsubscribe = await deps.agentRuntime.onStream(sessionId, (event) =>
+      handleStreamEvent(sessionId, event),
+    );
+    streams.set(sessionId, {
+      unsubscribe,
+      buffer: [],
+      bufferBytes: 0,
+      flushTimer: null,
+      stderrTail: [],
+      messageSeq,
+      followUpSeq: 1,
+      provider,
+      workingDirectory,
+    });
+  }
 
   /** 把缓冲的 stdout 行合并成一条 agent_message 更新（仅内存，不落盘）。 */
   function flushBuffer(sessionId: SessionId): void {
@@ -151,9 +176,7 @@ export function createLiveSessionService(deps: LiveSessionDeps): LiveSessionServ
         const failed = event.code !== 0 && event.code !== null;
         const target: SessionStatus = failed ? 'failed' : 'completed';
         const timestamp = now();
-        let content = failed
-          ? `进程异常退出 (code ${event.code})。`
-          : '进程已正常结束。';
+        let content = failed ? `进程异常退出 (code ${event.code})。` : '进程已正常结束。';
         if (failed && state.stderrTail.length > 0) {
           content += `\n${state.stderrTail.join('')}`;
         }
@@ -244,20 +267,7 @@ export function createLiveSessionService(deps: LiveSessionDeps): LiveSessionServ
         { persist: true },
       );
 
-      const unsubscribe = await deps.agentRuntime.onStream(sessionId, (event) =>
-        handleStreamEvent(sessionId, event),
-      );
-      streams.set(sessionId, {
-        unsubscribe,
-        buffer: [],
-        bufferBytes: 0,
-        flushTimer: null,
-        stderrTail: [],
-        messageSeq: 0,
-        followUpSeq: 1,
-        provider,
-        workingDirectory: project.rootPath,
-      });
+      await attachStream(sessionId, provider, project.rootPath);
 
       const config = buildLaunchConfig(provider, {
         workingDirectory: project.rootPath,
@@ -330,11 +340,87 @@ export function createLiveSessionService(deps: LiveSessionDeps): LiveSessionServ
       );
     },
 
-    resumeLiveSession() {
-      // M5 暂不支持真实 resume（见 M5-known-limitations 2.x），M7 补齐。
-      return Promise.reject(
-        new LiveSessionError('恢复执行功能开发中（计划于 M7 支持），可查看历史日志。'),
+    async resumeLiveSession(session) {
+      if (session.origin !== 'live' || !session.workingDirectory) {
+        throw new LiveSessionError('只有绑定本地目录的真实会话可以恢复。');
+      }
+      if (session.provider !== 'codex') {
+        throw new LiveSessionError('当前仅 Codex 支持恢复会话。');
+      }
+      if (session.status === 'running' || session.status === 'waiting') {
+        throw new LiveSessionError('会话仍在运行，无需恢复。');
+      }
+      const running = await deps.agentRuntime.listRunning();
+      if (running.includes(session.id) || streams.has(session.id)) {
+        throw new LiveSessionError('该会话已有运行中的进程。');
+      }
+
+      // Reading the durable log verifies the persisted history is accessible before
+      // handing continuation to Codex. Codex owns the actual model context via --last.
+      const history = await deps.persistence.logRead(session.id, undefined, 200);
+      const outputTail = history
+        .filter((entry) => entry.event.kind === 'stdout')
+        .slice(-5)
+        .map((entry) => (entry.event.kind === 'stdout' ? entry.event.chunk : ''))
+        .join('\n')
+        .slice(-2000);
+      const prompt = outputTail
+        ? `Continue the previous task. The last recorded output was:\n${outputTail}`
+        : 'Continue the previous task from the current working tree.';
+
+      resumeSequence += 1;
+      await attachStream(
+        session.id,
+        session.provider,
+        session.workingDirectory,
+        resumeSequence * 1_000_000,
       );
+      const timestamp = now();
+      deps.sink.apply(
+        {
+          kind: 'timeline-event',
+          event: {
+            id: `event-${session.id}-resume-${resumeSequence}`,
+            sessionId: session.id,
+            type: 'status',
+            timestamp,
+            from: session.status,
+            to: 'running',
+            content: '正在恢复 Codex 会话。',
+          },
+        },
+        { persist: true },
+      );
+      deps.sink.apply(
+        {
+          kind: 'session-status',
+          sessionId: session.id,
+          status: 'running',
+          currentAction: '恢复 Codex 会话',
+          clearCompletedAt: true,
+          updatedAt: timestamp,
+        },
+        { persist: true },
+      );
+      try {
+        await deps.agentRuntime.start(
+          buildLaunchConfig('codex', {
+            workingDirectory: session.workingDirectory,
+            prompt,
+            sessionId: session.id,
+            mode: 'resume',
+          }),
+        );
+      } catch (error) {
+        teardownStream(session.id);
+        deps.sink.apply(
+          { kind: 'session-status', sessionId: session.id, status: 'failed', completedAt: now() },
+          { persist: true },
+        );
+        throw new LiveSessionError(
+          error instanceof Error ? error.message : '恢复 Codex 会话失败。',
+        );
+      }
     },
 
     dispose() {

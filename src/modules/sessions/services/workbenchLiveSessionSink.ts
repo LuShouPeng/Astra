@@ -37,8 +37,10 @@ function mutate(snapshot: WorkbenchSnapshot, update: LiveSessionUpdate): Workben
                 ...session,
                 status: update.status,
                 currentAction: update.currentAction,
-                completedAt: update.completedAt ?? session.completedAt,
-                updatedAt: update.completedAt ?? session.updatedAt,
+                completedAt: update.clearCompletedAt
+                  ? undefined
+                  : (update.completedAt ?? session.completedAt),
+                updatedAt: update.updatedAt ?? update.completedAt ?? session.updatedAt,
               }
             : session,
         ),

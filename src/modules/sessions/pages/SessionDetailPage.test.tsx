@@ -6,6 +6,8 @@ import type { PrototypeRepository } from '../../../core/data/prototypeRepository
 import { WorkbenchProvider } from '../../../core/state/WorkbenchContext';
 import { createDemoSnapshot } from '../../demo';
 import type { ProjectService } from '../../projects';
+import type { AgentRuntimeService } from '../../agents';
+import type { LiveSessionService } from '../services/liveSessionService';
 import { SessionDetailPage } from './SessionDetailPage';
 
 function createRepository(snapshot = createDemoSnapshot()): PrototypeRepository {
@@ -203,5 +205,46 @@ describe('SessionDetailPage', () => {
       </MemoryRouter>,
     );
     expect(await screen.findByRole('button', { name: 'Open Project' })).toBeDisabled();
+  });
+
+  it('resumes an ended live Codex session through the real session service boundary', async () => {
+    const user = userEvent.setup();
+    const snapshot = createDemoSnapshot();
+    const session = snapshot.sessions.find((item) => item.provider === 'codex')!;
+    Object.assign(session, {
+      origin: 'live',
+      status: 'stopped',
+      runtimeProcessId: session.id,
+      workingDirectory: 'C:\\Code\\astra',
+    });
+    snapshot.providerCapabilities.codex.runtimeAvailable = true;
+    snapshot.providerCapabilities.codex.displayOnly = false;
+    const liveSessionService = {
+      resumeLiveSession: vi.fn(async () => undefined),
+    } as unknown as LiveSessionService;
+    const agentRuntime = {
+      listRunning: vi.fn(async () => []),
+    } as unknown as AgentRuntimeService;
+
+    render(
+      <MemoryRouter initialEntries={[`/sessions/${session.id}`]}>
+        <WorkbenchProvider repository={createRepository(snapshot)}>
+          <Routes>
+            <Route
+              path="sessions/:sessionId"
+              element={
+                <SessionDetailPage
+                  agentRuntime={agentRuntime}
+                  liveSessionService={liveSessionService}
+                />
+              }
+            />
+          </Routes>
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Resume' }));
+    expect(liveSessionService.resumeLiveSession).toHaveBeenCalledWith(session);
   });
 });
