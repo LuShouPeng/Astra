@@ -7,13 +7,13 @@
 | 项 | 值 |
 |----|----|
 | 更新日期 | 2026-07-25 |
-| 当前里程碑 | **M2 完成**（能力发现打通，首个用户可见变化） |
+| 当前里程碑 | **M3 完成**（Agent 进程运行时后端就位；无用户可见变化，待 M4 桥接） |
 | 分支 | `feature/real-agent-integration` |
 | 回滚基线 | tag `baseline-before-agent` |
-| 最新 commit | M2: feat(agents) capability discovery（见 git log） |
-| 前端测试 | 145 用例全通过（+2 能力合并测试；Timeline 偶发超时，重跑即过） |
-| 后端测试 | 9 用例（7 通过 +3 能力探测；2 条 project.rs 路径校验失败为 pre-existing） |
-| 编译 | ✅ 前端 typecheck/lint 通过；后端 `cargo test --lib` 通过（除 pre-existing） |
+| 最新 commit | M3: feat(tauri) agent process runtime（见 git log） |
+| 前端测试 | 145 用例全通过（M3 未动前端） |
+| 后端测试 | 14 用例（12 通过含 agent_runtime 5 条真机 echo 验证；2 条 project.rs 路径校验失败为 pre-existing） |
+| 编译 | ✅ 前端 typecheck/lint 通过；后端 `cargo build` / `cargo test --lib` 通过（除 pre-existing） |
 
 ## 图例
 
@@ -30,7 +30,7 @@
 | M0 | 分支 + 基线 + 开发文档 | ✅ 完成 | tag `baseline-before-agent` |
 | M1 | 契约扩展（agents/sessions） | ✅ 完成 | commit `feat(contracts): agent runtime types` |
 | M2 | 能力发现（后端+前端+Context） | ✅ 完成 | commit `feat(agents): capability discovery` |
-| M3 | 运行时后端（agent_runtime.rs+权限） | ❌ 未开始 | — |
+| M3 | 运行时后端（agent_runtime.rs+权限） | ✅ 完成 | commit `feat(tauri): agent process runtime` |
 | M4 | 前端运行时服务 + 流桥接 | ❌ 未开始 | — |
 | M5 | Session 生命周期 + 持久化拆分 | ❌ 未开始 | — |
 | M6 | 项目关联 + UI | ❌ 未开始 | — |
@@ -43,9 +43,9 @@
 
 | # | 能力 | 状态 | 依赖里程碑 |
 |---|------|------|-----------|
-| 1 | Claude CLI 接入 | ❌ 未开发 | M3, M4 |
-| 2 | Codex CLI 接入 | ❌ 未开发 | M7 |
-| 3 | Gemini CLI / 运行时 / 适配器 | ❌ 未开发 | M3, M7 |
+| 1 | Claude CLI 接入 | 🔧 后端就位（M3），待前端桥接 | M3 ✓, M4 |
+| 2 | Codex CLI 接入 | 🔧 后端 argv 已映射，待适配器/授权 | M3 ✓, M7 |
+| 3 | Gemini CLI / 运行时 / 适配器 | 🔧 后端 argv 已映射，待适配器/授权 | M3 ✓, M7 |
 | 4 | Agent 能力发现 | ✅ **已实现**（M2） | M2 ✓ |
 | 5 | 真实 Session 创建/执行/停止/恢复 | 🔧 需修改（仅 mock） | M5 |
 | 6 | 本地项目 ↔ 真实 Session 关联 | 🔧 需修改（数据断开） | M6 |
@@ -67,6 +67,7 @@
 | 系统打开目录 / 文件 | project/changes service | `system_open_directory` / `system_open_file` | opener 插件 |
 | 桌面通知 | `desktopNotificationService.ts` | tauri-plugin-notification | 真实系统通知 |
 | **Agent 能力发现（M2）** | `agents/services/capabilityDiscovery.ts` → `WorkbenchContext` | `discover_agent_capabilities` | 启动时探测 claude/codex/gemini `--version`；结果覆盖内存快照能力值，不落盘；失败静默降级 |
+| **Agent 进程运行时（M3，后端）** | 尚无前端消费方（待 M4） | `agent_start` / `agent_send_input` / `agent_stop` / `agent_list_running` | tokio 子进程；stdout/stderr 按行经 `agent://stream/{id}` 推送；`kill_tree` 杀进程树；registry 管生命周期。**后端单测（含真机 echo）通过，端到端流桥接待 M4 验证** |
 
 **语义边界**（M2 真机实测确认）：`runtimeAvailable:true` = 可执行文件存在且 `--version` 成功，**不代表已授权/能实际运行**。本机 codex/gemini 未授权但探测仍返回 true（`--version` 不需登录）。真正可用性在 M3/M4 启动进程时才暴露。
 
@@ -86,15 +87,11 @@
 
 | 功能 | 计划落点 | 说明 |
 |------|---------|------|
-| Agent 子进程运行时 | `src-tauri/src/modules/agent_runtime.rs` | 后端零进程命令；`invoke_handler` 仅 7 个只读命令 |
-| 能力发现 | `src-tauri/src/modules/agent_capability.rs` | 无 CLI 探测；PROVIDERS 是静态常量 |
 | Session 持久化拆分 | `src-tauri/src/modules/session_persistence.rs` | 无日志落盘机制 |
-| 前端 Agent 适配器 | `src/modules/agents/` | 整个模块不存在 |
+| 前端 Agent 适配器 | `src/modules/agents/` | 整个模块仅 `capabilityDiscovery.ts` + `index.ts`（M2）；无 `adapters/` 子目录 |
 | 前端运行时服务 + 流桥接 | `agentRuntimeService.ts` | `appEventBus` 是纯内存，未接 `@tauri-apps/api/event` |
 | Live Session 服务 | `liveSessionService.ts` | 无法创建真实 session；6 条全为 mock |
 | 从项目启动 Agent 会话 | `ProjectDetailPage` / `ProjectSessionTree` | 无任何启动入口 |
-| 进程执行权限 | `capabilities/default.json` | 无 shell/进程权限 |
-| tokio 依赖 | `Cargo.toml` | 未引入异步/进程运行时 |
 
 ---
 

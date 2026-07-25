@@ -7,6 +7,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .manage(modules::agent_runtime::AgentRegistry::default())
         .invoke_handler(tauri::generate_handler![
             modules::workspace::workspace_inspect_path,
             modules::workspace::workspace_check_exists,
@@ -15,7 +16,11 @@ pub fn run() {
             modules::project::project_file_diff,
             modules::project::system_open_directory,
             modules::project::system_open_file,
-            modules::agent_capability::discover_agent_capabilities
+            modules::agent_capability::discover_agent_capabilities,
+            modules::agent_runtime::agent_start,
+            modules::agent_runtime::agent_send_input,
+            modules::agent_runtime::agent_stop,
+            modules::agent_runtime::agent_list_running
         ])
         .run(tauri::generate_context!())
         .expect("error while running Astra Nexus");
