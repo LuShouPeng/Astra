@@ -100,3 +100,39 @@ console.log('Cleaned up session:', sessionId);
 ```
 
 实际上单测 `agentRuntimeService.test.ts` 已验证了 `eventBus?.emit('agent:stream', ...)` 调用，此处真机验证重点是 **Tauri 的 `listen()` 能否收到后端 `app.emit` 推送的真实事件**——这是 IPC 层，mock 无法覆盖。
+
+---
+
+## ✅ 真机验证结果（2026-07-25 执行）
+
+**结论：通过。** 完整链路 `后端 emit('agent://stream/{id}') → 前端 listen() → appEventBus.emit('agent:stream')` 真机跑通。
+
+### 执行记录
+
+在 `npm run tauri dev` 启动的应用 devtools console 执行验证脚本，观测到：
+
+1. ✅ `window.__astraAgentRuntime` 已获取（dev 暴露生效）
+2. ✅ 全局监听器注册成功
+3. ✅ `agent_start` invoke 调用成功（无异常返回）
+4. 📨 **appEventBus 实际收到 2 个 `agent:stream` 事件**：
+   - `{kind: 'stdout', chunk: '\f'}`
+   - `{kind: 'exit', code: null}`
+
+即后端进程的 stdout 与退出事件，经真实 Tauri IPC 送达前端并成功桥接到 appEventBus。dev doc 头号 🔴 风险（流式 IPC 桥接）就此解除。
+
+> 备注：脚本中 `setTimeout(2000)` 处打印的"事件数量: 0"是脚本内计数变量的时序问题（事件晚于 2s 到达），**不影响结论**——appEventBus 监听器的实时打印明确证明事件已收到。
+
+### 验证中发现并修复的阻塞 bug
+
+首次启动应用即崩溃，panic：
+
+```
+thread 'main' panicked at src\modules\agent_runtime.rs:
+there is no reactor running, must be called from the context of a Tokio 1.x runtime
+```
+
+**根因**：`agent_start` 原为**同步** `#[tauri::command]`。Tauri 同步命令运行时**无 tokio runtime 上下文**，而 `spawn_process` 内的 `command.spawn()`（tokio::process）与 4 处 `tokio::spawn` reader/supervisor 任务都需要活跃 reactor → panic。
+
+**为何单测未发现**：后端单测用 `#[tokio::test]`，宏自带 runtime，恰好**掩盖**了这一缺失。这正是"逻辑单测通过 ≠ 真机可用"的典型案例，印证真机验证不可省。
+
+**修复**：`agent_start` 改为 `async fn`，Tauri 遂在其托管 tokio runtime 上执行该命令，内部 spawn 调用获得合法 reactor。commit `fix(tauri): make agent_start async so tokio tasks have a runtime`。修复后应用稳定运行，上述 IPC 验证随即通过。
