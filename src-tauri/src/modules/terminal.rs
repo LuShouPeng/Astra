@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -205,9 +205,9 @@ pub async fn terminal_write_input(
         .get_mut(&session_id)
         .ok_or_else(|| TerminalError::SessionNotFound(session_id.clone()))?;
 
-    session
-        .master
-        .write_all(data.as_bytes())
+    let mut writer = session.master.take_writer()
+        .map_err(|e| TerminalError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+    writer.write_all(data.as_bytes())
         .map_err(TerminalError::IoError)?;
 
     Ok(())
@@ -238,7 +238,9 @@ pub async fn terminal_read_output(
                 }
             }
         }
-        Err(e) => return Err(TerminalError::IoError(e)),
+        Err(e) => return Err(TerminalError::IoError(
+            std::io::Error::new(std::io::ErrorKind::Other, e)
+        )),
     }
 
     String::from_utf8(output)
@@ -334,17 +336,19 @@ pub async fn terminal_get_session_info(
     session_id: String,
     manager: State<'_, TerminalManager>,
 ) -> Result<TerminalSessionInfo, TerminalError> {
-    let sessions = manager.sessions.lock().unwrap();
+    let mut sessions = manager.sessions.lock().unwrap();
     let session = sessions
-        .get(&session_id)
+        .get_mut(&session_id)
         .ok_or_else(|| TerminalError::SessionNotFound(session_id.clone()))?;
+
+    let is_alive = session.child.try_wait().ok().flatten().is_none();
 
     Ok(TerminalSessionInfo {
         id: session.id.clone(),
         working_dir: session.working_dir.to_string_lossy().to_string(),
         cols: session.config.cols,
         rows: session.config.rows,
-        is_alive: session.child.try_wait().ok().flatten().is_none(),
+        is_alive,
     })
 }
 
