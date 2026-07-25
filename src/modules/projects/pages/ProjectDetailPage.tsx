@@ -64,7 +64,7 @@ function activityText(event: TimelineEvent, t: Translate): string {
 }
 
 export function ProjectDetailPage({ service }: { service?: ProjectService }) {
-  const { language, t } = useI18n();
+  const { language, t, text } = useI18n();
   const { projectId } = useParams();
   const { snapshot } = useWorkbench();
   const [tab, setTab] = useState<ProjectTab>('overview');
@@ -98,7 +98,7 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
     try {
       await service.openDirectory(project!);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('project.openError'));
+      setError(caught instanceof Error ? text(caught.message) : t('project.openError'));
     } finally {
       setOpening(false);
     }
@@ -121,7 +121,9 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
         <div>
           <p className="eyebrow">{t('project.kind', { source: t(sourceKeys[project.source]) })}</p>
           <h1>{project.name}</h1>
-          <span>{project.description ?? t('project.noDescription')}</span>
+          <span>
+            {project.description ? text(project.description) : t('project.noDescription')}
+          </span>
         </div>
         <button
           className="button button--secondary"
@@ -178,7 +180,7 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
                 .map((session) => (
                   <Link key={session.id} to={`/sessions/${session.id}`}>
                     <span>
-                      <strong>{session.title}</strong>
+                      <strong>{text(session.title)}</strong>
                       <small>{session.provider}</small>
                     </span>
                     <span className={`session-status session-status--${session.status}`}>
@@ -198,8 +200,10 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
             {sessions.map((session) => (
               <Link key={session.id} to={`/sessions/${session.id}`}>
                 <span>
-                  <strong>{session.title}</strong>
-                  <small>{session.currentAction ?? session.provider}</small>
+                  <strong>{text(session.title)}</strong>
+                  <small>
+                    {session.currentAction ? text(session.currentAction) : session.provider}
+                  </small>
                 </span>
                 <span className={`session-status session-status--${session.status}`}>
                   {t(sessionStatusKeys[session.status])}
@@ -220,7 +224,7 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
                 <Link key={change.id} to={`/sessions/${change.sessionId}?tab=changes`}>
                   <span>
                     <strong>{change.relativePath}</strong>
-                    <small>{session?.title ?? t('common.unknownSession')}</small>
+                    <small>{session ? text(session.title) : t('common.unknownSession')}</small>
                   </span>
                   <span>
                     {change.additions > 0 ? `+${change.additions}` : '0'} / -{change.deletions}
@@ -239,7 +243,7 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
             {activity.slice(0, 50).map((event) => (
               <Link key={event.id} to={`/sessions/${event.sessionId}`}>
                 <span>
-                  <strong>{activityText(event, t)}</strong>
+                  <strong>{text(activityText(event, t))}</strong>
                   <small>{t(eventTypeKeys[event.type])}</small>
                 </span>
                 <time dateTime={event.timestamp}>

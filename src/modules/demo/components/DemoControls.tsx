@@ -39,7 +39,7 @@ function emitTransition(previous: WorkbenchSnapshot, next: WorkbenchSnapshot): v
 }
 
 export function DemoControls() {
-  const { t } = useI18n();
+  const { t, text } = useI18n();
   const { snapshot, saveSnapshot, resetSnapshot, saving } = useWorkbench();
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export function DemoControls() {
       emitTransition(snapshot, next);
       setFeedback(message ?? null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('demo.saveError'));
+      setError(caught instanceof Error ? text(caught.message) : t('demo.saveError'));
     } finally {
       setPending(false);
     }
@@ -80,7 +80,7 @@ export function DemoControls() {
       appEventBus.emit('demo:reset', { timestamp: DEMO_RESET_TIMESTAMP });
       setFeedback(t('demo.resetDone'));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('demo.resetError'));
+      setError(caught instanceof Error ? text(caught.message) : t('demo.resetError'));
     } finally {
       setPending(false);
     }

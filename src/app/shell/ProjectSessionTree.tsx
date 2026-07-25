@@ -14,7 +14,7 @@ export function ProjectSessionTree({
   projects: readonly Project[];
   sessions: readonly AgentSession[];
 }) {
-  const { t } = useI18n();
+  const { t, text } = useI18n();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
 
   function toggleProject(projectId: string) {
@@ -70,7 +70,7 @@ export function ProjectSessionTree({
                           size={7}
                           fill="currentColor"
                         />
-                        <span>{session.title}</span>
+                        <span>{text(session.title)}</span>
                         {session.unread && <i aria-label={t('tree.unread')} />}
                       </NavLink>
                     </div>

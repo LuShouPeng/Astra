@@ -48,7 +48,7 @@ export function TestsView({ events }: { events: readonly TestEvent[] }) {
 }
 
 export function CommandsView({ events }: { events: readonly CommandEvent[] }) {
-  const { t } = useI18n();
+  const { t, text } = useI18n();
   if (events.length === 0)
     return <p className="session-view-empty">{t('session.noCommandEvents')}</p>;
   return (
@@ -59,7 +59,7 @@ export function CommandsView({ events }: { events: readonly CommandEvent[] }) {
             <code>{event.command}</code>
             <span data-status={event.status}>{t(resultKeys[event.status])}</span>
           </header>
-          {event.outputSummary && <p>{event.outputSummary}</p>}
+          {event.outputSummary && <p>{text(event.outputSummary)}</p>}
           <dl>
             <div>
               <dt>{t('session.exitCode')}</dt>
@@ -89,7 +89,7 @@ export function ContextView({
   project?: Project;
   capability: ProviderCapability;
 }) {
-  const { language, t } = useI18n();
+  const { language, t, text } = useI18n();
   const runtime = capability.displayOnly
     ? t('runtime.displayOnly')
     : capability.runtimeAvailable
@@ -132,7 +132,7 @@ export function ContextView({
         </div>
         <div>
           <dt>{t('session.summaryLabel')}</dt>
-          <dd>{session.summary ?? t('session.noSummary')}</dd>
+          <dd>{session.summary ? text(session.summary) : t('session.noSummary')}</dd>
         </div>
       </dl>
     </section>

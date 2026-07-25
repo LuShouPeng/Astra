@@ -25,7 +25,7 @@ export function SettingsPage({
   desktopNotifications?: DesktopNotificationService;
 }) {
   const { snapshot, saveSnapshot, saving } = useWorkbench();
-  const { language, setLanguage, t } = useI18n();
+  const { language, setLanguage, t, text } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = settingsTab(searchParams.get('tab'));
   const [theme, setTheme] = useState<ThemePreference>(() => loadThemePreference());
@@ -50,7 +50,7 @@ export function SettingsPage({
         notificationSettings: { ...snapshot!.notificationSettings, ...patch },
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('settings.saveError'));
+      setError(caught instanceof Error ? text(caught.message) : t('settings.saveError'));
     }
   }
 

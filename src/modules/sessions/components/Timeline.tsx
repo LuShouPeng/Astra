@@ -25,6 +25,7 @@ const eventMeta = {
 } as const;
 
 type Translate = (key: TranslationKey, params?: TranslationParams) => string;
+type LocalizeText = (value: string) => string;
 
 const resultKeys = {
   running: 'result.running',
@@ -53,17 +54,25 @@ const statusKeys = {
   stopped: 'session.status.stopped',
 } as const satisfies Record<string, TranslationKey>;
 
-function EventContent({ event, t }: { event: TimelineEvent; t: Translate }) {
+function EventContent({
+  event,
+  t,
+  text,
+}: {
+  event: TimelineEvent;
+  t: Translate;
+  text: LocalizeText;
+}) {
   switch (event.type) {
     case 'user_message':
     case 'agent_message':
     case 'file_change':
-      return <p>{event.content}</p>;
+      return <p>{text(event.content)}</p>;
     case 'command':
       return (
         <>
           <code>{event.command}</code>
-          {event.outputSummary && <p>{event.outputSummary}</p>}
+          {event.outputSummary && <p>{text(event.outputSummary)}</p>}
           <small>
             {t(resultKeys[event.status])}
             {event.exitCode !== undefined
@@ -83,7 +92,7 @@ function EventContent({ event, t }: { event: TimelineEvent; t: Translate }) {
     case 'approval':
       return (
         <>
-          <p>{event.request}</p>
+          <p>{text(event.request)}</p>
           <small>
             {t('event.risk', { risk: t(riskKeys[event.risk]) })} · {t(decisionKeys[event.decision])}
           </small>
@@ -92,7 +101,7 @@ function EventContent({ event, t }: { event: TimelineEvent; t: Translate }) {
     case 'status':
       return (
         <>
-          <p>{event.content}</p>
+          <p>{text(event.content)}</p>
           <small>
             {t('event.statusTransition', {
               from: t(statusKeys[event.from]),
@@ -105,7 +114,7 @@ function EventContent({ event, t }: { event: TimelineEvent; t: Translate }) {
 }
 
 export function Timeline({ events }: { events: readonly TimelineEvent[] }) {
-  const { language, t } = useI18n();
+  const { language, t, text } = useI18n();
   const [visibleCount, setVisibleCount] = useState(EVENT_BATCH_SIZE);
   const ordered = [...events].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   const visible = ordered.slice(-visibleCount);
@@ -139,7 +148,7 @@ export function Timeline({ events }: { events: readonly TimelineEvent[] }) {
                   }).format(new Date(event.timestamp))}
                 </time>
               </header>
-              <EventContent event={event} t={t} />
+              <EventContent event={event} t={t} text={text} />
             </div>
           </article>
         );

@@ -1,0 +1,98 @@
+import type { AppLanguage } from './language';
+
+const simplifiedChinese: Record<string, string> = {
+  'Authentication and account API': '身份验证与账户 API',
+  'Customer-facing web application': '面向客户的 Web 应用',
+  'Inference configuration service': '推理配置服务',
+  'Fix intermittent login timeout': '修复间歇性登录超时',
+  'Investigating session refresh and timeout handling.': '正在调查会话刷新与超时处理。',
+  'Reviewing auth service call paths': '正在检查身份验证服务调用路径',
+  'Add authentication unit tests': '添加身份验证单元测试',
+  'Ready for review': '等待评审',
+  'Update API documentation': '更新 API 文档',
+  'Display-only demo Session': '仅展示的演示会话',
+  'Fix mobile navigation layout': '修复移动端导航布局',
+  'Waiting for dependency approval': '正在等待依赖项审批',
+  'Refactor global state management': '重构全局状态管理',
+  'TypeScript typecheck failed': 'TypeScript 类型检查失败',
+  'TypeScript typecheck failed.': 'TypeScript 类型检查失败。',
+  'Optimize inference service configuration': '优化推理服务配置',
+  'Fix the intermittent login timeout without changing the public API.':
+    '在不更改公共 API 的情况下修复间歇性登录超时。',
+  'I will trace session refresh behavior and add focused timeout coverage.':
+    '我会追踪会话刷新行为，并补充有针对性的超时测试。',
+  'Claude started the deterministic demo session.': 'Claude 已启动确定性演示会话。',
+  'Found four relevant call sites.': '找到四个相关调用位置。',
+  'Centralized timeout resolution and retry behavior.': '集中处理了超时解析与重试行为。',
+  'Approve the simulated dependency installation step.': '批准模拟依赖项安装步骤。',
+  'Dependency approval required': '需要依赖项审批',
+  'Codex is waiting to simulate npm install. No command will be executed.':
+    'Codex 正在等待模拟 npm install，不会执行任何命令。',
+  'Review the failure summary before retrying the simulation.': '重试模拟前请检查失败摘要。',
+  'Codex needs approval': 'Codex 需要审批',
+  'Mobile navigation work is waiting for a simulated dependency approval.':
+    '移动端导航工作正在等待模拟依赖项审批。',
+  'Claude simulation failed': 'Claude 模拟失败',
+  'Waiting for test strategy approval': '正在等待测试策略审批',
+  'Approve the deterministic expanded timeout test matrix.': '批准确定性的扩展超时测试矩阵。',
+  'Test strategy approval required': '需要测试策略审批',
+  'Review the simulated timeout test matrix before playback continues.':
+    '继续播放前请检查模拟超时测试矩阵。',
+  'Claude needs approval': 'Claude 需要审批',
+  'The deterministic demo is waiting for test strategy approval.':
+    '确定性演示正在等待测试策略审批。',
+  'Running expanded timeout tests': '正在运行扩展超时测试',
+  'Approval recorded; deterministic test playback resumed.': '审批已记录，确定性测试播放已恢复。',
+  'Claude completed the deterministic demo session.': 'Claude 已完成确定性演示会话。',
+  'Changes ready for review': '变更已可供评审',
+  'The timeout changes and expanded tests are ready for local review.':
+    '超时变更与扩展测试已可供本地评审。',
+  'Claude simulation completed': 'Claude 模拟已完成',
+  'The timeout changes passed 18 deterministic tests.': '超时变更已通过 18 项确定性测试。',
+  'Session resumed for a follow-up request.': '会话已因后续请求恢复。',
+  'Processing follow-up request': '正在处理后续请求',
+  'Stopped by user': '已由用户停止',
+  'Session stopped in the local simulation.': '会话已在本地模拟中停止。',
+  'Approval granted; simulation resumed': '审批已通过，模拟已恢复',
+  'Retrying deterministic simulation': '正在重试确定性模拟',
+  'Approval rejected; simulation stopped': '审批被拒绝，模拟已停止',
+  'Accepted all changes.': '已接受所有变更。',
+  'Changes accepted': '已接受变更',
+  'Re-running with requested changes': '正在根据修改要求重新运行',
+  'Waiting to rerun requested changes': '正在等待按修改要求重新运行',
+  'Review changes requested; deterministic rerun started.': '已请求修改，确定性重新运行已开始。',
+  'Review changes requested; waiting to rerun.': '已请求修改，正在等待重新运行。',
+  'Changes requested': '已请求修改',
+  'Review feedback was submitted to the deterministic Agent simulation.':
+    '评审反馈已提交给确定性 Agent 模拟。',
+  'Enter a follow-up message.': '请输入后续消息。',
+  'The selected session does not exist.': '所选会话不存在。',
+  'This provider is display-only in the prototype.': '此提供方在原型中仅用于展示。',
+  'Only active Sessions can be stopped.': '只能停止活动会话。',
+  'The selected attention item is no longer available.': '所选待处理事项已不可用。',
+  'This action is not valid for the selected item.': '此操作不适用于所选事项。',
+  'The related session does not exist.': '关联会话不存在。',
+  'The review session could not be found.': '找不到评审会话。',
+  'The changed file could not be found.': '找不到变更文件。',
+  'This session has no changes to accept.': '此会话没有可接受的变更。',
+  'Describe the requested changes.': '请描述所需修改。',
+  'The changed file does not belong to this session.': '该变更文件不属于此会话。',
+  'The notification could not be found.': '找不到该通知。',
+  'Demo projects do not map to a local directory.': '演示项目没有对应的本地目录。',
+  'This project directory is missing.': '此项目目录已丢失。',
+  'Demo changes are read from the frozen prototype snapshot.': '演示变更来自冻结的原型快照。',
+  'Workbench data could not be saved.': '无法保存工作台数据。',
+  'Workbench data could not be loaded.': '无法加载工作台数据。',
+  'The built-in demo data is invalid.': '内置演示数据无效。',
+  'Saved workbench data could not be read. Demo data was restored.':
+    '无法读取已保存的工作台数据，已恢复演示数据。',
+  'Saved workbench data was invalid. Demo data was restored.':
+    '已保存的工作台数据无效，已恢复演示数据。',
+  'Workbench data contains invalid or broken references.': '工作台数据包含无效或损坏的引用。',
+  'The workspace operation could not be completed.': '无法完成工作区操作。',
+  'This workspace folder is missing.': '此工作区文件夹已丢失。',
+};
+
+export function localizeKnownText(language: AppLanguage, value: string): string {
+  return language === 'zh-CN' ? (simplifiedChinese[value] ?? value) : value;
+}

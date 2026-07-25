@@ -6,17 +6,20 @@ import {
   type AppLanguage,
 } from './language';
 import { translate, type TranslationKey, type TranslationParams } from './translations';
+import { localizeKnownText } from './knownText';
 
 interface I18nValue {
   language: AppLanguage;
   setLanguage: (language: AppLanguage) => void;
   t: (key: TranslationKey, params?: TranslationParams) => string;
+  text: (value: string) => string;
 }
 
 const defaultValue: I18nValue = {
   language: 'en',
   setLanguage: () => undefined,
   t: (key, params) => translate('en', key, params),
+  text: (value) => value,
 };
 
 const I18nContext = createContext<I18nValue>(defaultValue);
@@ -34,6 +37,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         setLanguageState(nextLanguage);
       },
       t: (key, params) => translate(language, key, params),
+      text: (text) => localizeKnownText(language, text),
     }),
     [language],
   );

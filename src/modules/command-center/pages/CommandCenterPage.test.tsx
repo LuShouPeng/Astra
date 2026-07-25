@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrototypeRepository } from '../../../core/data/prototypeRepository';
+import { I18nProvider } from '../../../core/i18n/I18nContext';
 import { WorkbenchProvider } from '../../../core/state/WorkbenchContext';
 import { createDemoSnapshot } from '../../demo';
 import { requestSessionChanges } from '../../changes';
@@ -179,5 +180,29 @@ describe('CommandCenterPage', () => {
     expect(
       within(activity).getByRole('link', { name: /Review.*Fix intermittent login timeout/s }),
     ).toBeVisible();
+  });
+
+  it('localizes built-in session content in Simplified Chinese', async () => {
+    localStorage.setItem('astra-nexus.language', 'zh-CN');
+    const repository: PrototypeRepository = {
+      load: vi.fn(async () => createDemoSnapshot()),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => createDemoSnapshot()),
+      consumeWarning: vi.fn(() => null),
+    };
+
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <WorkbenchProvider repository={repository}>
+            <CommandCenterPage />
+          </WorkbenchProvider>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: '控制中心' })).toBeVisible();
+    expect(screen.getAllByText('修复间歇性登录超时')[0]).toBeVisible();
+    localStorage.clear();
   });
 });

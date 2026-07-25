@@ -35,7 +35,7 @@ export function ProjectsPage({
   onAddProject?: () => Promise<void>;
   addProjectError?: string | null;
 }) {
-  const { language, t } = useI18n();
+  const { language, t, text } = useI18n();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<ProjectSort>('recent');
@@ -73,7 +73,7 @@ export function ProjectsPage({
       appEventBus.emit('project:removed', { projectId: removeTarget.id });
       setRemoveTarget(null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t('projects.removeError'));
+      setMessage(error instanceof Error ? text(error.message) : t('projects.removeError'));
     }
   }
 
@@ -84,7 +84,7 @@ export function ProjectsPage({
     try {
       await service.openDirectory(project);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t('projects.openError'));
+      setMessage(error instanceof Error ? text(error.message) : t('projects.openError'));
     } finally {
       setOpeningProjectId(null);
     }
@@ -97,7 +97,7 @@ export function ProjectsPage({
     try {
       await onAddProject();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t('projects.addError'));
+      setMessage(error instanceof Error ? text(error.message) : t('projects.addError'));
     } finally {
       setAdding(false);
     }
@@ -163,7 +163,7 @@ export function ProjectsPage({
                   <Link to={`/projects/${project.id}`}>
                     <h2>{project.name}</h2>
                   </Link>
-                  {project.description && <p>{project.description}</p>}
+                  {project.description && <p>{text(project.description)}</p>}
                   <code className="project-card__path" title={project.rootPath}>
                     {project.rootPath}
                   </code>

@@ -14,6 +14,7 @@ import type {
   WorkspaceService,
 } from '../../../core/contracts/workspace';
 import { appEventBus } from '../../../core/events/appEventBus';
+import { useI18n } from '../../../core/i18n/I18nContext';
 import type { WorkspaceServiceController } from '../services/workspaceService';
 
 type LoadState = 'loading' | 'ready';
@@ -115,6 +116,7 @@ export function WorkspaceProvider({
   children: ReactNode;
   service: WorkspaceService;
 }) {
+  const { text } = useI18n();
   const [state, dispatch] = useReducer(reducer, initialState);
 
   const reload = useCallback(async () => service.list(), [service]);
@@ -195,6 +197,8 @@ export function WorkspaceProvider({
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       ...state,
+      warning: state.warning ? text(state.warning) : null,
+      error: state.error ? text(state.error) : null,
       chooseAndOpen,
       openRecent,
       removeRecent,
@@ -202,7 +206,7 @@ export function WorkspaceProvider({
       closeWorkspace,
       dismissMessage: () => dispatch({ type: 'dismiss-message' }),
     }),
-    [chooseAndOpen, closeWorkspace, openRecent, removeRecent, state],
+    [chooseAndOpen, closeWorkspace, openRecent, removeRecent, state, text],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

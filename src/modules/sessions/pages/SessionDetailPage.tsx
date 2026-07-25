@@ -64,7 +64,7 @@ export function SessionDetailPage({
   changesService?: ChangesService;
   projectService?: ProjectService;
 }) {
-  const { language, t } = useI18n();
+  const { language, t, text } = useI18n();
   const { sessionId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
@@ -115,7 +115,7 @@ export function SessionDetailPage({
       appEventBus.emit('session:status-changed', { session: updated, previousStatus });
       setMessage('');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('session.followUpError'));
+      setError(caught instanceof Error ? text(caught.message) : t('session.followUpError'));
     }
   }
 
@@ -135,7 +135,7 @@ export function SessionDetailPage({
         appEventBus.emit('session:status-changed', { session: updated, previousStatus });
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('session.approvalError'));
+      setError(caught instanceof Error ? text(caught.message) : t('session.approvalError'));
     }
   }
 
@@ -148,7 +148,7 @@ export function SessionDetailPage({
       const updated = next.sessions.find((item) => item.id === session!.id)!;
       appEventBus.emit('session:status-changed', { session: updated, previousStatus });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('session.stopError'));
+      setError(caught instanceof Error ? text(caught.message) : t('session.stopError'));
     }
   }
 
@@ -159,7 +159,7 @@ export function SessionDetailPage({
     try {
       await projectService.openDirectory(project);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('session.openProjectError'));
+      setError(caught instanceof Error ? text(caught.message) : t('session.openProjectError'));
     } finally {
       setOpeningProject(false);
     }
@@ -176,7 +176,7 @@ export function SessionDetailPage({
             {project?.name ?? t('common.unknownProject')} /{' '}
             <span className="session-header__provider">{capability.label}</span>
           </p>
-          <h1>{session.title}</h1>
+          <h1>{text(session.title)}</h1>
         </div>
         <span className={`session-status session-status--${session.status}`}>
           {t(sessionStatusKeys[session.status])}
@@ -256,7 +256,7 @@ export function SessionDetailPage({
       <div className="session-summary" aria-label={t('session.summary')}>
         <span>
           <small>{t('session.currentAction')}</small>
-          {session.currentAction ?? t('session.noActiveOperation')}
+          {session.currentAction ? text(session.currentAction) : t('session.noActiveOperation')}
         </span>
         <span>
           <small>{t('session.startTime')}</small>

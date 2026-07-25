@@ -43,7 +43,7 @@ const typeKeys: Record<AttentionType, TranslationKey> = {
 };
 
 export function AttentionPage() {
-  const { language, t } = useI18n();
+  const { language, t, text } = useI18n();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const [filter, setFilter] = useState<AttentionFilter>('all');
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +72,7 @@ export function AttentionPage() {
         }
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('attention.updateError'));
+      setError(caught instanceof Error ? text(caught.message) : t('attention.updateError'));
     }
   }
 
@@ -82,7 +82,7 @@ export function AttentionPage() {
       setError(null);
       await saveSnapshot(markAttentionRead(snapshot, attentionId));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('attention.markReadError'));
+      setError(caught instanceof Error ? text(caught.message) : t('attention.markReadError'));
     }
   }
 
@@ -103,7 +103,7 @@ export function AttentionPage() {
         );
       appEventBus.emit('attention:resolved', { attentionId, sessionId });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('attention.acceptError'));
+      setError(caught instanceof Error ? text(caught.message) : t('attention.acceptError'));
     }
   }
 
@@ -157,10 +157,14 @@ export function AttentionPage() {
                     : t('attention.unknownAgent')}
                 </small>
               </div>
-              <h2>{item.title}</h2>
-              <p>{item.description}</p>
+              <h2>{text(item.title)}</h2>
+              <p>{text(item.description)}</p>
               <div className="attention-item__meta">
-                <span>{sessions.get(item.sessionId)?.title ?? t('common.unknownSession')}</span>
+                <span>
+                  {sessions.has(item.sessionId)
+                    ? text(sessions.get(item.sessionId)!.title)
+                    : t('common.unknownSession')}
+                </span>
                 <time dateTime={item.createdAt}>
                   {new Intl.DateTimeFormat(language, {
                     month: 'short',
@@ -177,7 +181,7 @@ export function AttentionPage() {
                   <button
                     className="button button--primary"
                     disabled={saving}
-                    aria-label={t('attention.approveNamed', { name: item.title })}
+                    aria-label={t('attention.approveNamed', { name: text(item.title) })}
                     onClick={() => void act(item.id, 'approve')}
                   >
                     <Check size={15} />
@@ -186,7 +190,7 @@ export function AttentionPage() {
                   <button
                     className="button button--secondary"
                     disabled={saving}
-                    aria-label={t('attention.rejectNamed', { name: item.title })}
+                    aria-label={t('attention.rejectNamed', { name: text(item.title) })}
                     onClick={() => void act(item.id, 'reject')}
                   >
                     <X size={15} />
@@ -194,7 +198,7 @@ export function AttentionPage() {
                   </button>
                   <Link
                     className="button button--secondary"
-                    aria-label={t('attention.viewSessionNamed', { name: item.title })}
+                    aria-label={t('attention.viewSessionNamed', { name: text(item.title) })}
                     to={`/sessions/${item.sessionId}`}
                   >
                     <ExternalLink size={15} aria-hidden="true" />
@@ -206,7 +210,7 @@ export function AttentionPage() {
                 <>
                   <Link
                     className="button button--primary"
-                    aria-label={t('attention.replyNamed', { name: item.title })}
+                    aria-label={t('attention.replyNamed', { name: text(item.title) })}
                     to={`/sessions/${item.sessionId}?focus=message`}
                   >
                     <MessageSquareReply size={15} aria-hidden="true" />
@@ -214,7 +218,7 @@ export function AttentionPage() {
                   </Link>
                   <Link
                     className="button button--secondary"
-                    aria-label={t('attention.viewSessionNamed', { name: item.title })}
+                    aria-label={t('attention.viewSessionNamed', { name: text(item.title) })}
                     to={`/sessions/${item.sessionId}`}
                   >
                     <ExternalLink size={15} aria-hidden="true" />
@@ -226,7 +230,7 @@ export function AttentionPage() {
                 <>
                   <Link
                     className="button button--secondary"
-                    aria-label={t('attention.openDiffNamed', { name: item.title })}
+                    aria-label={t('attention.openDiffNamed', { name: text(item.title) })}
                     to={`/sessions/${item.sessionId}?tab=changes`}
                   >
                     <FileDiff size={15} aria-hidden="true" />
@@ -235,7 +239,7 @@ export function AttentionPage() {
                   <button
                     className="button button--primary"
                     disabled={saving}
-                    aria-label={t('attention.acceptNamed', { name: item.title })}
+                    aria-label={t('attention.acceptNamed', { name: text(item.title) })}
                     onClick={() => void acceptReview(item.id, item.sessionId)}
                   >
                     <CheckCheck size={15} aria-hidden="true" />
@@ -243,7 +247,7 @@ export function AttentionPage() {
                   </button>
                   <Link
                     className="button button--secondary"
-                    aria-label={t('attention.requestNamed', { name: item.title })}
+                    aria-label={t('attention.requestNamed', { name: text(item.title) })}
                     to={`/sessions/${item.sessionId}?tab=changes&request=changes`}
                   >
                     <MessageSquareReply size={15} aria-hidden="true" />
@@ -256,7 +260,7 @@ export function AttentionPage() {
                   <button
                     className="button button--primary"
                     disabled={saving}
-                    aria-label={t('attention.retryNamed', { name: item.title })}
+                    aria-label={t('attention.retryNamed', { name: text(item.title) })}
                     onClick={() => void act(item.id, 'retry')}
                   >
                     <RotateCcw size={15} aria-hidden="true" />
@@ -264,7 +268,7 @@ export function AttentionPage() {
                   </button>
                   <Link
                     className="button button--secondary"
-                    aria-label={t('attention.viewLogsNamed', { name: item.title })}
+                    aria-label={t('attention.viewLogsNamed', { name: text(item.title) })}
                     to={`/sessions/${item.sessionId}?tab=commands`}
                   >
                     <ScrollText size={15} aria-hidden="true" />
@@ -273,7 +277,7 @@ export function AttentionPage() {
                   <button
                     className="button button--secondary"
                     disabled={saving}
-                    aria-label={t('attention.dismissNamed', { name: item.title })}
+                    aria-label={t('attention.dismissNamed', { name: text(item.title) })}
                     onClick={() => void act(item.id, 'dismiss')}
                   >
                     {t('attention.dismiss')}
@@ -284,7 +288,7 @@ export function AttentionPage() {
                 <>
                   <Link
                     className="button button--secondary"
-                    aria-label={t('attention.reviewNamed', { name: item.title })}
+                    aria-label={t('attention.reviewNamed', { name: text(item.title) })}
                     to={`/sessions/${item.sessionId}?tab=changes`}
                   >
                     <FileDiff size={15} aria-hidden="true" />
@@ -293,7 +297,7 @@ export function AttentionPage() {
                   <button
                     className="button button--primary"
                     disabled={saving}
-                    aria-label={t('attention.markDoneNamed', { name: item.title })}
+                    aria-label={t('attention.markDoneNamed', { name: text(item.title) })}
                     onClick={() => void act(item.id, 'dismiss')}
                   >
                     <Check size={15} aria-hidden="true" />
@@ -305,7 +309,7 @@ export function AttentionPage() {
                 <button
                   className="button button--secondary"
                   disabled={saving}
-                  aria-label={t('attention.markReadNamed', { name: item.title })}
+                  aria-label={t('attention.markReadNamed', { name: text(item.title) })}
                   onClick={() => void markRead(item.id)}
                 >
                   {t('attention.markRead')}

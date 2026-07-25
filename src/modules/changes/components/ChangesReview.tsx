@@ -47,7 +47,7 @@ export function ChangesReview({
   service?: ChangesService;
   requestOnOpen?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, text } = useI18n();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const availableSessionIds = useMemo(
     () => new Set(snapshot?.fileChanges.map((change) => change.sessionId) ?? []),
@@ -95,7 +95,7 @@ export function ChangesReview({
       setNotice(message);
       return true;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('changes.saveError'));
+      setError(caught instanceof Error ? text(caught.message) : t('changes.saveError'));
       return false;
     }
   }
@@ -141,7 +141,7 @@ export function ChangesReview({
       setDialogOpen(false);
       setFeedback('');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('changes.requestError'));
+      setError(caught instanceof Error ? text(caught.message) : t('changes.requestError'));
     }
   }
 
@@ -171,7 +171,7 @@ export function ChangesReview({
       await service.openFile(project, selected.relativePath);
       setNotice(t('changes.fileOpened'));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('changes.openError'));
+      setError(caught instanceof Error ? text(caught.message) : t('changes.openError'));
     } finally {
       setNativeAction(null);
     }

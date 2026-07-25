@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { WorkbenchSnapshot } from '../contracts/workbenchData';
 import type { PrototypeRepository } from '../data/prototypeRepository';
+import { useI18n } from '../i18n/I18nContext';
 
 type WorkbenchLoadState = 'loading' | 'ready' | 'error';
 
@@ -72,6 +73,7 @@ export function WorkbenchProvider({
   children: ReactNode;
   repository: PrototypeRepository;
 }) {
+  const { text } = useI18n();
   const [state, dispatch] = useReducer(reducer, initialState);
 
   useEffect(() => {
@@ -121,8 +123,15 @@ export function WorkbenchProvider({
   }, [repository]);
 
   const value = useMemo(
-    () => ({ ...state, repository, resetSnapshot, saveSnapshot }),
-    [repository, resetSnapshot, saveSnapshot, state],
+    () => ({
+      ...state,
+      warning: state.warning ? text(state.warning) : null,
+      error: state.error ? text(state.error) : null,
+      repository,
+      resetSnapshot,
+      saveSnapshot,
+    }),
+    [repository, resetSnapshot, saveSnapshot, state, text],
   );
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
 }

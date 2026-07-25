@@ -40,7 +40,7 @@ function notificationTime(timestamp: string, locale: string) {
 }
 
 export function NotificationsPage() {
-  const { language, t } = useI18n();
+  const { language, t, text } = useI18n();
   const navigate = useNavigate();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -64,7 +64,7 @@ export function NotificationsPage() {
       setError(null);
       await saveSnapshot(next);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t('notifications.updateError'));
+      setError(caught instanceof Error ? text(caught.message) : t('notifications.updateError'));
     }
   }
 
@@ -143,21 +143,23 @@ export function NotificationsPage() {
               <div className="notification-item__body">
                 <header>
                   <div>
-                    <h2>{notification.title}</h2>
+                    <h2>{text(notification.title)}</h2>
                     {!notification.read && <span>{t('notifications.unread')}</span>}
                   </div>
                   <time dateTime={notification.createdAt}>
                     {notificationTime(notification.createdAt, language)}
                   </time>
                 </header>
-                <p>{notification.message}</p>
+                <p>{text(notification.message)}</p>
                 <footer>
                   <span>
                     {projects.get(notification.projectId ?? '') ?? t('notifications.workspace')}
                   </span>
                   {notification.sessionId && (
                     <span>
-                      {sessions.get(notification.sessionId) ?? t('common.unknownSession')}
+                      {sessions.has(notification.sessionId)
+                        ? text(sessions.get(notification.sessionId)!)
+                        : t('common.unknownSession')}
                     </span>
                   )}
                   <span>{t(eventKeys[notification.event])}</span>
@@ -165,7 +167,7 @@ export function NotificationsPage() {
               </div>
               <button
                 className="icon-button"
-                aria-label={t('notifications.openNamed', { name: notification.title })}
+                aria-label={t('notifications.openNamed', { name: text(notification.title) })}
                 disabled={saving}
                 onClick={() => void openNotification(notification)}
               >

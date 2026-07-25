@@ -84,7 +84,7 @@ function activityLabel(
 
 export function CommandCenterPage() {
   const { loadState, snapshot, error } = useWorkbench();
-  const { language, t } = useI18n();
+  const { language, t, text } = useI18n();
   const [searchParams] = useSearchParams();
 
   if (loadState === 'loading')
@@ -188,7 +188,7 @@ export function CommandCenterPage() {
                 {session.provider[0].toUpperCase()}
               </span>
               <span className="session-row__main">
-                <strong>{session.title}</strong>
+                <strong>{text(session.title)}</strong>
                 <small>
                   {snapshot.providerCapabilities[session.provider].label} /{' '}
                   {projects.get(session.projectId)?.name ?? t('common.unknownProject')} /{' '}
@@ -204,7 +204,7 @@ export function CommandCenterPage() {
                 </small>
               </span>
               <span className="session-row__action">
-                {session.currentAction ?? session.status}
+                {session.currentAction ? text(session.currentAction) : session.status}
                 <ArrowRight size={15} aria-hidden="true" />
               </span>
             </Link>
@@ -229,7 +229,7 @@ export function CommandCenterPage() {
               <Link className="dashboard-row" key={item.id} to={`/sessions/${item.sessionId}`}>
                 <span className={`priority-dot priority-dot--${item.priority}`} />
                 <span>
-                  <strong>{item.title}</strong>
+                  <strong>{text(item.title)}</strong>
                   <small>{projects.get(item.projectId)?.name ?? t('common.unknownProject')}</small>
                 </span>
                 <ArrowRight size={15} aria-hidden="true" />
@@ -285,7 +285,7 @@ export function CommandCenterPage() {
             return (
               <Link className="activity-row" key={event.id} to={`/sessions/${event.sessionId}`}>
                 <span>{t(activityLabel(event, snapshot))}</span>
-                <strong>{session?.title ?? t('common.unknownSession')}</strong>
+                <strong>{session ? text(session.title) : t('common.unknownSession')}</strong>
                 <time dateTime={event.timestamp}>
                   {new Intl.DateTimeFormat(language, {
                     hour: '2-digit',
