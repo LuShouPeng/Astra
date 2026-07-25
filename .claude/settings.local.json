@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl *)",
+      "Bash(mv x86_64 rustup-init.exe)",
+      "Bash(chmod +x rustup-init.exe)",
+      "Bash(./rustup-init.exe *)",
+      "Bash($HOME/.cargo/bin/cargo.exe *)",
+      "Bash(/c/Users/yzzhang43/.cargo/bin/cargo.exe --version)",
+      "Bash(npm run *)",
+      "Bash(PATH=\"/c/Users/yzzhang43/.cargo/bin:$PATH\" npm run *)",
+      "Bash(./artifacts/release/Astra-Nexus-0.1.0.exe *)"
+    ]
+  }
+}
