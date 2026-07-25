@@ -175,6 +175,13 @@ describe('ChangesPage', () => {
             finishOpen = resolve;
           }),
       ),
+      commit: vi.fn(),
+      checkout: vi.fn(),
+      merge: vi.fn(),
+      reset: vi.fn(),
+      worktreeList: vi.fn(),
+      worktreeCreate: vi.fn(),
+      worktreeRemove: vi.fn(),
     };
     render(
       <MemoryRouter>
