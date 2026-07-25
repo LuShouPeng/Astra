@@ -66,8 +66,9 @@ impl EventSink for AppEventSink {
 }
 
 /// Live handle for one running process. The child itself lives in the wait
-/// task; the registry keeps only the control channels.
+/// task; the registry keeps only the control channels + pid for cleanup.
 struct AgentHandle {
+    pid: u32,
     stdin_tx: mpsc::UnboundedSender<String>,
     kill_tx: mpsc::UnboundedSender<()>,
 }
@@ -110,6 +111,47 @@ impl AgentRegistry {
             .lock()
             .map(|guard| guard.keys().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// Snapshot of all live pids, for shutdown cleanup.
+    fn running_pids(&self) -> Vec<u32> {
+        self.procs
+            .lock()
+            .map(|guard| guard.values().map(|h| h.pid).collect())
+            .unwrap_or_default()
+    }
+
+    /// Synchronously kills every registered process tree. Called from the app
+    /// exit hook, where the async runtime may already be tearing down — so this
+    /// uses blocking `std::process::Command` rather than the async `kill_tree`.
+    pub fn kill_all_blocking(&self) {
+        for pid in self.running_pids() {
+            if pid == 0 {
+                continue;
+            }
+            kill_tree_blocking(pid);
+        }
+        if let Ok(mut guard) = self.procs.lock() {
+            guard.clear();
+        }
+    }
+}
+
+/// Blocking variant of `kill_tree` for use during shutdown (no tokio runtime).
+fn kill_tree_blocking(pid: u32) {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status();
     }
 }
 
@@ -214,7 +256,14 @@ fn spawn_process(
     let (stdin_tx, mut stdin_rx) = mpsc::unbounded_channel::<String>();
     let (kill_tx, mut kill_rx) = mpsc::unbounded_channel::<()>();
 
-    registry.insert(session_id.clone(), AgentHandle { stdin_tx, kill_tx });
+    registry.insert(
+        session_id.clone(),
+        AgentHandle {
+            pid,
+            stdin_tx,
+            kill_tx,
+        },
+    );
 
     // stdout reader
     if let Some(stdout) = stdout {
@@ -437,6 +486,3 @@ mod tests {
         assert!(provider_argv("unknown", "test").is_none());
     }
 }
-
-
-

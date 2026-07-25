@@ -1,5 +1,7 @@
 mod modules;
 
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -22,6 +24,14 @@ pub fn run() {
             modules::agent_runtime::agent_stop,
             modules::agent_runtime::agent_list_running
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Astra Nexus");
+        .build(tauri::generate_context!())
+        .expect("error while running Astra Nexus")
+        .run(|app, event| {
+            // Kill all live agent process trees when the app is shutting down
+            // so CLI children never outlive the window (orphan prevention).
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                let registry = app.state::<modules::agent_runtime::AgentRegistry>();
+                registry.kill_all_blocking();
+            }
+        });
 }

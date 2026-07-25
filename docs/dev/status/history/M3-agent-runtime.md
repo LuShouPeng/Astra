@@ -43,12 +43,26 @@ dev doc 预设「新增自定义进程权限 / shell allowlist」。**实际未�
 | 进程真能启动并回传 stdout | `spawns_echo_and_captures_output` 单测启动真实 `echo` | ✅ 捕获 `Stdout` + `Exit{code:0}` |
 | provider argv 映射正确 | 4 个 `provider_argv_*` 单测 | ✅ claude/codex/gemini 映射符合预期，unknown 被拒 |
 
+## 孤儿进程防护（2026-07-25，已真机验证）
+
+- **窗口关闭钩子已实现**：`lib.rs` 改用 `.build().run(|app, event| ...)`，在 `RunEvent::ExitRequested` 时调 `AgentRegistry::kill_all_blocking()` 遍历 registry 杀掉所有进程树。
+- **`kill_all_blocking`**：用同步 `std::process::Command`（退出时 tokio runtime 可能已拆），对每个存活 pid 调 `kill_tree_blocking`（Windows `taskkill /T /F`），最后清空 registry。`AgentHandle` 为此新增 `pid` 字段。
+- **真机实测**（临时测试，已删）：`cmd → ping` 两层进程树，实测输出：
+  ```
+  parent pid=34416 children=[26796]     # cmd + ping 子进程各一
+  tree kill verified: parent + 1 child(ren) gone, registry cleared
+  ```
+  确认 `taskkill /T` 连 fork 出的 `ping` 子进程一并杀掉，registry 清空。子进程存活检查用 `tasklist`，子 pid 枚举用 PowerShell `Get-CimInstance`（Win11 已废弃 `wmic`）。
+
+### 附带发现（环境相关）
+
+- Win11 **废弃 `wmic`**：`wmic.exe` 已不在 System32/wbem，查进程关系需用 PowerShell CIM。
+- 直接 `Command::new("tasklist")` 在部分 shell（如 Git Bash）会因 PATH 不含 System32 报 `program not found`；生产代码的 `taskkill` 走同一解析路径，但 **Tauri app 进程继承系统环境**，System32 在 PATH 上，实际运行无碍。测试中通过 `cmd /C` 包裹规避了测试 shell 的 PATH 差异。
+
 ## ⚠️ 尚未真机验证（留待 M4）
 
 - **流式 IPC 桥接**：`AppEventSink.emit` → 前端 `listen()` 尚无前端消费方，Timeline 能否收到真实输出**未经端到端验证**。这是 dev doc 标记的头号 🔴 风险，M4 前不能声称打通。
 - **真实 CLI 启动**：`agent_start` 对 `claude --print` 的真机拉起未测（单测用 echo 替身）。claude 已授权可用，codex/gemini 未授权——真实启动的成功/失败分支待 M4 手动验证。
-- **孤儿进程 / kill 树**：`taskkill /T` 对 CLI fork 子进程的实际清理未在真机压测。
-- **窗口关闭钩子**：应用退出时遍历 registry 批量 kill **尚未实现**（dev doc 要求，留待 M4/M5）。
 
 ## 已知非阻塞项
 
