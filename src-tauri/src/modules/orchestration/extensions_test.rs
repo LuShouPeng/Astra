@@ -3,7 +3,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use super::extensions::{install_local_skill, validate_mcp_config, McpServerInput};
+use super::extensions::{
+    install_local_skill, validate_git_source, validate_mcp_config, McpServerInput,
+};
 
 fn temp(label: &str) -> std::path::PathBuf {
     let suffix = SystemTime::now()
@@ -61,4 +63,16 @@ fn rejects_skill_packages_without_skill_markdown() {
     assert!(install_local_skill(&source, &cache).is_err());
     fs::remove_dir_all(source).unwrap();
     fs::remove_dir_all(cache).unwrap();
+}
+
+#[test]
+fn validates_https_git_sources_without_embedded_credentials() {
+    assert!(validate_git_source("https://github.com/example/skill.git", Some("v1.2.0")).is_ok());
+    assert!(validate_git_source("https://token@github.com/example/skill.git", None).is_err());
+    assert!(validate_git_source("file:///C:/outside", None).is_err());
+    assert!(validate_git_source(
+        "https://github.com/example/skill.git",
+        Some("--upload-pack=bad")
+    )
+    .is_err());
 }

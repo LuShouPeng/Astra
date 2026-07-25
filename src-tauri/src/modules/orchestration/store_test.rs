@@ -91,3 +91,59 @@ fn marks_active_work_as_interrupted_on_recovery() {
         "interrupted"
     );
 }
+
+#[test]
+fn approval_and_cancellation_update_run_nodes_and_audit_events() {
+    let store = OrchestrationStore::in_memory().unwrap();
+    store
+        .save_run(&WorkflowRunRecord {
+            id: "run-decision".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_version: 1,
+            project_id: "project-1".into(),
+            status: "waiting".into(),
+            integration_branch: None,
+        })
+        .unwrap();
+    store
+        .save_node_run(&NodeRunRecord {
+            id: "node-decision".into(),
+            run_id: "run-decision".into(),
+            node_id: "agent".into(),
+            status: "waiting_approval".into(),
+            attempt: 1,
+            provider: None,
+            worktree_path: None,
+        })
+        .unwrap();
+    store
+        .save_approval(&ApprovalRecord {
+            id: "approval-decision".into(),
+            run_id: "run-decision".into(),
+            node_run_id: "node-decision".into(),
+            capability: "worktree".into(),
+            risk: "medium".into(),
+            summary: "Create worktree".into(),
+            status: "pending".into(),
+        })
+        .unwrap();
+    store.decide_run("run-decision", true).unwrap();
+    assert_eq!(
+        store.get_run("run-decision").unwrap().unwrap().status,
+        "queued"
+    );
+    assert_eq!(
+        store.list_node_runs("run-decision").unwrap()[0].status,
+        "ready"
+    );
+    store.cancel_run("run-decision").unwrap();
+    assert_eq!(
+        store.get_run("run-decision").unwrap().unwrap().status,
+        "cancelled"
+    );
+    assert_eq!(store.list_events("run-decision").unwrap().len(), 2);
+    store.save_mcp_config("exa", r#"{"id":"exa"}"#).unwrap();
+    assert_eq!(store.list_mcp_configs().unwrap()[0].id, "exa");
+    store.delete_mcp_config("exa").unwrap();
+    assert!(store.list_mcp_configs().unwrap().is_empty());
+}

@@ -10,9 +10,12 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 use tokio::process::Command;
+use url::Url;
 use walkdir::WalkDir;
+
+use super::store::OrchestrationStore;
 
 const MAX_SKILL_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_SKILL_FILES: usize = 256;
@@ -131,7 +134,11 @@ fn skill_files(source: &Path) -> Result<Vec<(PathBuf, PathBuf, u64)>, String> {
     }
     let mut files = Vec::new();
     let mut total = 0_u64;
-    for entry in WalkDir::new(&source).follow_links(false) {
+    for entry in WalkDir::new(&source)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| entry.file_name() != ".git")
+    {
         let entry = entry.map_err(|_| "The Skill package could not be inspected.".to_string())?;
         if entry.file_type().is_symlink() {
             return Err("Skill packages may not contain symbolic links.".into());
@@ -162,6 +169,51 @@ fn skill_files(source: &Path) -> Result<Vec<(PathBuf, PathBuf, u64)>, String> {
     }
     files.sort_by(|left, right| left.1.cmp(&right.1));
     Ok(files)
+}
+
+pub fn validate_git_source(source_url: &str, revision: Option<&str>) -> Result<(), String> {
+    let url = Url::parse(source_url).map_err(|_| "The Skill Git URL is invalid.".to_string())?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || source_url.len() > 2_048
+    {
+        return Err("Skill Git sources must use HTTPS without embedded credentials.".into());
+    }
+    if revision.is_some_and(|value| {
+        value.is_empty()
+            || value.len() > 160
+            || value.starts_with('-')
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_. /".contains(&byte))
+    }) {
+        return Err("The Skill Git revision is invalid.".into());
+    }
+    Ok(())
+}
+
+fn git_output(root: Option<&Path>, args: &[&str]) -> Result<(), String> {
+    let mut command = std::process::Command::new("git.exe");
+    command.args(["-c", "core.hooksPath=NUL", "-c", "core.fsmonitor=false"]);
+    if let Some(root) = root {
+        command.arg("-C").arg(root);
+    }
+    let output = command
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .map_err(|_| "Git could not be started.".to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .next()
+            .unwrap_or("The Skill repository operation failed.")
+            .to_string())
+    }
 }
 
 pub fn install_local_skill(source: &Path, cache: &Path) -> Result<InstalledSkill, String> {
@@ -249,6 +301,47 @@ pub async fn orchestration_test_mcp_connection(input: McpServerInput) -> Result<
 }
 
 #[tauri::command]
+pub fn orchestration_save_mcp_server(
+    store: State<'_, OrchestrationStore>,
+    input: McpServerInput,
+) -> Result<(), String> {
+    validate_mcp_config(&input)?;
+    let json = serde_json::to_string(&input)
+        .map_err(|_| "The MCP configuration could not be serialized.".to_string())?;
+    store
+        .save_mcp_config(&input.id, &json)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn orchestration_list_mcp_servers(
+    store: State<'_, OrchestrationStore>,
+) -> Result<Vec<McpServerInput>, String> {
+    store
+        .list_mcp_configs()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|record| {
+            serde_json::from_str(&record.config_json)
+                .map_err(|_| "A stored MCP configuration is invalid.".to_string())
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn orchestration_delete_mcp_server(
+    store: State<'_, OrchestrationStore>,
+    id: String,
+) -> Result<(), String> {
+    if !valid_id(&id) {
+        return Err("The MCP server identifier is invalid.".into());
+    }
+    store
+        .delete_mcp_config(&id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn orchestration_store_secret(reference: String, secret: String) -> Result<(), String> {
     if !valid_id(&reference) || secret.is_empty() || secret.len() > 16_384 {
         return Err("The credential input is invalid.".into());
@@ -271,4 +364,57 @@ pub async fn orchestration_install_local_skill(
     })
     .await
     .map_err(|_| "The Skill installation task stopped unexpectedly.".to_string())?
+}
+
+#[tauri::command]
+pub async fn orchestration_install_git_skill(
+    app: AppHandle,
+    source_url: String,
+    revision: Option<String>,
+) -> Result<InstalledSkill, String> {
+    validate_git_source(&source_url, revision.as_deref())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let app_data = app
+            .path()
+            .app_data_dir()
+            .map_err(|_| "The application data directory is unavailable.".to_string())?;
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "The system clock is unavailable.".to_string())?
+            .as_nanos();
+        let staging = app_data
+            .join("skill-staging")
+            .join(format!("git-{}-{nonce}", std::process::id()));
+        fs::create_dir_all(staging.parent().expect("staging parent"))
+            .map_err(|_| "The Skill staging directory could not be created.".to_string())?;
+        let staging_text = staging.to_string_lossy().into_owned();
+        let result = (|| {
+            git_output(
+                None,
+                &[
+                    "clone",
+                    "--no-checkout",
+                    "--filter=blob:none",
+                    "--",
+                    &source_url,
+                    &staging_text,
+                ],
+            )?;
+            git_output(
+                Some(&staging),
+                &[
+                    "checkout",
+                    "--detach",
+                    revision.as_deref().unwrap_or("HEAD"),
+                ],
+            )?;
+            install_local_skill(&staging, &app_data.join("skills"))
+        })();
+        if staging.starts_with(app_data.join("skill-staging")) {
+            let _ = fs::remove_dir_all(&staging);
+        }
+        result
+    })
+    .await
+    .map_err(|_| "The Git Skill installation task stopped unexpectedly.".to_string())?
 }

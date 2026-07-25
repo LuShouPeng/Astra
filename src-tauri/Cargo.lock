@@ -66,6 +66,7 @@ dependencies = [
  "tauri-plugin-store",
  "thiserror 2.0.19",
  "tokio",
+ "url",
  "walkdir",
  "windows-sys 0.61.2",
 ]

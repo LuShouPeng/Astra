@@ -13,6 +13,7 @@ import {
   type OnNodesChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { invoke } from '@tauri-apps/api/core';
 import {
   Check,
   Copy,
@@ -37,6 +38,7 @@ import type {
 } from '../../../core/contracts/workflows';
 import { useI18n } from '../../../core/i18n/I18nContext';
 import { validateWorkflow } from '../model/workflowGraph';
+import { routeWorkflowProviders, type ProviderAvailability } from '../model/providerRouting';
 import { createDefaultWorkflowService, type WorkflowService } from '../services/workflowService';
 import { workflowCopy } from '../workflowCopy';
 
@@ -211,8 +213,20 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       setMessage(c.invalid);
       return;
     }
-    await service.save(next);
-    const run = await service.createRun(next);
+    const providers: ProviderAvailability[] =
+      '__TAURI_INTERNALS__' in window
+        ? await invoke<Array<ProviderAvailability & { reason?: string }>>(
+            'orchestration_discover_providers',
+            { input: {} },
+          )
+        : [
+            { provider: 'claude', available: true },
+            { provider: 'codex', available: true },
+          ];
+    const routed = routeWorkflowProviders(next, providers);
+    setDefinition(routed);
+    await service.save(routed);
+    const run = await service.createRun(routed);
     void navigate(`/runs/${run.id}`);
   }
   function autoLayout() {

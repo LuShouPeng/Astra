@@ -153,3 +153,65 @@ pub fn orchestration_create_run(
         .map_err(|error| error.to_string())?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn orchestration_decide_run(
+    store: State<'_, OrchestrationStore>,
+    run_id: String,
+    approved: bool,
+) -> Result<(), String> {
+    if !valid_identifier(&run_id) {
+        return Err("Workflow run identifier is invalid.".into());
+    }
+    store
+        .decide_run(&run_id, approved)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn orchestration_cancel_run(
+    store: State<'_, OrchestrationStore>,
+    run_id: String,
+) -> Result<(), String> {
+    if !valid_identifier(&run_id) {
+        return Err("Workflow run identifier is invalid.".into());
+    }
+    store.cancel_run(&run_id).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn orchestration_update_node_status(
+    store: State<'_, OrchestrationStore>,
+    run_id: String,
+    node_id: String,
+    status: String,
+    worktree_path: Option<String>,
+) -> Result<(), String> {
+    if !valid_identifier(&run_id)
+        || !valid_identifier(&node_id)
+        || !matches!(
+            status.as_str(),
+            "ready"
+                | "running"
+                | "waiting_approval"
+                | "succeeded"
+                | "failed"
+                | "skipped"
+                | "cancelled"
+                | "interrupted"
+        )
+        || worktree_path
+            .as_deref()
+            .is_some_and(|path| path.len() > 32_768)
+    {
+        return Err("Node status input is invalid.".into());
+    }
+    store
+        .update_node_status(&run_id, &node_id, &status, worktree_path.as_deref())
+        .map_err(|error| error.to_string())?;
+    let event = serde_json::json!({ "type": "node_status", "nodeId": node_id, "status": status });
+    store
+        .append_event(&run_id, &event.to_string())
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}

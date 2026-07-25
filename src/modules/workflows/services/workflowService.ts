@@ -11,6 +11,8 @@ export interface WorkflowAdapter {
   save(workflow: WorkflowDefinition): Promise<void>;
   saveRun(run: WorkflowRunProjection): Promise<void>;
   getRun(id: string): Promise<WorkflowRunProjection | null>;
+  decideRun?(id: string, approved: boolean): Promise<void>;
+  cancelRun?(id: string): Promise<void>;
 }
 
 const WORKFLOWS_KEY = 'astra.workflow.definitions.v1';
@@ -82,6 +84,14 @@ export class TauriWorkflowAdapter extends BrowserWorkflowAdapter {
     });
     await super.saveRun(run);
   }
+
+  async decideRun(id: string, approved: boolean) {
+    await invoke('orchestration_decide_run', { runId: id, approved });
+  }
+
+  async cancelRun(id: string) {
+    await invoke('orchestration_cancel_run', { runId: id });
+  }
 }
 
 export function createWorkflowService(adapter: WorkflowAdapter) {
@@ -89,6 +99,50 @@ export function createWorkflowService(adapter: WorkflowAdapter) {
     list: () => adapter.list(),
     save: (workflow: WorkflowDefinition) => adapter.save(workflow),
     getRun: (id: string) => adapter.getRun(id),
+    persistProjection: (run: WorkflowRunProjection) => new BrowserWorkflowAdapter().saveRun(run),
+    async decideRun(id: string, approved: boolean) {
+      const run = await adapter.getRun(id);
+      if (!run) throw new Error('Workflow run was not found.');
+      await adapter.decideRun?.(id, approved);
+      const next: WorkflowRunProjection = {
+        ...run,
+        status: approved ? 'queued' : 'cancelled',
+        nodeRuns: run.nodeRuns.map((node, index) =>
+          index === 0 ? { ...node, status: approved ? 'ready' : 'cancelled' } : node,
+        ),
+        events: [
+          ...run.events,
+          {
+            at: new Date().toISOString(),
+            message: approved ? 'Worktree creation approved.' : 'Run rejected.',
+          },
+        ],
+      };
+      await new BrowserWorkflowAdapter().saveRun(next);
+      return next;
+    },
+    async cancelRun(id: string) {
+      const run = await adapter.getRun(id);
+      if (!run) throw new Error('Workflow run was not found.');
+      await adapter.cancelRun?.(id);
+      const next: WorkflowRunProjection = {
+        ...run,
+        status: 'cancelled',
+        nodeRuns: run.nodeRuns.map((node) => ({
+          ...node,
+          status: ['succeeded', 'skipped'].includes(node.status) ? node.status : 'cancelled',
+        })),
+        events: [
+          ...run.events,
+          {
+            at: new Date().toISOString(),
+            message: 'Run cancelled; uncommitted changes were preserved.',
+          },
+        ],
+      };
+      await new BrowserWorkflowAdapter().saveRun(next);
+      return next;
+    },
     async createRun(workflow: WorkflowDefinition): Promise<WorkflowRunProjection> {
       const now = new Date().toISOString();
       const runId = `run-${crypto.randomUUID()}`;

@@ -14,5 +14,10 @@ describe('workflow service browser fallback', () => {
     const run = await service.createRun(workflow);
     expect(run.status).toBe('waiting');
     expect((await service.getRun(run.id))?.nodeRuns).toHaveLength(workflow.nodes.length);
+    const approved = await service.decideRun(run.id, true);
+    expect(approved.status).toBe('queued');
+    expect(approved.nodeRuns[0]?.status).toBe('ready');
+    const cancelled = await service.cancelRun(run.id);
+    expect(cancelled.status).toBe('cancelled');
   });
 });

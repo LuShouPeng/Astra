@@ -54,6 +54,13 @@ pub struct ApprovalRecord {
     pub status: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpConfigRecord {
+    pub id: String,
+    pub config_json: String,
+}
+
 pub struct OrchestrationStore {
     connection: Mutex<Connection>,
 }
@@ -332,6 +339,92 @@ impl OrchestrationStore {
             params![run_id, event_json],
         )?;
         Ok(connection.last_insert_rowid())
+    }
+
+    pub fn decide_run(&self, run_id: &str, approved: bool) -> Result<(), StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "UPDATE approvals SET status = ?2, updated_at = CURRENT_TIMESTAMP
+             WHERE run_id = ?1 AND status = 'pending'",
+            params![run_id, if approved { "approved" } else { "rejected" }],
+        )?;
+        transaction.execute(
+            "UPDATE node_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP
+             WHERE id = (SELECT id FROM node_runs WHERE run_id = ?1 ORDER BY created_at, id LIMIT 1)",
+            params![run_id, if approved { "ready" } else { "cancelled" }],
+        )?;
+        transaction.execute(
+            "UPDATE workflow_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            params![run_id, if approved { "queued" } else { "cancelled" }],
+        )?;
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![
+                run_id,
+                if approved {
+                    r#"{"type":"approval_decided","decision":"approved"}"#
+                } else {
+                    r#"{"type":"approval_decided","decision":"rejected"}"#
+                }
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn cancel_run(&self, run_id: &str) -> Result<(), StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        transaction.execute("UPDATE node_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND status IN ('pending','ready','running','waiting_approval')", [run_id])?;
+        transaction.execute("UPDATE workflow_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?1", [run_id])?;
+        transaction.execute("INSERT INTO run_events (run_id, event_json) VALUES (?1, '{\"type\":\"run_cancelled\"}')", [run_id])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn update_node_status(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        status: &str,
+        worktree_path: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.connection().execute(
+            "UPDATE node_runs SET status = ?3, worktree_path = COALESCE(?4, worktree_path), updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND node_id = ?2",
+            params![run_id, node_id, status, worktree_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_mcp_config(&self, id: &str, config_json: &str) -> Result<(), StoreError> {
+        self.connection().execute(
+            "INSERT INTO mcp_servers (id, config_json) VALUES (?1, ?2)
+             ON CONFLICT(id) DO UPDATE SET config_json = excluded.config_json, updated_at = CURRENT_TIMESTAMP",
+            params![id, config_json],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_mcp_configs(&self) -> Result<Vec<McpConfigRecord>, StoreError> {
+        let connection = self.connection();
+        let mut statement =
+            connection.prepare("SELECT id, config_json FROM mcp_servers ORDER BY id")?;
+        let records = statement
+            .query_map([], |row| {
+                Ok(McpConfigRecord {
+                    id: row.get(0)?,
+                    config_json: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(records)
+    }
+
+    pub fn delete_mcp_config(&self, id: &str) -> Result<(), StoreError> {
+        self.connection()
+            .execute("DELETE FROM mcp_servers WHERE id = ?1", [id])?;
+        Ok(())
     }
 
     pub fn list_events(&self, run_id: &str) -> Result<Vec<String>, StoreError> {

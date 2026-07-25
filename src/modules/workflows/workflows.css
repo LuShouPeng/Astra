@@ -297,6 +297,29 @@
   margin-bottom: var(--space-5);
   border-block: 1px solid var(--color-border);
 }
+.run-approval {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-surface);
+}
+.run-approval > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.run-approval span {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.run-approval > div:last-child {
+  flex-shrink: 0;
+}
 .run-summary > div {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);

@@ -39,7 +39,11 @@ test('generates, edits, validates, and creates a workflow run', async ({ page })
   await expect(page.getByText('DAG is valid', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Run' }).click();
   await expect(page.getByRole('heading', { name: 'Workflow run' })).toBeVisible();
-  await expect(page.getByText('Waiting for approval')).toBeVisible();
+  await expect(page.getByText('Waiting for approval').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Approve worktree creation' }).click();
+  await expect(page.getByText('ready', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Approve and start Agent' }).click();
+  await expect(page.getByText('succeeded', { exact: true })).toBeVisible();
 });
 
 test('registers MCP and keeps workflow surfaces contained at target sizes', async ({ page }) => {
