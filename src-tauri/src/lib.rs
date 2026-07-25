@@ -1,5 +1,7 @@
 mod modules;
 
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -7,7 +9,19 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .setup(|app| {
+            let app_data = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&app_data)?;
+            let store = modules::orchestration::OrchestrationStore::open(
+                &app_data.join("orchestration.sqlite3"),
+            )?;
+            store.interrupt_active_runs()?;
+            app.manage(store);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
+            modules::orchestration::commands::orchestration_list_workflows,
+            modules::orchestration::commands::orchestration_save_workflow,
             modules::workspace::workspace_inspect_path,
             modules::workspace::workspace_check_exists,
             modules::project::project_git_summary,
