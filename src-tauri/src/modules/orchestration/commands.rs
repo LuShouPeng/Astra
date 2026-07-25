@@ -1,18 +1,24 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use serde_json::Value;
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use super::coordinator::RunCoordinator;
 use super::permissions::{classify_operation, Operation, PolicyDecision};
 use super::scheduler::{
     reconcile, validate_definition, Edge, JoinStrategy, Node, NodeKind, NodeStatus, RunDisposition,
     Workflow,
 };
 use super::store::{
-    ApprovalRecord, NodeRunRecord, OrchestrationStore, RunProjection, WorkflowRecord,
-    WorkflowRunRecord, WorkflowTemplateRecord,
+    ApprovalRecord, NodeRunRecord, OrchestrationStore, RunProjection, WorkflowMergeApprovalRecord,
+    WorkflowRecord, WorkflowRunContextRecord, WorkflowRunRecord, WorkflowTemplateRecord,
 };
+use super::worktrees::{manager, IntegrationEvidence, RunWorktree};
 
 const MAX_DEFINITION_BYTES: usize = 1024 * 1024;
 
@@ -115,6 +121,13 @@ pub fn orchestration_list_templates(
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RunExecutionContextInput {
+    pub repository_path: String,
+    pub provider_paths_json: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RunCreateInput {
     pub id: String,
     pub workflow_id: String,
@@ -122,6 +135,7 @@ pub struct RunCreateInput {
     pub project_id: String,
     pub integration_branch: String,
     pub node_ids: Vec<String>,
+    pub execution_context: RunExecutionContextInput,
 }
 
 pub(super) fn validate_run_input(input: &RunCreateInput) -> Result<(), String> {
@@ -135,6 +149,12 @@ pub(super) fn validate_run_input(input: &RunCreateInput) -> Result<(), String> {
         || input.node_ids.iter().collect::<HashSet<_>>().len() != input.node_ids.len()
         || !input.integration_branch.starts_with("astra/run-")
         || input.integration_branch.len() > 180
+        || input.execution_context.repository_path.len() > 32_768
+        || input.execution_context.repository_path.contains('\0')
+        || !Path::new(&input.execution_context.repository_path).is_absolute()
+        || serde_json::from_str::<serde_json::Value>(&input.execution_context.provider_paths_json)
+            .is_err()
+        || input.execution_context.provider_paths_json.len() > 16_384
     {
         return Err("Workflow run input is invalid.".into());
     }
@@ -171,9 +191,8 @@ pub(super) fn validate_run_definition(
             return Err("Stored workflow node identifiers must be unique.".into());
         }
         let node_type = node.get("type").and_then(Value::as_str).unwrap_or_default();
-        let mcp_server_ids = match node_type {
-            "agent" => node
-                .get("mcpServerIds")
+        let mcp_server_ids = if node_type == "agent" {
+            node.get("mcpServerIds")
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
@@ -184,14 +203,9 @@ pub(super) fn validate_run_definition(
                         .map(ToOwned::to_owned)
                         .ok_or_else(|| "An Agent MCP server identifier is invalid.".to_string())
                 })
-                .collect::<Result<Vec<_>, _>>()?,
-            "mcp_tool" => vec![node
-                .get("serverId")
-                .and_then(Value::as_str)
-                .filter(|id| valid_capability_identifier(id))
-                .map(ToOwned::to_owned)
-                .ok_or_else(|| "An MCP tool server identifier is invalid.".to_string())?],
-            _ => Vec::new(),
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
         };
         let skill_ids = if node_type == "agent" {
             node.get("skillIds")
@@ -311,6 +325,12 @@ pub(super) fn create_run(store: &OrchestrationStore, input: RunCreateInput) -> R
         status: "waiting".into(),
         integration_branch: Some(input.integration_branch),
     };
+    let context = WorkflowRunContextRecord {
+        run_id: input.id.clone(),
+        repository_path: input.execution_context.repository_path,
+        provider_paths_json: input.execution_context.provider_paths_json,
+        run_worktree_json: None,
+    };
     let approval = ApprovalRecord {
         id: format!("approval-{}", input.id),
         run_id: input.id.clone(),
@@ -327,6 +347,7 @@ pub(super) fn create_run(store: &OrchestrationStore, input: RunCreateInput) -> R
     store
         .create_run_bundle(
             &run,
+            &context,
             &nodes,
             &approval,
             &skill_ids,
@@ -338,35 +359,282 @@ pub(super) fn create_run(store: &OrchestrationStore, input: RunCreateInput) -> R
 }
 
 #[tauri::command]
-pub fn orchestration_decide_run(
-    store: State<'_, OrchestrationStore>,
+pub async fn orchestration_decide_run(
+    coordinator: State<'_, RunCoordinator>,
     run_id: String,
     approved: bool,
-) -> Result<(), String> {
-    if !valid_identifier(&run_id) {
-        return Err("Workflow run identifier is invalid.".into());
-    }
-    let changed = store
-        .decide_run(&run_id, approved)
-        .map_err(|error| error.to_string())?;
-    if !changed {
-        return Err("The run has no pending worktree approval in its current state.".into());
-    }
-    Ok(())
+) -> Result<RunProjection, String> {
+    coordinator.decide_initial_run(&run_id, approved).await
 }
 
 #[tauri::command]
-pub fn orchestration_cancel_run(
+pub fn orchestration_request_final_merge(
     store: State<'_, OrchestrationStore>,
     run_id: String,
-) -> Result<(), String> {
+) -> Result<RunProjection, String> {
+    request_final_merge(&store, &run_id)
+}
+
+pub(super) fn request_final_merge(
+    store: &OrchestrationStore,
+    run_id: &str,
+) -> Result<RunProjection, String> {
+    if !valid_identifier(run_id) {
+        return Err("Workflow run identifier is invalid.".into());
+    }
+    let projection = store
+        .get_run_projection(run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workflow run was not found.".to_string())?;
+    if projection.run.status != "completed" {
+        return Err("Only a completed workflow run can be merged.".into());
+    }
+    let context = projection
+        .context
+        .as_ref()
+        .ok_or_else(|| "The workflow run execution context is unavailable.".to_string())?;
+    let worktree = context
+        .run_worktree_json
+        .as_deref()
+        .ok_or_else(|| "The workflow run worktree is unavailable.".to_string())?;
+    if serde_json::from_str::<serde_json::Value>(worktree).is_err() {
+        return Err("The workflow run worktree metadata is invalid.".into());
+    }
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "The system clock is unavailable.")?
+        .as_nanos();
+    let prefix = &run_id[..run_id.len().min(90)];
+    let approval = WorkflowMergeApprovalRecord {
+        id: format!("merge-{prefix}-{suffix}"),
+        run_id: run_id.to_string(),
+        status: "pending".into(),
+        summary: "Merge reviewed workflow changes into the original branch.".into(),
+        merged_commit: None,
+    };
+    if !store
+        .request_merge_approval(&approval)
+        .map_err(|error| error.to_string())?
+    {
+        return Err("A final merge approval is already pending.".into());
+    }
+    store
+        .get_run_projection(run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workflow run was not found.".to_string())
+}
+
+#[tauri::command]
+pub async fn orchestration_decide_final_merge(
+    app: AppHandle,
+    store: State<'_, OrchestrationStore>,
+    approval_id: String,
+    approved: bool,
+) -> Result<RunProjection, String> {
+    if !valid_identifier(&approval_id) {
+        return Err("Final merge approval identifier is invalid.".into());
+    }
+    let approval = store
+        .get_merge_approval(&approval_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "The final merge approval was not found.".to_string())?;
+    if approval.status != "pending" {
+        return Err("The final merge approval cannot be decided in its current state.".into());
+    }
+    let run_id = approval.run_id.clone();
+    if !approved {
+        if !store
+            .decide_merge_approval(&approval_id, false)
+            .map_err(|error| error.to_string())?
+        {
+            return Err("The final merge approval cannot be decided in its current state.".into());
+        }
+        return store
+            .get_run_projection(&run_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Workflow run was not found.".to_string());
+    }
+    let context = store
+        .get_run_context(&run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "The workflow run execution context is unavailable.".to_string())?;
+    let worktree: RunWorktree = serde_json::from_str(
+        context
+            .run_worktree_json
+            .as_deref()
+            .ok_or_else(|| "The workflow run worktree is unavailable.".to_string())?,
+    )
+    .map_err(|_| "The workflow run worktree metadata is invalid.".to_string())?;
+    let repository = context.repository_path;
+    if !store
+        .decide_merge_approval(&approval_id, true)
+        .map_err(|error| error.to_string())?
+    {
+        return Err("The final merge approval cannot be decided in its current state.".into());
+    }
+    let merge = tauri::async_runtime::spawn_blocking(move || {
+        manager(&app, &repository)?.merge_to_user_branch(&worktree)
+    })
+    .await
+    .map_err(|_| "The final integration task stopped unexpectedly.".to_string())?;
+    match merge {
+        Ok(commit) => {
+            if !store
+                .complete_merge_approval(&approval_id, &commit)
+                .map_err(|error| error.to_string())?
+            {
+                return Err("The final merge audit record could not be completed.".into());
+            }
+        }
+        Err(summary) => {
+            if store
+                .mark_merge_conflicted(&approval_id, &summary)
+                .map_err(|error| error.to_string())?
+                .is_some()
+            {
+                let attention = super::store::WorkflowAttentionRecord {
+                    id: format!(
+                        "attention-merge-{}",
+                        SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_err(|_| "The system clock is unavailable.")?
+                            .as_nanos()
+                    ),
+                    run_id: run_id.clone(),
+                    node_run_id: None,
+                    kind: "final_merge_conflict".into(),
+                    priority: "high".into(),
+                    status: "open".into(),
+                    summary: summary.clone(),
+                    context_json: serde_json::json!({ "approvalId": approval_id }).to_string(),
+                };
+                store
+                    .create_attention(&attention)
+                    .map_err(|error| error.to_string())?;
+                store
+                    .set_run_status(&run_id, "paused")
+                    .map_err(|error| error.to_string())?;
+                let event = serde_json::json!({
+                    "type": "workflow_attention_created",
+                    "attentionId": attention.id,
+                    "kind": attention.kind,
+                });
+                store
+                    .append_event(&run_id, &event.to_string())
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+    }
+    store
+        .get_run_projection(&run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workflow run was not found.".to_string())
+}
+
+#[tauri::command]
+pub fn orchestration_get_run_worktree(
+    store: State<'_, OrchestrationStore>,
+    run_id: String,
+) -> Result<RunWorktree, String> {
     if !valid_identifier(&run_id) {
         return Err("Workflow run identifier is invalid.".into());
     }
-    if !store
-        .cancel_run(&run_id)
+    let context = store
+        .get_run_context(&run_id)
         .map_err(|error| error.to_string())?
+        .ok_or_else(|| "The workflow run execution context is unavailable.".to_string())?;
+    serde_json::from_str(
+        context
+            .run_worktree_json
+            .as_deref()
+            .ok_or_else(|| "The workflow run worktree is unavailable.".to_string())?,
+    )
+    .map_err(|_| "The workflow run worktree metadata is invalid.".to_string())
+}
+
+#[tauri::command]
+pub async fn orchestration_get_integration_evidence(
+    app: AppHandle,
+    store: State<'_, OrchestrationStore>,
+    run_id: String,
+) -> Result<IntegrationEvidence, String> {
+    if !valid_identifier(&run_id) {
+        return Err("Workflow run identifier is invalid.".into());
+    }
+    let context = store
+        .get_run_context(&run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "The workflow run execution context is unavailable.".to_string())?;
+    let run = serde_json::from_str(
+        context
+            .run_worktree_json
+            .as_deref()
+            .ok_or_else(|| "The workflow run worktree is unavailable.".to_string())?,
+    )
+    .map_err(|_| "The workflow run worktree metadata is invalid.".to_string())?;
+    let repository = context.repository_path;
+    tauri::async_runtime::spawn_blocking(move || {
+        manager(&app, &repository)?.integration_evidence(&run)
+    })
+    .await
+    .map_err(|_| "The integration evidence task stopped unexpectedly.".to_string())?
+}
+
+pub(super) fn validate_worktree_cleanup(
+    store: &OrchestrationStore,
+    run_id: &str,
+) -> Result<WorkflowRunContextRecord, String> {
+    if !valid_identifier(run_id) {
+        return Err("Workflow run identifier is invalid.".into());
+    }
+    let projection = store
+        .get_run_projection(run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workflow run was not found.".to_string())?;
+    if !matches!(
+        projection.run.status.as_str(),
+        "completed" | "failed" | "cancelled"
+    ) {
+        return Err(
+            "Worktrees can only be cleaned up after a workflow run has completed, failed, or been cancelled."
+                .into(),
+        );
+    }
+    if projection
+        .merge_approval
+        .as_ref()
+        .is_some_and(|approval| matches!(approval.status.as_str(), "pending" | "approved"))
     {
+        return Err(
+            "Worktrees cannot be cleaned up while a final merge approval is pending or in progress."
+                .into(),
+        );
+    }
+    store
+        .get_run_context(run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "The workflow run execution context is unavailable.".to_string())
+}
+
+#[tauri::command]
+pub async fn orchestration_cleanup_run_worktrees(
+    app: AppHandle,
+    store: State<'_, OrchestrationStore>,
+    run_id: String,
+) -> Result<(), String> {
+    let context = validate_worktree_cleanup(&store, &run_id)?;
+    let repository = context.repository_path;
+    tauri::async_runtime::spawn_blocking(move || manager(&app, &repository)?.cleanup_run(&run_id))
+        .await
+        .map_err(|_| "The worktree cleanup task stopped unexpectedly.".to_string())?
+}
+
+#[tauri::command]
+pub async fn orchestration_cancel_run(
+    coordinator: State<'_, RunCoordinator>,
+    run_id: String,
+) -> Result<(), String> {
+    if !coordinator.cancel(&run_id).await? {
         return Err("The workflow run cannot be cancelled in its current state.".into());
     }
     Ok(())
@@ -374,19 +642,10 @@ pub fn orchestration_cancel_run(
 
 #[tauri::command]
 pub fn orchestration_resume_run(
-    store: State<'_, OrchestrationStore>,
+    coordinator: State<'_, RunCoordinator>,
     run_id: String,
 ) -> Result<RunProjection, String> {
-    if !valid_identifier(&run_id) {
-        return Err("Workflow run identifier is invalid.".into());
-    }
-    let resumed = store
-        .resume_run(&run_id)
-        .map_err(|error| error.to_string())?;
-    if !resumed {
-        return Err("Only an interrupted workflow run can be resumed.".into());
-    }
-    reconcile_persisted_run(&store, &run_id)
+    coordinator.resume(&run_id)
 }
 
 #[tauri::command]
@@ -549,8 +808,6 @@ enum RuntimeNode {
         #[serde(default, rename = "mcpServerIds")]
         mcp_server_ids: Vec<String>,
     },
-    #[serde(rename = "mcp_tool")]
-    McpTool { id: String, retries: Option<u8> },
     #[serde(rename = "approval")]
     Approval { id: String, retries: Option<u8> },
     #[serde(rename = "condition")]
@@ -571,7 +828,6 @@ impl RuntimeNode {
     fn id(&self) -> &str {
         match self {
             Self::Agent { id, .. }
-            | Self::McpTool { id, .. }
             | Self::Approval { id, .. }
             | Self::Condition { id, .. }
             | Self::Join { id, .. } => id,
@@ -581,7 +837,6 @@ impl RuntimeNode {
     fn retries(&self) -> Option<u8> {
         match self {
             Self::Agent { retries, .. }
-            | Self::McpTool { retries, .. }
             | Self::Approval { retries, .. }
             | Self::Condition { retries, .. }
             | Self::Join { retries, .. } => *retries,
@@ -591,7 +846,6 @@ impl RuntimeNode {
     fn kind(&self) -> NodeKind {
         match self {
             Self::Agent { .. } => NodeKind::Agent,
-            Self::McpTool { .. } => NodeKind::McpTool,
             Self::Approval { .. } => NodeKind::Approval,
             Self::Condition { .. } => NodeKind::Condition,
             Self::Join { strategy, .. } => NodeKind::Join(if strategy == "any" {
@@ -675,6 +929,7 @@ fn status(value: &str) -> Option<NodeStatus> {
         "succeeded" => Some(NodeStatus::Succeeded),
         "failed" => Some(NodeStatus::Failed),
         "skipped" => Some(NodeStatus::Skipped),
+        "blocked" => Some(NodeStatus::Blocked),
         "cancelled" => Some(NodeStatus::Cancelled),
         "interrupted" => Some(NodeStatus::Interrupted),
         _ => None,
@@ -780,9 +1035,7 @@ pub(super) fn reconcile_persisted_run(
                 RuntimeNode::Join { .. } => store
                     .update_node_status(run_id, &node_id, "succeeded", None)
                     .map_err(|error| error.to_string())?,
-                RuntimeNode::Approval { .. }
-                | RuntimeNode::Agent { .. }
-                | RuntimeNode::McpTool { .. } => {
+                RuntimeNode::Approval { .. } | RuntimeNode::Agent { .. } => {
                     let node_run = projection
                         .nodes
                         .iter()
@@ -795,7 +1048,6 @@ pub(super) fn reconcile_persisted_run(
                                 ("network", Operation::Network),
                             ]
                         }
-                        RuntimeNode::McpTool { .. } => vec![("network", Operation::Network)],
                         _ => vec![("execute", Operation::Execute)],
                     };
                     let all_approved = required_capabilities.iter().all(|(capability, _)| {
@@ -872,6 +1124,7 @@ pub(super) fn reconcile_persisted_run(
             RunDisposition::Failed => "failed",
             RunDisposition::Cancelled => "cancelled",
             RunDisposition::Interrupted => "interrupted",
+            RunDisposition::Paused => "paused",
             RunDisposition::Running => "running",
         };
         store
@@ -902,36 +1155,50 @@ pub fn orchestration_get_run(
 
 #[tauri::command]
 pub fn orchestration_reconcile_run(
-    store: State<'_, OrchestrationStore>,
+    coordinator: State<'_, RunCoordinator>,
     run_id: String,
 ) -> Result<RunProjection, String> {
     if !valid_identifier(&run_id) {
         return Err("Workflow run identifier is invalid.".into());
     }
-    reconcile_persisted_run(&store, &run_id)
+    coordinator.schedule(&run_id)?;
+    coordinator.projection(&run_id)
+}
+
+#[tauri::command]
+pub fn orchestration_schedule_run(
+    coordinator: State<'_, RunCoordinator>,
+    run_id: String,
+) -> Result<RunProjection, String> {
+    if !valid_identifier(&run_id) {
+        return Err("Workflow run identifier is invalid.".into());
+    }
+    coordinator.schedule(&run_id)?;
+    coordinator.projection(&run_id)
+}
+
+#[tauri::command]
+pub fn orchestration_list_run_events_after(
+    coordinator: State<'_, RunCoordinator>,
+    run_id: String,
+    after_sequence: i64,
+    limit: usize,
+) -> Result<Vec<super::store::RunEventRecord>, String> {
+    coordinator.events_after(&run_id, after_sequence, limit)
 }
 
 #[tauri::command]
 pub fn orchestration_decide_approval(
-    store: State<'_, OrchestrationStore>,
+    coordinator: State<'_, RunCoordinator>,
     approval_id: String,
     approved: bool,
 ) -> Result<(), String> {
-    if !valid_identifier(&approval_id) {
-        return Err("Approval identifier is invalid.".into());
-    }
-    let changed = store
-        .decide_approval(&approval_id, approved)
-        .map_err(|error| error.to_string())?;
-    if !changed {
-        return Err("The approval cannot be decided in its current state.".into());
-    }
-    Ok(())
+    coordinator.decide_approval(&approval_id, approved)
 }
 
 #[tauri::command]
 pub fn orchestration_retry_node(
-    store: State<'_, OrchestrationStore>,
+    coordinator: State<'_, RunCoordinator>,
     run_id: String,
     node_id: String,
     max_retries: u8,
@@ -939,7 +1206,7 @@ pub fn orchestration_retry_node(
     if max_retries > 3 {
         return Err("Node retry input is invalid.".into());
     }
-    retry_node_checked(&store, &run_id, &node_id)
+    coordinator.retry_node(&run_id, &node_id)
 }
 
 pub(super) fn retry_node_checked(

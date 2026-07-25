@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { invoke } from '@tauri-apps/api/core';
 import { MemoryRouter } from 'react-router-dom';
@@ -17,6 +17,7 @@ describe('ExtensionsPage', () => {
   });
   afterEach(() => {
     Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+    vi.restoreAllMocks();
   });
 
   it('preserves a disabled MCP server loaded from the runtime registry', () => {
@@ -53,13 +54,65 @@ describe('ExtensionsPage', () => {
     expect(screen.getByLabelText('Secret')).toHaveValue('');
   }, 15_000);
 
+  it('atomically registers a credential-bearing MCP server without retaining the secret in browser storage', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
+    mockedInvoke.mockImplementation((command) => {
+      if (command === 'orchestration_list_mcp_servers' || command === 'orchestration_list_skills') {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve(undefined);
+    });
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={['/extensions?tab=mcp']}>
+          <ExtensionsPage />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Add MCP server' }));
+    await user.type(screen.getByLabelText('Name'), 'Exa');
+    await user.type(screen.getByLabelText('URL'), 'https://mcp.exa.ai/mcp');
+    await user.type(screen.getByLabelText('Credential reference'), 'windows:astra/exa');
+    await user.type(screen.getByLabelText('Secret'), 'api-key-must-not-enter-browser-storage');
+    await user.click(screen.getByRole('button', { name: 'Save server' }));
+
+    await waitFor(() =>
+      expect(mockedInvoke).toHaveBeenCalledWith(
+        'orchestration_save_mcp_server_with_secret',
+        {
+          input: {
+            id: 'mcp-00000000-0000-0000-0000-000000000001',
+            name: 'Exa',
+            transport: 'streamable_http',
+            command: undefined,
+            args: [],
+            url: 'https://mcp.exa.ai/mcp',
+            secretRef: 'windows:astra/exa',
+            secretHeader: 'authorization',
+            enabled: true,
+          },
+          secret: 'api-key-must-not-enter-browser-storage',
+        },
+      ),
+    );
+    expect(mockedInvoke).not.toHaveBeenCalledWith(
+      'orchestration_store_secret',
+      expect.anything(),
+    );
+    expect(localStorage.getItem('astra.extensions.mcp.v1')).not.toContain(
+      'api-key-must-not-enter-browser-storage',
+    );
+  });
+
   it('shows a runtime validation error when MCP registration is rejected', async () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
     mockedInvoke.mockImplementation((command) => {
       if (command === 'orchestration_list_mcp_servers' || command === 'orchestration_list_skills') {
         return Promise.resolve([]);
       }
-      if (command === 'orchestration_save_mcp_server') {
+      if (command === 'orchestration_save_mcp_server_with_secret') {
         return Promise.reject(new Error('The MCP URL must use HTTPS or local HTTP.'));
       }
       return Promise.resolve(undefined);

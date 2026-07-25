@@ -1,16 +1,15 @@
 use super::{
     extensions::{
-        authorize_and_audit_workflow_mcp_call, authorize_workflow_mcp_call,
-        mcp_completion_evidence, preflight_agent_capabilities, resolve_mcp_configs,
+        mcp_invocation_evidence, preflight_agent_capabilities, resolve_mcp_configs,
         resolve_run_mcp_config, AgentCapabilityPreflightInput, McpServerInput,
     },
-    store::{ApprovalRecord, NodeRunRecord, OrchestrationStore, WorkflowRunRecord},
+    store::{NodeRunRecord, OrchestrationStore, WorkflowRunRecord},
 };
 
 #[test]
-fn mcp_completion_evidence_does_not_persist_tool_results() {
+fn mcp_invocation_evidence_does_not_persist_tool_results() {
     let result = serde_json::json!({ "secret": "must-not-be-persisted" });
-    let evidence = mcp_completion_evidence("exa", "search");
+    let evidence = mcp_invocation_evidence("exa", "search");
     assert!(evidence.contains("exa"));
     assert!(evidence.contains("search"));
     assert!(!evidence.contains(result["secret"].as_str().unwrap()));
@@ -236,105 +235,4 @@ fn run_mcp_resolution_is_stable_after_registry_changes() {
 
     let resolved = resolve_run_mcp_config(&store, "run-stable", "agent-1", "exa").unwrap();
     assert_eq!(resolved.url, original.url);
-}
-
-#[test]
-fn workflow_mcp_calls_require_exact_approved_node_contracts() {
-    let store = OrchestrationStore::in_memory().unwrap();
-    let definition = serde_json::json!({
-        "id": "workflow-mcp",
-        "version": 1,
-        "projectId": "project-1",
-        "settings": { "maxConcurrency": 1, "defaultRetries": 0 },
-        "nodes": [{
-            "id": "search",
-            "type": "mcp_tool",
-            "serverId": "exa",
-            "toolName": "search",
-            "arguments": { "query": "astra" }
-        }],
-        "edges": []
-    });
-    store
-        .save_workflow(
-            "workflow-mcp",
-            1,
-            "MCP workflow",
-            "project-1",
-            &definition.to_string(),
-        )
-        .unwrap();
-    store
-        .save_run(&WorkflowRunRecord {
-            id: "run-mcp-auth".into(),
-            workflow_id: "workflow-mcp".into(),
-            workflow_version: 1,
-            project_id: "project-1".into(),
-            status: "running".into(),
-            integration_branch: None,
-        })
-        .unwrap();
-    store
-        .save_node_run(&NodeRunRecord {
-            id: "run-mcp-auth-search".into(),
-            run_id: "run-mcp-auth".into(),
-            node_id: "search".into(),
-            status: "ready".into(),
-            attempt: 1,
-            provider: None,
-            worktree_path: None,
-        })
-        .unwrap();
-    let arguments = serde_json::json!({ "query": "astra" });
-    assert!(authorize_and_audit_workflow_mcp_call(
-        &store,
-        "run-mcp-auth",
-        "search",
-        "exa",
-        "search",
-        &arguments
-    )
-    .is_err());
-    let denied_audit = store.list_events("run-mcp-auth").unwrap().join("\n");
-    assert!(denied_audit.contains("mcp_tool_denied"));
-    assert!(!denied_audit.contains("query"));
-
-    store
-        .save_approval(&ApprovalRecord {
-            id: "approval-network".into(),
-            run_id: "run-mcp-auth".into(),
-            node_run_id: "run-mcp-auth-search".into(),
-            capability: "network".into(),
-            risk: "high".into(),
-            summary: "Allow network".into(),
-            status: "approved".into(),
-        })
-        .unwrap();
-    assert!(authorize_workflow_mcp_call(
-        &store,
-        "run-mcp-auth",
-        "search",
-        "exa",
-        "search",
-        &arguments
-    )
-    .is_ok());
-    assert!(authorize_workflow_mcp_call(
-        &store,
-        "run-mcp-auth",
-        "search",
-        "exa",
-        "search",
-        &serde_json::json!({ "query": "changed" })
-    )
-    .is_err());
-    assert!(authorize_workflow_mcp_call(
-        &store,
-        "run-mcp-auth",
-        "search",
-        "other",
-        "search",
-        &arguments
-    )
-    .is_err());
 }

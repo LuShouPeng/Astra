@@ -57,7 +57,7 @@ function validNode(value: unknown): value is WorkflowNode {
   switch (value.type) {
     case 'agent':
       return (
-        ['auto', 'claude', 'codex', 'gemini'].includes(String(value.provider)) &&
+        ['auto', 'claude', 'codex'].includes(String(value.provider)) &&
         boundedString(value.prompt, 32_768) &&
         stringIds(value.skillIds) &&
         stringIds(value.mcpServerIds)
@@ -165,12 +165,6 @@ export function generateWorkflowDraft(projectId: string, goal: string): Workflow
 export function finalizePlannedWorkflow(projectId: string, value: unknown): WorkflowDefinition {
   if (!value || typeof value !== 'object') throw new Error('Planning Provider output is invalid.');
   const planned = value as Partial<WorkflowDefinition>;
-  if (
-    Array.isArray(planned.nodes) &&
-    planned.nodes.some((node) => record(node) && node.type === 'mcp_tool')
-  ) {
-    throw new Error('Planning Provider must attach MCP servers as an Agent capability.');
-  }
   if (
     typeof planned.name !== 'string' ||
     !planned.name.trim() ||

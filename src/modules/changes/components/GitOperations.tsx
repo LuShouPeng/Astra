@@ -1,13 +1,15 @@
 import { GitBranch, GitCommit, GitMerge, RefreshCw } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import type {
-  GitCommitRequest,
   GitCheckoutRequest,
+  GitCommitRequest,
   GitMergeRequest,
   GitResetRequest,
 } from '../../../core/contracts/changes';
 import type { Project } from '../../../core/contracts/projects';
 import { useI18n } from '../../../core/i18n/I18nContext';
+import type { TranslationKey } from '../../../core/i18n/translations';
+import { ConfirmDialog } from '../../../shared/components/ConfirmDialog';
 import type { ChangesService } from '../services/changesService';
 
 interface GitOperationsProps {
@@ -16,37 +18,56 @@ interface GitOperationsProps {
   onOperationComplete?: () => void;
 }
 
+type GitOperation = 'commit' | 'checkout' | 'merge' | 'reset';
+type ResetType = GitResetRequest['resetType'];
+
+const resetTypeKeys: Record<ResetType, TranslationKey> = {
+  soft: 'changes.git.resetType.soft',
+  mixed: 'changes.git.resetType.mixed',
+  hard: 'changes.git.resetType.hard',
+};
+
 export function GitOperations({ project, service, onOperationComplete }: GitOperationsProps) {
-  const { text } = useI18n();
-  const [activeOperation, setActiveOperation] = useState<string | null>(null);
+  const { t, text } = useI18n();
+  const [activeOperation, setActiveOperation] = useState<GitOperation | null>(null);
   const [commitMessage, setCommitMessage] = useState('');
   const [branchName, setBranchName] = useState('');
   const [createNewBranch, setCreateNewBranch] = useState(false);
   const [mergeBranchName, setMergeBranchName] = useState('');
-  const [resetType, setResetType] = useState<'soft' | 'mixed' | 'hard'>('mixed');
+  const [resetType, setResetType] = useState<ResetType>('mixed');
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
+  const [hardResetConfirmationOpen, setHardResetConfirmationOpen] = useState(false);
+  const resetInFlightRef = useRef(false);
+
+  function toggleOperation(operation: GitOperation) {
+    setActiveOperation((current) => (current === operation ? null : operation));
+  }
 
   async function handleCommit(event: FormEvent) {
     event.preventDefault();
-    if (!commitMessage.trim() || working) return;
+    const message = commitMessage.trim();
+    if (!message || working) return;
 
     setWorking(true);
     setError(null);
     setNotice(null);
 
     try {
-      const request: GitCommitRequest = {
-        message: commitMessage,
-      };
+      const request: GitCommitRequest = { message };
       const result = await service.commit(project, request);
-      setNotice(`Committed ${result.commitId.substring(0, 7)} to ${result.branch}`);
+      setNotice(
+        t('changes.git.commitSucceeded', {
+          commitId: result.commitId.substring(0, 7),
+          branch: result.branch,
+        }),
+      );
       setCommitMessage('');
       setActiveOperation(null);
       onOperationComplete?.();
     } catch (caught) {
-      setError(caught instanceof Error ? text(caught.message) : 'Commit failed');
+      setError(caught instanceof Error ? text(caught.message) : t('changes.git.commitFailed'));
     } finally {
       setWorking(false);
     }
@@ -54,7 +75,8 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
 
   async function handleCheckout(event: FormEvent) {
     event.preventDefault();
-    if (!branchName.trim() || working) return;
+    const nextBranchName = branchName.trim();
+    if (!nextBranchName || working) return;
 
     setWorking(true);
     setError(null);
@@ -62,17 +84,17 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
 
     try {
       const request: GitCheckoutRequest = {
-        branchName,
+        branchName: nextBranchName,
         createNew: createNewBranch,
       };
       await service.checkout(project, request);
-      setNotice(`Checked out ${createNewBranch ? 'new ' : ''}branch: ${branchName}`);
+      setNotice(t('changes.git.checkoutSucceeded', { branch: nextBranchName }));
       setBranchName('');
       setCreateNewBranch(false);
       setActiveOperation(null);
       onOperationComplete?.();
     } catch (caught) {
-      setError(caught instanceof Error ? text(caught.message) : 'Checkout failed');
+      setError(caught instanceof Error ? text(caught.message) : t('changes.git.checkoutFailed'));
     } finally {
       setWorking(false);
     }
@@ -80,60 +102,60 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
 
   async function handleMerge(event: FormEvent) {
     event.preventDefault();
-    if (!mergeBranchName.trim() || working) return;
+    const nextBranchName = mergeBranchName.trim();
+    if (!nextBranchName || working) return;
 
     setWorking(true);
     setError(null);
     setNotice(null);
 
     try {
-      const request: GitMergeRequest = {
-        branchName: mergeBranchName,
-      };
+      const request: GitMergeRequest = { branchName: nextBranchName };
       const result = await service.merge(project, request);
       if (result.success) {
-        setNotice(`Successfully merged ${mergeBranchName}`);
+        setNotice(t('changes.git.mergeSucceeded', { branch: nextBranchName }));
         setMergeBranchName('');
         setActiveOperation(null);
         onOperationComplete?.();
       } else {
-        setError(`Merge conflicts detected in: ${result.conflicts.join(', ')}`);
+        setError(
+          t('changes.git.mergeConflicts', {
+            files: result.conflicts.join(', ') || t('common.notAvailable'),
+          }),
+        );
       }
     } catch (caught) {
-      setError(caught instanceof Error ? text(caught.message) : 'Merge failed');
+      setError(caught instanceof Error ? text(caught.message) : t('changes.git.mergeFailed'));
     } finally {
       setWorking(false);
     }
   }
 
   async function handleReset() {
-    if (working) return;
+    if (working || resetInFlightRef.current) return;
 
+    resetInFlightRef.current = true;
+    setHardResetConfirmationOpen(false);
     setWorking(true);
     setError(null);
     setNotice(null);
 
     try {
-      const request: GitResetRequest = {
-        resetType,
-      };
+      const request: GitResetRequest = { resetType };
       await service.reset(project, request);
-      setNotice(`Reset to HEAD (${resetType})`);
+      setNotice(t('changes.git.resetSucceeded', { type: t(resetTypeKeys[resetType]) }));
       setActiveOperation(null);
       onOperationComplete?.();
     } catch (caught) {
-      setError(caught instanceof Error ? text(caught.message) : 'Reset failed');
+      setError(caught instanceof Error ? text(caught.message) : t('changes.git.resetFailed'));
     } finally {
+      resetInFlightRef.current = false;
       setWorking(false);
     }
   }
 
-  if (project.source !== 'local' || project.status !== 'available') {
-    return (
-      <div className="git-operations-unavailable">
-        <p>Git operations are only available for local projects.</p>
-      </div>
-    );
+  if (project.source !== 'local' || project.status !== 'available' || !project.gitRepository) {
+    return null;
   }
 
   return (
@@ -142,42 +164,34 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
         <button
           className="button button--compact"
           disabled={working}
-          onClick={() =>
-            setActiveOperation(activeOperation === 'commit' ? null : 'commit')
-          }
+          onClick={() => toggleOperation('commit')}
         >
           <GitCommit size={15} aria-hidden="true" />
-          Commit
+          {t('changes.git.commit')}
         </button>
         <button
           className="button button--compact"
           disabled={working}
-          onClick={() =>
-            setActiveOperation(activeOperation === 'checkout' ? null : 'checkout')
-          }
+          onClick={() => toggleOperation('checkout')}
         >
           <GitBranch size={15} aria-hidden="true" />
-          Checkout
+          {t('changes.git.checkout')}
         </button>
         <button
           className="button button--compact"
           disabled={working}
-          onClick={() =>
-            setActiveOperation(activeOperation === 'merge' ? null : 'merge')
-          }
+          onClick={() => toggleOperation('merge')}
         >
           <GitMerge size={15} aria-hidden="true" />
-          Merge
+          {t('changes.git.merge')}
         </button>
         <button
           className="button button--compact"
           disabled={working}
-          onClick={() =>
-            setActiveOperation(activeOperation === 'reset' ? null : 'reset')
-          }
+          onClick={() => toggleOperation('reset')}
         >
           <RefreshCw size={15} aria-hidden="true" />
-          Reset
+          {t('changes.git.reset')}
         </button>
       </div>
 
@@ -191,13 +205,13 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
       )}
 
       {activeOperation === 'commit' && (
-        <form className="git-operation-form" onSubmit={(e) => void handleCommit(e)}>
-          <label htmlFor="commit-message">Commit Message</label>
+        <form className="git-operation-form" onSubmit={(event) => void handleCommit(event)}>
+          <label htmlFor="commit-message">{t('changes.git.commitMessage')}</label>
           <textarea
             id="commit-message"
             value={commitMessage}
-            onChange={(e) => setCommitMessage(e.target.value)}
-            placeholder="Enter commit message..."
+            onChange={(event) => setCommitMessage(event.target.value)}
+            placeholder={t('changes.git.commitMessagePlaceholder')}
             rows={3}
             autoFocus
           />
@@ -207,37 +221,37 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
               className="button button--secondary"
               onClick={() => setActiveOperation(null)}
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               className="button button--primary"
               disabled={working || !commitMessage.trim()}
             >
-              {working ? 'Committing...' : 'Commit Changes'}
+              {working ? t('changes.git.committing') : t('changes.git.commitChanges')}
             </button>
           </div>
         </form>
       )}
 
       {activeOperation === 'checkout' && (
-        <form className="git-operation-form" onSubmit={(e) => void handleCheckout(e)}>
-          <label htmlFor="branch-name">Branch Name</label>
+        <form className="git-operation-form" onSubmit={(event) => void handleCheckout(event)}>
+          <label htmlFor="branch-name">{t('changes.git.branchName')}</label>
           <input
             id="branch-name"
             type="text"
             value={branchName}
-            onChange={(e) => setBranchName(e.target.value)}
-            placeholder="Enter branch name..."
+            onChange={(event) => setBranchName(event.target.value)}
+            placeholder={t('changes.git.branchNamePlaceholder')}
             autoFocus
           />
           <label className="checkbox-label">
             <input
               type="checkbox"
               checked={createNewBranch}
-              onChange={(e) => setCreateNewBranch(e.target.checked)}
+              onChange={(event) => setCreateNewBranch(event.target.checked)}
             />
-            Create new branch
+            {t('changes.git.createBranch')}
           </label>
           <div className="form-actions">
             <button
@@ -245,28 +259,28 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
               className="button button--secondary"
               onClick={() => setActiveOperation(null)}
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               className="button button--primary"
               disabled={working || !branchName.trim()}
             >
-              {working ? 'Checking out...' : 'Checkout'}
+              {working ? t('changes.git.checkingOut') : t('changes.git.checkout')}
             </button>
           </div>
         </form>
       )}
 
       {activeOperation === 'merge' && (
-        <form className="git-operation-form" onSubmit={(e) => void handleMerge(e)}>
-          <label htmlFor="merge-branch-name">Branch to Merge</label>
+        <form className="git-operation-form" onSubmit={(event) => void handleMerge(event)}>
+          <label htmlFor="merge-branch-name">{t('changes.git.branchToMerge')}</label>
           <input
             id="merge-branch-name"
             type="text"
             value={mergeBranchName}
-            onChange={(e) => setMergeBranchName(e.target.value)}
-            placeholder="Enter branch name to merge..."
+            onChange={(event) => setMergeBranchName(event.target.value)}
+            placeholder={t('changes.git.branchToMergePlaceholder')}
             autoFocus
           />
           <div className="form-actions">
@@ -275,14 +289,14 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
               className="button button--secondary"
               onClick={() => setActiveOperation(null)}
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               className="button button--primary"
               disabled={working || !mergeBranchName.trim()}
             >
-              {working ? 'Merging...' : 'Merge'}
+              {working ? t('changes.git.merging') : t('changes.git.merge')}
             </button>
           </div>
         </form>
@@ -290,18 +304,18 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
 
       {activeOperation === 'reset' && (
         <div className="git-operation-form">
-          <label htmlFor="reset-type">Reset Type</label>
+          <label htmlFor="reset-type">{t('changes.git.resetType')}</label>
           <select
             id="reset-type"
             value={resetType}
-            onChange={(e) => setResetType(e.target.value as 'soft' | 'mixed' | 'hard')}
+            onChange={(event) => setResetType(event.target.value as ResetType)}
           >
-            <option value="soft">Soft (keep changes staged)</option>
-            <option value="mixed">Mixed (unstage changes)</option>
-            <option value="hard">Hard (discard all changes)</option>
+            <option value="soft">{t('changes.git.resetType.soft')}</option>
+            <option value="mixed">{t('changes.git.resetType.mixed')}</option>
+            <option value="hard">{t('changes.git.resetType.hard')}</option>
           </select>
           <p className="warning-text">
-            {resetType === 'hard' && '⚠️ Warning: This will discard all uncommitted changes!'}
+            {resetType === 'hard' ? t('changes.git.hardResetWarning') : null}
           </p>
           <div className="form-actions">
             <button
@@ -309,19 +323,35 @@ export function GitOperations({ project, service, onOperationComplete }: GitOper
               className="button button--secondary"
               onClick={() => setActiveOperation(null)}
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
               className="button button--primary"
               disabled={working}
-              onClick={() => void handleReset()}
+              onClick={() => {
+                if (resetType === 'hard') {
+                  setHardResetConfirmationOpen(true);
+                  return;
+                }
+                void handleReset();
+              }}
             >
-              {working ? 'Resetting...' : 'Reset to HEAD'}
+              {working ? t('changes.git.resetting') : t('changes.git.resetToHead')}
             </button>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={hardResetConfirmationOpen}
+        title={t('changes.git.hardResetTitle')}
+        description={t('changes.git.hardResetDescription', { project: project.name })}
+        confirmLabel={t('changes.git.discardChanges')}
+        pending={working}
+        onCancel={() => setHardResetConfirmationOpen(false)}
+        onConfirm={() => void handleReset()}
+      />
     </div>
   );
 }

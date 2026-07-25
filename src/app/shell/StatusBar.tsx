@@ -16,7 +16,7 @@ export function StatusBar({ workspaceName, saving }: { workspaceName: string; sa
       <span className="status-bar__workspace" title={workspaceName}>
         {workspaceName}
       </span>
-      <span>{t('status.prototype')}</span>
+      <span>{t('status.localWorkspace')}</span>
     </footer>
   );
 }

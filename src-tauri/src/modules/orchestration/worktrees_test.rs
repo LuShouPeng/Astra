@@ -45,13 +45,14 @@ fn creates_node_worktree_and_integrates_managed_commit() {
     assert!(!commit.is_empty());
     manager.integrate_node(&run, &node).expect("integrate");
     assert!(run.path.join("feature.txt").is_file());
+    manager.cleanup_run(&run.id).expect("cleanup run");
     drop(manager);
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(cache).unwrap();
 }
 
 #[test]
-fn refuses_final_merge_without_explicit_approval() {
+fn final_merge_returns_the_managed_merge_commit() {
     let root = temp("approval-repo");
     let cache = temp("approval-cache");
     git(&root, &["init"]);
@@ -62,7 +63,16 @@ fn refuses_final_merge_without_explicit_approval() {
     git(&root, &["commit", "-m", "initial"]);
     let manager = WorktreeManager::new(&root, &cache).unwrap();
     let run = manager.prepare_run("run-2").unwrap();
-    assert!(manager.merge_to_user_branch(&run, false).is_err());
+    let node = manager.prepare_node(&run, "node-2").unwrap();
+    fs::write(node.path.join("feature.txt"), "done\n").unwrap();
+    manager
+        .commit_node(&node, "workflow-2", "run-2", "node-2")
+        .unwrap();
+    manager.integrate_node(&run, &node).unwrap();
+    let commit = manager.merge_to_user_branch(&run).unwrap();
+    assert!(!commit.is_empty());
+    assert!(root.join("feature.txt").is_file());
+    manager.cleanup_run(&run.id).expect("cleanup run");
     drop(manager);
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(cache).unwrap();
@@ -100,6 +110,7 @@ fn aborts_conflicting_node_integration_and_keeps_the_run_worktree_clean() {
         .unwrap();
     assert!(status.status.success());
     assert!(status.stdout.is_empty());
+    manager.cleanup_run(&run.id).expect("cleanup run");
     drop(manager);
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(cache).unwrap();

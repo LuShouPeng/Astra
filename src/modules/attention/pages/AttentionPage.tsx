@@ -9,7 +9,7 @@ import {
   ScrollText,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { type KeyboardEvent, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AttentionType } from '../../../core/contracts/attention';
 import { appEventBus } from '../../../core/events/appEventBus';
@@ -51,6 +51,7 @@ export function AttentionPage() {
   const [queue, setQueue] = useState<AttentionQueue>('open');
   const [sort, setSort] = useState<'priority' | 'recent'>('priority');
   const [error, setError] = useState<string | null>(null);
+  const filterRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const openItems = useMemo(
     () => snapshot?.attentionItems.filter((item) => !item.resolved) ?? [],
     [snapshot?.attentionItems],
@@ -66,6 +67,33 @@ export function AttentionPage() {
           right.createdAt.localeCompare(left.createdAt)
         : right.createdAt.localeCompare(left.createdAt),
     );
+
+  function selectFilter(index: number) {
+    setFilter(filters[index].id);
+    filterRefs.current[index]?.focus();
+  }
+
+  function handleFilterKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number | undefined;
+    switch (event.key) {
+      case 'ArrowRight':
+        nextIndex = (index + 1) % filters.length;
+        break;
+      case 'ArrowLeft':
+        nextIndex = (index - 1 + filters.length) % filters.length;
+        break;
+      case 'Home':
+        nextIndex = 0;
+        break;
+      case 'End':
+        nextIndex = filters.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    selectFilter(nextIndex);
+  }
 
   async function act(attentionId: string, action: AttentionAction) {
     if (!snapshot) return;
@@ -134,33 +162,46 @@ export function AttentionPage() {
         </div>
         <span>{t('attention.openCount', { count: openItems.length })}</span>
       </header>
-      <div className="attention-tabs" role="tablist" aria-label={t('attention.filters')}>
-        <button role="tab" aria-selected={queue === 'open'} onClick={() => setQueue('open')}>
-          {t('attention.open')} {openItems.length}
-        </button>
-        <button
-          role="tab"
-          aria-selected={queue === 'resolved'}
-          onClick={() => setQueue('resolved')}
-        >
-          {t('attention.resolved')} {snapshot.attentionItems.length - openItems.length}
-        </button>
-        {filters.map((option) => {
-          const count =
-            option.id === 'all'
-              ? queueItems.length
-              : queueItems.filter((item) => item.type === option.id).length;
-          return (
-            <button
-              key={option.id}
-              role="tab"
-              aria-selected={filter === option.id}
-              onClick={() => setFilter(option.id)}
-            >
-              {t(option.labelKey)} {count}
-            </button>
-          );
-        })}
+      <div className="attention-controls">
+        <div className="attention-queue" role="group" aria-label={t('attention.actionQueue')}>
+          <button type="button" aria-pressed={queue === 'open'} onClick={() => setQueue('open')}>
+            {t('attention.open')} {openItems.length}
+          </button>
+          <button
+            type="button"
+            aria-pressed={queue === 'resolved'}
+            onClick={() => setQueue('resolved')}
+          >
+            {t('attention.resolved')} {snapshot.attentionItems.length - openItems.length}
+          </button>
+        </div>
+        <div className="attention-tabs" role="tablist" aria-label={t('attention.filters')}>
+          {filters.map((option, index) => {
+            const count =
+              option.id === 'all'
+                ? queueItems.length
+                : queueItems.filter((item) => item.type === option.id).length;
+            const selected = filter === option.id;
+            return (
+              <button
+                id={`attention-filter-${option.id}`}
+                key={option.id}
+                ref={(element) => {
+                  filterRefs.current[index] = element;
+                }}
+                type="button"
+                role="tab"
+                aria-controls="attention-items"
+                aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setFilter(option.id)}
+                onKeyDown={(event) => handleFilterKeyDown(event, index)}
+              >
+                {t(option.labelKey)} {count}
+              </button>
+            );
+          })}
+        </div>
         <label className="attention-sort">
           <span>{t('attention.sort')}</span>
           <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}>
@@ -174,7 +215,12 @@ export function AttentionPage() {
           {error}
         </div>
       )}
-      <section className="attention-list" aria-label={t('attention.openItems')}>
+      <section
+        id="attention-items"
+        className="attention-list"
+        role="tabpanel"
+        aria-labelledby={`attention-filter-${filter}`}
+      >
         {visibleItems.map((item) => (
           <article className={`attention-item attention-item--${item.priority}`} key={item.id}>
             <AlertTriangle size={18} aria-hidden="true" />

@@ -1,6 +1,225 @@
 use super::store::{
-    ApprovalRecord, ArtifactRecord, NodeRunRecord, OrchestrationStore, WorkflowRunRecord,
+    ApprovalRecord, ArtifactRecord, NodeRunRecord, OrchestrationStore, WorkflowAttentionRecord,
+    WorkflowMergeApprovalRecord, WorkflowRunContextRecord, WorkflowRunRecord,
 };
+
+#[test]
+fn cloned_store_handles_share_the_same_durable_connection() {
+    let store = OrchestrationStore::in_memory().unwrap();
+    let clone = store.clone();
+    clone
+        .save_run(&WorkflowRunRecord {
+            id: "run-shared-store".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_version: 1,
+            project_id: "project-1".into(),
+            status: "queued".into(),
+            integration_branch: None,
+        })
+        .unwrap();
+    assert_eq!(
+        store.get_run("run-shared-store").unwrap().unwrap().status,
+        "queued"
+    );
+}
+
+#[test]
+fn persists_run_context_attention_merge_approval_and_event_cursor() {
+    let store = OrchestrationStore::in_memory().unwrap();
+    store
+        .save_run(&WorkflowRunRecord {
+            id: "run-durable".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_version: 1,
+            project_id: "project-1".into(),
+            status: "paused".into(),
+            integration_branch: Some("astra/run-run-durable".into()),
+        })
+        .unwrap();
+    store
+        .save_run_context(&WorkflowRunContextRecord {
+            run_id: "run-durable".into(),
+            repository_path: "C:/projects/astra".into(),
+            provider_paths_json: r#"{"codexPath":"C:/tools/codex.exe"}"#.into(),
+            run_worktree_json: Some(r#"{"id":"run-durable"}"#.into()),
+        })
+        .unwrap();
+    let first = store
+        .append_event("run-durable", r#"{"type":"run_started"}"#)
+        .unwrap();
+    store
+        .append_event("run-durable", r#"{"type":"git_conflict_detected"}"#)
+        .unwrap();
+    store
+        .create_attention(&WorkflowAttentionRecord {
+            id: "attention-durable".into(),
+            run_id: "run-durable".into(),
+            node_run_id: None,
+            kind: "git_conflict".into(),
+            priority: "high".into(),
+            status: "open".into(),
+            summary: "Resolve the integration conflict.".into(),
+            context_json: r#"{"files":["README.md"]}"#.into(),
+        })
+        .unwrap();
+    store
+        .request_merge_approval(&WorkflowMergeApprovalRecord {
+            id: "merge-durable".into(),
+            run_id: "run-durable".into(),
+            status: "pending".into(),
+            summary: "Merge reviewed workflow changes.".into(),
+            merged_commit: None,
+        })
+        .unwrap();
+    assert!(store.decide_merge_approval("merge-durable", true).unwrap());
+
+    let projection = store.get_run_projection("run-durable").unwrap().unwrap();
+    assert_eq!(
+        projection.context.unwrap().repository_path,
+        "C:/projects/astra"
+    );
+    assert_eq!(projection.attentions[0].kind, "git_conflict");
+    assert_eq!(projection.merge_approval.unwrap().status, "approved");
+    let replay = store.list_events_after("run-durable", first, 10).unwrap();
+    assert_eq!(replay.len(), 3);
+    assert!(replay.iter().all(|event| event.sequence > first));
+}
+
+#[test]
+fn merge_approval_is_single_use_and_has_one_pending_request_per_run() {
+    let store = OrchestrationStore::in_memory().unwrap();
+    store
+        .save_run(&WorkflowRunRecord {
+            id: "run-merge-approval".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_version: 1,
+            project_id: "project-1".into(),
+            status: "completed".into(),
+            integration_branch: Some("astra/run-run-merge-approval".into()),
+        })
+        .unwrap();
+    let request = |id: &str| WorkflowMergeApprovalRecord {
+        id: id.into(),
+        run_id: "run-merge-approval".into(),
+        status: "pending".into(),
+        summary: "Merge reviewed workflow changes.".into(),
+        merged_commit: None,
+    };
+
+    assert!(store
+        .request_merge_approval(&request("merge-first"))
+        .unwrap());
+    assert!(!store
+        .request_merge_approval(&request("merge-second"))
+        .unwrap());
+    assert!(store.decide_merge_approval("merge-first", false).unwrap());
+    assert!(!store.decide_merge_approval("merge-first", true).unwrap());
+    assert_eq!(store.list_events("run-merge-approval").unwrap().len(), 2);
+}
+
+#[test]
+fn concurrent_final_merge_decisions_claim_the_pending_approval_once() {
+    let store = OrchestrationStore::in_memory().unwrap();
+    store
+        .save_run(&WorkflowRunRecord {
+            id: "run-concurrent-merge".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_version: 1,
+            project_id: "project-1".into(),
+            status: "completed".into(),
+            integration_branch: Some("astra/run-concurrent-merge".into()),
+        })
+        .unwrap();
+    store
+        .request_merge_approval(&WorkflowMergeApprovalRecord {
+            id: "merge-concurrent".into(),
+            run_id: "run-concurrent-merge".into(),
+            status: "pending".into(),
+            summary: "Merge reviewed workflow changes.".into(),
+            merged_commit: None,
+        })
+        .unwrap();
+
+    let gate = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let approve_store = store.clone();
+    let approve_gate = gate.clone();
+    let approve = std::thread::spawn(move || {
+        approve_gate.wait();
+        approve_store.decide_merge_approval("merge-concurrent", true)
+    });
+    let reject_store = store.clone();
+    let reject_gate = gate.clone();
+    let reject = std::thread::spawn(move || {
+        reject_gate.wait();
+        reject_store.decide_merge_approval("merge-concurrent", false)
+    });
+
+    gate.wait();
+    let outcomes = [
+        approve
+            .join()
+            .expect("approve thread")
+            .expect("approve decision"),
+        reject
+            .join()
+            .expect("reject thread")
+            .expect("reject decision"),
+    ];
+
+    assert_eq!(outcomes.into_iter().filter(|outcome| *outcome).count(), 1);
+    let approval = store
+        .get_merge_approval("merge-concurrent")
+        .unwrap()
+        .expect("merge approval");
+    assert!(matches!(approval.status.as_str(), "approved" | "rejected"));
+    let decisions = store
+        .list_events("run-concurrent-merge")
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.contains("merge_approval_decided"))
+        .collect::<Vec<_>>();
+    assert_eq!(decisions.len(), 1);
+    assert!(decisions[0].contains(&format!(r#""decision":"{}""#, approval.status)));
+}
+
+#[test]
+fn merge_approval_records_the_backend_merge_commit_once() {
+    let store = OrchestrationStore::in_memory().unwrap();
+    store
+        .save_run(&WorkflowRunRecord {
+            id: "run-merged".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_version: 1,
+            project_id: "project-1".into(),
+            status: "completed".into(),
+            integration_branch: Some("astra/run-run-merged".into()),
+        })
+        .unwrap();
+    store
+        .request_merge_approval(&WorkflowMergeApprovalRecord {
+            id: "merge-merged".into(),
+            run_id: "run-merged".into(),
+            status: "pending".into(),
+            summary: "Merge reviewed workflow changes.".into(),
+            merged_commit: None,
+        })
+        .unwrap();
+    assert!(store.decide_merge_approval("merge-merged", true).unwrap());
+    assert!(store
+        .complete_merge_approval("merge-merged", "abc123")
+        .unwrap());
+    assert!(!store
+        .complete_merge_approval("merge-merged", "def456")
+        .unwrap());
+    let approval = store
+        .get_run_projection("run-merged")
+        .unwrap()
+        .unwrap()
+        .merge_approval
+        .unwrap();
+    assert_eq!(approval.status, "merged");
+    assert_eq!(approval.merged_commit.as_deref(), Some("abc123"));
+}
 
 #[test]
 fn retry_is_atomic_and_rejects_non_failed_or_inactive_nodes() {
@@ -230,9 +449,16 @@ fn run_bundle_creation_rolls_back_every_record_on_failure() {
         summary: "Create worktrees".into(),
         status: "pending".into(),
     };
+    let context = WorkflowRunContextRecord {
+        run_id: run.id.clone(),
+        repository_path: "C:/projects/astra".into(),
+        provider_paths_json: "{}".into(),
+        run_worktree_json: None,
+    };
     assert!(store
         .create_run_bundle(
             &run,
+            &context,
             &[duplicate.clone(), duplicate],
             &approval,
             &[],
@@ -274,9 +500,16 @@ fn run_bundle_rolls_back_when_an_mcp_snapshot_source_disappears() {
         summary: "Create worktrees".into(),
         status: "pending".into(),
     };
+    let context = WorkflowRunContextRecord {
+        run_id: run.id.clone(),
+        repository_path: "C:/projects/astra".into(),
+        provider_paths_json: "{}".into(),
+        run_worktree_json: None,
+    };
     assert!(store
         .create_run_bundle(
             &run,
+            &context,
             &[node],
             &approval,
             &[],

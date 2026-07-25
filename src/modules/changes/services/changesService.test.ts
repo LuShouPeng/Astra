@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDemoSnapshot } from '../../demo';
+
+const tauri = vi.hoisted(() => ({ invoke: vi.fn() }));
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }));
+
 import {
   ChangesOperationError,
+  TauriChangesNativeAdapter,
   createChangesService,
   type ChangesNativeAdapter,
 } from './changesService';
@@ -44,6 +50,36 @@ function adapter(): ChangesNativeAdapter {
 }
 
 describe('changes service', () => {
+  it('maps every native adapter operation to its Tauri command and payload', async () => {
+    tauri.invoke.mockReset();
+    const native = new TauriChangesNativeAdapter();
+    const rootPath = 'C:\\Code\\api';
+
+    await native.gitChanges(rootPath);
+    await native.fileDiff(rootPath, 'src/index.ts');
+    await native.openFile(rootPath, 'src/index.ts');
+    await native.gitCommit(rootPath, { message: 'Commit changes' });
+    await native.gitCheckout(rootPath, { branchName: 'feature/test', createNew: true });
+    await native.gitMerge(rootPath, { branchName: 'feature/test' });
+    await native.gitReset(rootPath, { resetType: 'mixed' });
+    await native.gitWorktreeList(rootPath);
+    await native.gitWorktreeCreate(rootPath, { name: 'review-worktree' });
+    await native.gitWorktreeRemove(rootPath, 'review-worktree');
+
+    expect(tauri.invoke.mock.calls).toEqual([
+      ['project_git_changes', { rootPath }],
+      ['project_file_diff', { rootPath, relativePath: 'src/index.ts' }],
+      ['system_open_file', { rootPath, relativePath: 'src/index.ts' }],
+      ['git_commit', { rootPath, request: { message: 'Commit changes' } }],
+      ['git_checkout', { rootPath, request: { branchName: 'feature/test', createNew: true } }],
+      ['git_merge', { rootPath, request: { branchName: 'feature/test' } }],
+      ['git_reset', { rootPath, request: { resetType: 'mixed' } }],
+      ['git_worktree_list', { rootPath }],
+      ['git_worktree_create', { rootPath, request: { name: 'review-worktree' } }],
+      ['git_worktree_remove', { rootPath, name: 'review-worktree' }],
+    ]);
+  });
+
   it('delegates registered local projects to typed native methods', async () => {
     const native = adapter();
     const project = {

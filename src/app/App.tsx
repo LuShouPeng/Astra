@@ -1,7 +1,11 @@
 import { lazy, Suspense, useEffect, useMemo, type ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { Project, ProjectGitSummary } from '../core/contracts/projects';
-import type { WorkspaceService } from '../core/contracts/workspace';
+import type {
+  ActiveWorkspace,
+  WorkspaceRecord,
+  WorkspaceService,
+} from '../core/contracts/workspace';
 import {
   createPrototypeRepository,
   type PrototypeRepository,
@@ -40,6 +44,7 @@ import { WelcomePage } from '../modules/workspace';
 import { createTauriWorkspaceAdapters } from '../modules/workspace/services/workspaceAdapters';
 import { createWorkspaceService } from '../modules/workspace/services/workspaceService';
 import { WorkspaceProvider, useWorkspace } from '../modules/workspace/state/WorkspaceContext';
+import { selectOrDeriveWorkspaceProject } from './projectSelection';
 import { resolveAppRoute } from './routes';
 import { WorkbenchShell } from './shell/WorkbenchShell';
 
@@ -100,8 +105,13 @@ function ProjectsRoute({ service }: { service: ProjectService }) {
     } catch {
       git = { gitRepository: false, gitStatus: 'unknown' };
     }
+    const existing = selectOrDeriveWorkspaceProject(
+      snapshot.projects,
+      { id: record.id, name: record.name, rootPath: record.rootPath },
+      record,
+    );
     const project: Project = {
-      id: record.id,
+      ...existing,
       name: record.name,
       rootPath: record.rootPath,
       normalizedPath: record.normalizedPath,
@@ -129,6 +139,47 @@ function ProjectsRoute({ service }: { service: ProjectService }) {
   );
 }
 
+function hasRegisteredLocalProject(projects: readonly Project[], project: Project): boolean {
+  return projects.some(
+    (candidate) =>
+      candidate.source === 'local' &&
+      (candidate.normalizedPath === project.normalizedPath ||
+        candidate.rootPath === project.rootPath),
+  );
+}
+
+function WorkflowsRoute({
+  workspace,
+  workspaceRecord,
+}: {
+  workspace: ActiveWorkspace;
+  workspaceRecord: WorkspaceRecord | undefined;
+}) {
+  const { snapshot, updateSnapshot } = useWorkbench();
+  const project = useMemo(
+    () =>
+      snapshot
+        ? selectOrDeriveWorkspaceProject(snapshot.projects, workspace, workspaceRecord)
+        : null,
+    [snapshot, workspace, workspaceRecord],
+  );
+  const registered = project ? hasRegisteredLocalProject(snapshot?.projects ?? [], project) : false;
+
+  useEffect(() => {
+    if (!project || registered) return;
+    updateSnapshot(
+      (current) => {
+        if (hasRegisteredLocalProject(current.projects, project)) return current;
+        return { ...current, projects: [project, ...current.projects] };
+      },
+      { persist: true },
+    );
+  }, [project, registered, updateSnapshot]);
+
+  if (!project) return <div className="slot-loading" />;
+  return lazyPage(<WorkflowsPage projectId={project.id} />);
+}
+
 function AppRouter({
   repository,
   projectService,
@@ -140,9 +191,10 @@ function AppRouter({
   changesService: ChangesService;
   desktopNotifications: DesktopNotificationService;
 }) {
-  const { activeWorkspace } = useWorkspace();
+  const { activeWorkspace, workspaces } = useWorkspace();
   if (resolveAppRoute(activeWorkspace) === 'projects') return <WelcomePage />;
-  const workspaceId = activeWorkspace!.id;
+  const workspace = activeWorkspace!;
+  const workspaceRecord = workspaces.find((record) => record.id === workspace.id);
 
   return (
     <WorkbenchProvider repository={repository}>
@@ -152,7 +204,10 @@ function AppRouter({
           <Route index element={<Navigate replace to="/command-center" />} />
           <Route path="command-center" element={<CommandCenterPage />} />
           <Route path="projects" element={<ProjectsRoute service={projectService} />} />
-          <Route path="workflows" element={lazyPage(<WorkflowsPage projectId={workspaceId} />)} />
+          <Route
+            path="workflows"
+            element={<WorkflowsRoute workspace={workspace} workspaceRecord={workspaceRecord} />}
+          />
           <Route path="workflows/:workflowId" element={lazyPage(<WorkflowEditorPage />)} />
           <Route path="runs/:runId" element={lazyPage(<WorkflowRunPage />)} />
           <Route path="extensions" element={lazyPage(<ExtensionsPage />)} />

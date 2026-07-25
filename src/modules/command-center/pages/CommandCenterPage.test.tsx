@@ -30,10 +30,7 @@ describe('CommandCenterPage', () => {
     expect(
       screen.getByText(new Intl.DateTimeFormat('en', { dateStyle: 'full' }).format(new Date())),
     ).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Create simulated task' })).toHaveAttribute(
-      'href',
-      '/settings?tab=demo',
-    );
+    expect(screen.queryByRole('link', { name: 'Create simulated task' })).not.toBeInTheDocument();
     expect(screen.getByText('2', { selector: '[data-status="running"] strong' })).toBeVisible();
     expect(screen.getByText('2', { selector: '[data-status="waiting"] strong' })).toBeVisible();
     expect(screen.getByRole('link', { name: /Running Agents 2/ })).toHaveAttribute(

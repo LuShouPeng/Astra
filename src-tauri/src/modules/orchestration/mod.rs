@@ -1,4 +1,5 @@
 pub(crate) mod commands;
+pub(crate) mod coordinator;
 pub(crate) mod extensions;
 mod permissions;
 mod providers;
@@ -9,6 +10,8 @@ pub(crate) mod worktrees;
 
 #[cfg(test)]
 mod commands_test;
+#[cfg(test)]
+mod coordinator_test;
 #[cfg(test)]
 mod extensions_test;
 #[cfg(test)]

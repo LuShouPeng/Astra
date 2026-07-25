@@ -21,6 +21,7 @@ import {
   GitBranch,
   Hand,
   LayoutGrid,
+  PanelRightOpen,
   Play,
   Redo2,
   Save,
@@ -30,8 +31,9 @@ import {
   Undo2,
   UserCheck,
   Wrench,
+  X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type {
   WorkflowDefinition,
@@ -51,6 +53,7 @@ import { routeWorkflowProviders, type ProviderAvailability } from '../model/prov
 import { loadProviderPreferences } from '../model/providerPreferences';
 import { createDefaultWorkflowService, type WorkflowService } from '../services/workflowService';
 import { workflowCopy } from '../workflowCopy';
+import { useWorkspace } from '../../workspace';
 
 const kinds: Array<{ type: WorkflowNodeType; icon: typeof Wrench; en: string; zh: string }> = [
   { type: 'agent', icon: Wrench, en: 'Agent', zh: 'Agent' },
@@ -138,7 +141,6 @@ function newNode(type: WorkflowNodeType, position: { x: number; y: number }): Wo
   const base = { id: `${type}-${crypto.randomUUID()}`, name: type.replace('_', ' '), position };
   if (type === 'agent')
     return { ...base, type, provider: 'auto', prompt: '', skillIds: [], mcpServerIds: [] };
-  if (type === 'mcp_tool') return { ...base, type, serverId: '', toolName: '', arguments: {} };
   if (type === 'approval') return { ...base, type, risk: 'high', instructions: '' };
   if (type === 'condition') return { ...base, type, expression: '' };
   return { ...base, type, strategy: 'all' };
@@ -148,16 +150,22 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
   const service = useMemo(() => supplied ?? createDefaultWorkflowService(), [supplied]);
   const { workflowId } = useParams();
   const navigate = useNavigate();
-  const { language } = useI18n();
+  const { language, t } = useI18n();
+  const { activeWorkspace } = useWorkspace();
   const c = workflowCopy(language);
   const [definition, setDefinition] = useState<WorkflowDefinition | null>(null);
   const [nodes, setNodes] = useState<FlowNode[]>([]);
   const [edges, setEdges] = useState<FlowEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const inspectorToggleRef = useRef<HTMLButtonElement>(null);
   const [message, setMessage] = useState('');
   const [messageIsError, setMessageIsError] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [settingDrafts, setSettingDrafts] = useState<
+    Partial<Record<keyof WorkflowDefinition['settings'], string>>
+  >({});
   const [availableSkills, setAvailableSkills] = useState(() =>
     storedExtensions<SkillPackage>('astra.extensions.skills.v1'),
   );
@@ -181,6 +189,10 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       }
     });
   }, [service, workflowId]);
+  function closeInspector() {
+    setInspectorOpen(false);
+    inspectorToggleRef.current?.focus();
+  }
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return;
     void invoke<RuntimeMcpConfig[]>('orchestration_list_mcp_servers')
@@ -268,6 +280,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       setEdges(previous.edges);
       setSelectedId(undefined);
       setSelectedEdgeId(undefined);
+      setInspectorOpen(false);
     },
     [definition, edges, future, nodes, past],
   );
@@ -341,6 +354,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
     );
     setNodes((current) => [...current, toFlowNode(item)]);
     setSelectedId(item.id);
+    setInspectorOpen(true);
   }
   function updateSelected(patch: Partial<WorkflowNode>) {
     if (!definition) return;
@@ -390,6 +404,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       ),
     );
     setSelectedId(nodeId);
+    setInspectorOpen(true);
     setMessage(
       language === 'zh-CN'
         ? `${capability.name} 已内化到 ${target.name}`
@@ -449,7 +464,15 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       const routed = routeWorkflowProviders(next, providers);
       setDefinition(routed);
       await service.save(routed);
-      const run = await service.createRun(routed);
+      const run = await service.createRun(
+        routed,
+        '__TAURI_INTERNALS__' in window
+          ? {
+              repositoryPath: activeWorkspace?.rootPath ?? '',
+              providerPaths: loadProviderPreferences(),
+            }
+          : undefined,
+      );
       void navigate(`/runs/${run.id}`);
     } catch (reason) {
       setMessageIsError(true);
@@ -479,6 +502,41 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       ),
     );
   }
+  function updateWorkflowSettings(settings: Partial<WorkflowDefinition['settings']>) {
+    setDefinition((current) =>
+      current
+        ? {
+            ...current,
+            settings: { ...current.settings, ...settings },
+          }
+        : current,
+    );
+  }
+  function updateWorkflowSetting(
+    key: keyof WorkflowDefinition['settings'],
+    rawValue: string,
+    minimum: number,
+    maximum: number,
+  ) {
+    const value = Number.parseInt(rawValue, 10);
+    if (!Number.isInteger(value) || value < minimum || value > maximum) {
+      setSettingDrafts((current) => ({ ...current, [key]: rawValue }));
+      return;
+    }
+    setSettingDrafts((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    updateWorkflowSettings({ [key]: value });
+  }
+  function resetWorkflowSettingDraft(key: keyof WorkflowDefinition['settings']) {
+    setSettingDrafts((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
   const selected = definition?.nodes.find((node) => node.id === selectedId);
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
   const selectedEdgeSource = definition?.nodes.find((node) => node.id === selectedEdge?.source);
@@ -497,7 +555,9 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
   );
   if (!definition) return <div className="workflow-loading">{c.editor}</div>;
   return (
-    <section className="workflow-editor">
+    <section
+      className={`workflow-editor${inspectorOpen ? ' workflow-editor--inspector-open' : ''}`}
+    >
       <header className="workflow-editor__toolbar">
         <Link className="icon-button" to="/workflows" aria-label={c.back}>
           ←
@@ -524,6 +584,17 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
             onClick={() => restore('redo')}
           >
             <Redo2 size={16} />
+          </button>
+          <button
+            ref={inspectorToggleRef}
+            className="icon-button workflow-editor__inspector-toggle"
+            aria-label={c.inspector}
+            aria-controls="workflow-inspector"
+            aria-expanded={inspectorOpen}
+            title={c.inspector}
+            onClick={() => setInspectorOpen((open) => !open)}
+          >
+            <PanelRightOpen size={16} />
           </button>
           <button className="button button--compact" onClick={autoLayout}>
             <LayoutGrid size={15} />
@@ -659,14 +730,17 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
             onNodeClick={(_, node) => {
               setSelectedId(node.id);
               setSelectedEdgeId(undefined);
+              setInspectorOpen(true);
             }}
             onEdgeClick={(_, edge) => {
               setSelectedEdgeId(edge.id);
               setSelectedId(undefined);
+              setInspectorOpen(true);
             }}
             onPaneClick={() => {
               setSelectedId(undefined);
               setSelectedEdgeId(undefined);
+              setInspectorOpen(false);
             }}
             onNodeDragStart={() => checkpoint()}
             onInit={setFlow}
@@ -674,12 +748,81 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
             deleteKeyCode={['Backspace', 'Delete']}
           >
             <Background gap={20} />
-            <MiniMap pannable zoomable />
+            <MiniMap
+              bgColor="var(--color-surface)"
+              maskColor="var(--color-overlay)"
+              maskStrokeColor="var(--color-border-strong)"
+              nodeColor="var(--color-text-muted)"
+              nodeStrokeColor="var(--color-border)"
+              pannable
+              zoomable
+            />
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
-        <aside className="workflow-inspector">
-          <h2>{c.inspector}</h2>
+        <aside
+          id="workflow-inspector"
+          className="workflow-inspector"
+          aria-labelledby="workflow-inspector-title"
+        >
+          <div className="workflow-inspector__header">
+            <h2 id="workflow-inspector-title">{c.inspector}</h2>
+            <button
+              className="icon-button workflow-inspector__close"
+              aria-label={t('common.close')}
+              title={t('common.close')}
+              onClick={closeInspector}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <fieldset className="workflow-settings">
+            <legend>{c.settings}</legend>
+            <label>
+              {c.maxConcurrency}
+              <input
+                type="number"
+                min="1"
+                max="4"
+                value={settingDrafts.maxConcurrency ?? definition.settings.maxConcurrency}
+                onFocus={() => checkpoint()}
+                onBlur={() => resetWorkflowSettingDraft('maxConcurrency')}
+                onChange={(event) =>
+                  updateWorkflowSetting('maxConcurrency', event.target.value, 1, 4)
+                }
+              />
+            </label>
+            <label>
+              {c.defaultTimeout}
+              <input
+                type="number"
+                min="1"
+                max="86400"
+                value={
+                  settingDrafts.defaultTimeoutSeconds ?? definition.settings.defaultTimeoutSeconds
+                }
+                onFocus={() => checkpoint()}
+                onBlur={() => resetWorkflowSettingDraft('defaultTimeoutSeconds')}
+                onChange={(event) =>
+                  updateWorkflowSetting('defaultTimeoutSeconds', event.target.value, 1, 86_400)
+                }
+              />
+            </label>
+            <label>
+              {c.defaultRetries}
+              <input
+                type="number"
+                min="0"
+                max="3"
+                value={settingDrafts.defaultRetries ?? definition.settings.defaultRetries}
+                onFocus={() => checkpoint()}
+                onBlur={() => resetWorkflowSettingDraft('defaultRetries')}
+                onChange={(event) =>
+                  updateWorkflowSetting('defaultRetries', event.target.value, 0, 3)
+                }
+              />
+            </label>
+          </fieldset>
           {selectedEdge ? (
             <div className="workflow-fields">
               <p>
@@ -808,48 +951,6 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
                       ))
                     )}
                   </fieldset>
-                </>
-              )}
-              {selected.type === 'mcp_tool' && (
-                <>
-                  <label>
-                    MCP Server
-                    <select
-                      value={selected.serverId}
-                      onChange={(event) => updateSelected({ serverId: event.target.value })}
-                    >
-                      <option value="">
-                        {language === 'zh-CN' ? '选择服务器' : 'Select server'}
-                      </option>
-                      {availableMcp.map((server) => (
-                        <option key={server.id} value={server.id} disabled={!server.enabled}>
-                          {server.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    {language === 'zh-CN' ? '工具名称' : 'Tool name'}
-                    <input
-                      value={selected.toolName}
-                      onChange={(event) => updateSelected({ toolName: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    {language === 'zh-CN' ? '参数（JSON）' : 'Arguments (JSON)'}
-                    <textarea
-                      value={JSON.stringify(selected.arguments, null, 2)}
-                      onChange={(event) => {
-                        try {
-                          updateSelected({
-                            arguments: JSON.parse(event.target.value) as Record<string, unknown>,
-                          });
-                        } catch {
-                          // Keep the last valid argument object.
-                        }
-                      }}
-                    />
-                  </label>
                 </>
               )}
               {selected.type === 'approval' && (

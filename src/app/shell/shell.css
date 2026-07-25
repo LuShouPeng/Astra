@@ -78,6 +78,15 @@
   background: var(--color-activity-rail);
 }
 
+.activity-rail__desktop {
+  display: flex;
+  flex-direction: column;
+}
+
+.activity-rail__compact {
+  display: none;
+}
+
 .activity-button {
   position: relative;
   display: grid;
@@ -90,6 +99,10 @@
   color: var(--color-text-subtle);
   background: transparent;
   text-decoration: none;
+}
+
+.activity-button__label {
+  display: none;
 }
 
 .activity-button--active {
@@ -148,6 +161,22 @@
 }
 .activity-button--active[data-tooltip]::after {
   display: none;
+}
+
+.activity-rail__more {
+  position: relative;
+}
+
+.activity-rail__more-menu {
+  position: absolute;
+  z-index: var(--z-menu);
+  display: grid;
+  min-width: 176px;
+  padding: var(--space-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-menu);
 }
 
 .sidebar-slot {
@@ -480,7 +509,7 @@
 
 @media (max-width: 720px) {
   .workbench-shell__body {
-    grid-template-columns: var(--activity-rail-width) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .sidebar-slot {
@@ -493,5 +522,92 @@
 
   .title-bar__workspace {
     display: none;
+  }
+
+  .activity-rail {
+    position: fixed;
+    z-index: var(--z-menu);
+    right: 0;
+    bottom: var(--statusbar-height);
+    left: 0;
+    display: block;
+    min-height: 58px;
+    border-top: 1px solid var(--color-border);
+    border-right: 0;
+    background: var(--color-activity-rail);
+    box-shadow: var(--shadow-menu);
+  }
+
+  .activity-rail__desktop {
+    display: none;
+  }
+
+  .activity-rail__compact {
+    display: grid;
+    height: 58px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .activity-rail__compact .activity-button {
+    width: 100%;
+    height: 58px;
+    align-content: center;
+    gap: 2px;
+    border-top: 2px solid transparent;
+    border-left: 0;
+    font-size: 0.625rem;
+    line-height: 1.1;
+  }
+
+  .activity-rail__compact .activity-button--active {
+    border-top-color: var(--color-accent);
+    background: var(--color-active-surface);
+  }
+
+  .activity-rail__compact > .activity-button .activity-button__label,
+  .activity-rail__compact > .activity-rail__more > .activity-button .activity-button__label {
+    display: grid;
+    max-width: 100%;
+    min-height: 24px;
+    align-content: center;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-align: center;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .activity-rail__more-menu {
+    right: var(--space-2);
+    bottom: calc(100% + var(--space-2));
+    grid-template-columns: minmax(144px, 1fr);
+  }
+
+  .activity-rail__more-menu .activity-button {
+    display: flex;
+    height: 38px;
+    justify-content: flex-start;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+    border: 0;
+    font-size: var(--text-sm);
+  }
+
+  .activity-rail__more-menu .activity-button__label {
+    display: block;
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .activity-rail__more-menu .activity-button--active {
+    border: 0;
+  }
+
+  .main-slot {
+    grid-column: 1;
+    grid-row: 1;
+    padding-bottom: 58px;
   }
 }

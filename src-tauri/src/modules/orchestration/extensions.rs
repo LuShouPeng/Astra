@@ -22,6 +22,7 @@ use super::store::{OrchestrationStore, SkillPackageRecord};
 
 const MAX_SKILL_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_SKILL_FILES: usize = 256;
+const MAX_MCP_SECRET_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -473,7 +474,7 @@ pub async fn test_mcp_connection(config: &McpServerInput) -> Result<McpConnectio
         .map_err(|_| "The MCP connection test timed out.".to_string())?
 }
 
-pub fn validate_mcp_tool_call(
+pub fn validate_mcp_invocation(
     tool_name: &str,
     arguments: &serde_json::Value,
 ) -> Result<(), String> {
@@ -662,7 +663,7 @@ fn store_secret(reference: &str, secret: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn read_secret(reference: &str) -> Result<String, String> {
+pub(crate) fn read_secret(reference: &str) -> Result<String, String> {
     use std::{ptr, slice};
     use windows_sys::Win32::Security::Credentials::{
         CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
@@ -706,7 +707,7 @@ fn store_secret(_reference: &str, _secret: &str) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn read_secret(_reference: &str) -> Result<String, String> {
+pub(crate) fn read_secret(_reference: &str) -> Result<String, String> {
     Err("System credential storage is not available on this platform.".into())
 }
 
@@ -715,7 +716,7 @@ fn delete_secret(_reference: &str) -> Result<(), String> {
     Ok(())
 }
 
-async fn call_mcp_tool(
+async fn invoke_mcp(
     config: &McpServerInput,
     tool_name: &str,
     arguments: serde_json::Value,
@@ -724,7 +725,7 @@ async fn call_mcp_tool(
     if !config.enabled {
         return Err("The MCP server is disabled.".into());
     }
-    validate_mcp_tool_call(tool_name, &arguments)?;
+    validate_mcp_invocation(tool_name, &arguments)?;
     let arguments = arguments
         .as_object()
         .cloned()
@@ -830,84 +831,26 @@ pub fn resolve_run_mcp_config(
     Ok(config)
 }
 
-pub fn authorize_workflow_mcp_call(
+pub(crate) fn node_mcp_redactions(
     store: &OrchestrationStore,
     run_id: &str,
     node_id: &str,
-    server_id: &str,
-    tool_name: &str,
-    arguments: &serde_json::Value,
-) -> Result<(), String> {
-    let projection = store
-        .get_run_projection(run_id)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| "The workflow run was not found.".to_string())?;
-    if projection.run.status != "running" {
-        return Err("The workflow run is not ready for MCP execution.".into());
+) -> Result<Vec<String>, String> {
+    let records = store
+        .list_node_mcp_configs(run_id, node_id)
+        .map_err(|error| error.to_string())?;
+    let mut values = Vec::new();
+    for record in records {
+        let config: McpServerInput = serde_json::from_str(&record.config_json)
+            .map_err(|_| "A snapshotted MCP configuration is invalid.".to_string())?;
+        if let Some(reference) = config.secret_ref.as_deref() {
+            let secret = read_secret(&format!("AstraNexus/{reference}"))?;
+            if !secret.is_empty() && !values.iter().any(|value| value == &secret) {
+                values.push(secret);
+            }
+        }
     }
-    let node_run = projection
-        .nodes
-        .iter()
-        .find(|node| node.node.node_id == node_id)
-        .ok_or_else(|| "The MCP workflow node was not found.".to_string())?;
-    if node_run.node.status != "ready" {
-        return Err("The MCP workflow node is not ready.".into());
-    }
-    let network_approved = projection.approvals.iter().any(|approval| {
-        approval.node_run_id == node_run.node.id
-            && approval.capability == "network"
-            && approval.status == "approved"
-    });
-    if !network_approved {
-        return Err("The MCP network capability has not been approved.".into());
-    }
-    let workflow = store
-        .get_workflow(&projection.run.workflow_id, projection.run.workflow_version)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| "The workflow definition was not found.".to_string())?;
-    let definition: serde_json::Value = serde_json::from_str(&workflow.definition_json)
-        .map_err(|_| "The stored workflow definition is invalid.".to_string())?;
-    let node = definition
-        .get("nodes")
-        .and_then(serde_json::Value::as_array)
-        .and_then(|nodes| {
-            nodes
-                .iter()
-                .find(|node| node.get("id").and_then(serde_json::Value::as_str) == Some(node_id))
-        })
-        .ok_or_else(|| "The stored MCP workflow node is unavailable.".to_string())?;
-    if node.get("type").and_then(serde_json::Value::as_str) != Some("mcp_tool")
-        || node.get("serverId").and_then(serde_json::Value::as_str) != Some(server_id)
-        || node.get("toolName").and_then(serde_json::Value::as_str) != Some(tool_name)
-        || node.get("arguments") != Some(arguments)
-    {
-        return Err("The MCP call does not match the approved workflow node.".into());
-    }
-    Ok(())
-}
-
-pub fn authorize_and_audit_workflow_mcp_call(
-    store: &OrchestrationStore,
-    run_id: &str,
-    node_id: &str,
-    server_id: &str,
-    tool_name: &str,
-    arguments: &serde_json::Value,
-) -> Result<(), String> {
-    authorize_workflow_mcp_call(store, run_id, node_id, server_id, tool_name, arguments).map_err(
-        |error| {
-            let event = serde_json::json!({
-                "type": "mcp_tool_denied",
-                "nodeId": node_id,
-                "serverId": server_id,
-                "toolName": tool_name
-            });
-            store.append_event(run_id, &event.to_string()).map_or_else(
-                |_| "The denied MCP call could not be audited.".to_string(),
-                |_| error,
-            )
-        },
-    )
+    Ok(values)
 }
 
 #[tauri::command]
@@ -918,16 +861,70 @@ pub async fn orchestration_test_mcp_connection(
 }
 
 #[tauri::command]
-pub fn orchestration_save_mcp_server(
+pub fn orchestration_save_mcp_server_with_secret(
     store: State<'_, OrchestrationStore>,
     input: McpServerInput,
+    secret: Option<String>,
 ) -> Result<(), String> {
-    validate_mcp_config(&input)?;
-    let json = serde_json::to_string(&input)
+    save_mcp_server_with_secret(
+        &input,
+        secret.as_deref(),
+        store_secret,
+        |id, config_json| {
+            store
+                .save_mcp_config(id, config_json)
+                .map_err(|error| error.to_string())
+        },
+        |reference| {
+            store
+                .mcp_secret_reference_in_use(reference)
+                .map_err(|error| error.to_string())
+        },
+        delete_secret,
+    )
+}
+
+pub(super) fn save_mcp_server_with_secret<
+    StoreCredential,
+    SaveConfig,
+    ReferenceInUse,
+    DeleteCredential,
+>(
+    input: &McpServerInput,
+    secret: Option<&str>,
+    mut store_credential: StoreCredential,
+    mut save_config: SaveConfig,
+    mut reference_in_use: ReferenceInUse,
+    mut delete_credential: DeleteCredential,
+) -> Result<(), String>
+where
+    StoreCredential: FnMut(&str, &str) -> Result<(), String>,
+    SaveConfig: FnMut(&str, &str) -> Result<(), String>,
+    ReferenceInUse: FnMut(&str) -> Result<bool, String>,
+    DeleteCredential: FnMut(&str) -> Result<(), String>,
+{
+    validate_mcp_config(input)?;
+    let json = serde_json::to_string(input)
         .map_err(|_| "The MCP configuration could not be serialized.".to_string())?;
-    store
-        .save_mcp_config(&input.id, &json)
-        .map_err(|error| error.to_string())
+    let Some(secret) = secret else {
+        return save_config(&input.id, &json);
+    };
+    let reference = input
+        .secret_ref
+        .as_deref()
+        .filter(|_| !secret.is_empty() && secret.len() <= MAX_MCP_SECRET_BYTES)
+        .ok_or_else(|| "The credential input is invalid.".to_string())?;
+    let credential_target = format!("AstraNexus/{reference}");
+    store_credential(&credential_target, secret)?;
+    if let Err(error) = save_config(&input.id, &json) {
+        // A failed registry write must not leave an orphaned credential, but never delete a
+        // credential that an active configuration or a run snapshot still references.
+        if reference_in_use(reference).is_ok_and(|in_use| !in_use) {
+            let _ = delete_credential(&credential_target);
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -973,14 +970,6 @@ pub fn orchestration_delete_mcp_server(
         }
     }
     Ok(())
-}
-
-#[tauri::command]
-pub fn orchestration_store_secret(reference: String, secret: String) -> Result<(), String> {
-    if !valid_secret_reference(&reference) || secret.is_empty() || secret.len() > 16_384 {
-        return Err("The credential input is invalid.".into());
-    }
-    store_secret(&format!("AstraNexus/{reference}"), &secret)
 }
 
 #[tauri::command]
@@ -1073,68 +1062,7 @@ pub async fn orchestration_install_git_skill(
     .map_err(|_| "The Git Skill installation task stopped unexpectedly.".to_string())?
 }
 
-#[tauri::command]
-pub async fn orchestration_call_mcp_tool(
-    store: State<'_, OrchestrationStore>,
-    run_id: String,
-    node_id: String,
-    server_id: String,
-    tool_name: String,
-    arguments: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    if !valid_id(&run_id) || !valid_id(&node_id) || !valid_id(&server_id) {
-        return Err("MCP run identifiers are invalid.".into());
-    }
-    validate_mcp_tool_call(&tool_name, &arguments)?;
-    authorize_and_audit_workflow_mcp_call(
-        &store, &run_id, &node_id, &server_id, &tool_name, &arguments,
-    )?;
-    let config = resolve_run_mcp_config(&store, &run_id, &node_id, &server_id)?;
-    store
-        .update_node_status(&run_id, &node_id, "running", None)
-        .map_err(|error| error.to_string())?;
-    match call_mcp_tool(&config, &tool_name, arguments).await {
-        Ok(result) => {
-            let output = mcp_completion_evidence(&server_id, &tool_name);
-            store
-                .update_node_evidence(&run_id, &node_id, None, Some(&output), None)
-                .map_err(|error| error.to_string())?;
-            store
-                .update_node_status(&run_id, &node_id, "succeeded", None)
-                .map_err(|error| error.to_string())?;
-            let event = serde_json::json!({
-                "type": "mcp_tool_completed",
-                "nodeId": node_id,
-                "serverId": server_id,
-                "toolName": tool_name
-            });
-            store
-                .append_event(&run_id, &event.to_string())
-                .map_err(|error| error.to_string())?;
-            Ok(result)
-        }
-        Err(error) => {
-            store
-                .update_node_evidence(&run_id, &node_id, None, None, Some(&error))
-                .map_err(|store_error| store_error.to_string())?;
-            store
-                .update_node_status(&run_id, &node_id, "failed", None)
-                .map_err(|store_error| store_error.to_string())?;
-            let event = serde_json::json!({
-                "type": "mcp_tool_failed",
-                "nodeId": node_id,
-                "serverId": server_id,
-                "toolName": tool_name
-            });
-            store
-                .append_event(&run_id, &event.to_string())
-                .map_err(|store_error| store_error.to_string())?;
-            Err(error)
-        }
-    }
-}
-
-pub(super) fn mcp_completion_evidence(server_id: &str, tool_name: &str) -> String {
+pub(super) fn mcp_invocation_evidence(server_id: &str, tool_name: &str) -> String {
     serde_json::json!({
         "completed": true,
         "serverId": server_id,
@@ -1205,7 +1133,7 @@ pub fn orchestration_uninstall_skill(
         .map_err(|error| error.to_string())
 }
 
-fn skill_context(
+pub(crate) fn skill_context(
     app: &AppHandle,
     packages: Vec<SkillPackageRecord>,
     selected: &[String],

@@ -67,7 +67,7 @@ export function WelcomePage() {
           </button>
         </div>
         <footer>
-          <span>{t('status.prototype')}</span>
+          <span>{t('status.localWorkspace')}</span>
           <span>v0.1.0</span>
         </footer>
       </aside>

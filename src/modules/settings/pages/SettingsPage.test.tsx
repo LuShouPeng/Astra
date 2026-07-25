@@ -1,13 +1,18 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { invoke } from '@tauri-apps/api/core';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { WorkbenchSnapshot } from '../../../core/contracts/workbenchData';
 import type { PrototypeRepository } from '../../../core/data/prototypeRepository';
 import { I18nProvider } from '../../../core/i18n/I18nContext';
 import { WorkbenchProvider } from '../../../core/state/WorkbenchContext';
 import { createDemoSnapshot } from '../../demo';
 import type { DesktopNotificationService } from '../../notifications';
 import { SettingsPage } from './SettingsPage';
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+const mockedInvoke = vi.mocked(invoke);
 
 function repository(): PrototypeRepository {
   return {
@@ -19,6 +24,30 @@ function repository(): PrototypeRepository {
 }
 
 describe('SettingsPage', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+    mockedInvoke.mockReset();
+    localStorage.clear();
+  });
+
+  it('shows a loading state while settings data is being retrieved', () => {
+    const store: PrototypeRepository = {
+      load: vi.fn(() => new Promise<WorkbenchSnapshot>(() => undefined)),
+      save: vi.fn(async () => undefined),
+      reset: vi.fn(async () => createDemoSnapshot()),
+      consumeWarning: vi.fn(() => null),
+    };
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={store}>
+          <SettingsPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Loading settings...')).toBeVisible();
+  });
+
   it('opens deep-linked sections and applies a persistent theme', async () => {
     const user = userEvent.setup();
     localStorage.clear();
@@ -136,5 +165,116 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Sending notification' })).toBeDisabled();
     finishNotification?.('sent');
     expect(await screen.findByRole('button', { name: 'Send test notification' })).toBeEnabled();
+  });
+
+  it.each([
+    ['denied', 'Desktop notification permission denied'],
+    ['disabled', 'Desktop notifications are disabled'],
+  ] as const)('explains when desktop notifications are %s', async (result, message) => {
+    const user = userEvent.setup();
+    const desktop: DesktopNotificationService = {
+      notify: vi.fn(async () => result),
+    };
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository()}>
+          <SettingsPage desktopNotifications={desktop} />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Notifications' }));
+    await user.click(screen.getByRole('button', { name: 'Send test notification' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(message);
+  });
+
+  it('keeps notification controls usable and reports persistence failures', async () => {
+    const user = userEvent.setup();
+    const store = repository();
+    vi.mocked(store.save).mockRejectedValueOnce(new Error('Settings store is unavailable.'));
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={store}>
+          <SettingsPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Notifications' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Notify on Failed' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Settings store is unavailable.');
+    expect(screen.getByRole('checkbox', { name: 'Notify on Failed' })).toBeEnabled();
+  });
+
+  it('reports desktop notification transport errors without leaving a sending state behind', async () => {
+    const user = userEvent.setup();
+    const desktop: DesktopNotificationService = {
+      notify: vi.fn(async () => Promise.reject(new Error('Operating system unavailable.'))),
+    };
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository()}>
+          <SettingsPage desktopNotifications={desktop} />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Notifications' }));
+    await user.click(screen.getByRole('button', { name: 'Send test notification' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The desktop notification could not be sent.',
+    );
+    expect(screen.getByRole('button', { name: 'Send test notification' })).toBeEnabled();
+  });
+
+  it('runs simulated provider diagnostics and persists manual CLI paths', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository()}>
+          <SettingsPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'Settings' });
+    await user.type(
+      screen.getByRole('textbox', { name: 'claude executable path' }),
+      ' C:\\Tools\\claude.exe ',
+    );
+    await user.click(screen.getByRole('button', { name: 'Run diagnostics' }));
+
+    expect((await screen.findAllByText('Simulation mode')).length).toBe(2);
+    expect(JSON.parse(localStorage.getItem('astra.providers.v1') ?? '{}')).toEqual({
+      claudePath: 'C:\\Tools\\claude.exe',
+    });
+  });
+
+  it('renders native provider diagnostics and preserves a useful backend error', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
+    mockedInvoke.mockResolvedValueOnce([
+      { provider: 'claude', available: true, version: '2.1.0' },
+      { provider: 'codex', available: false, reason: 'Codex CLI is not installed.' },
+    ]);
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository()}>
+          <SettingsPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Run diagnostics' }));
+    expect(await screen.findByText('2.1.0')).toBeVisible();
+    expect(screen.getByText('Codex CLI is not installed.')).toBeVisible();
+    expect(mockedInvoke).toHaveBeenCalledWith('orchestration_discover_providers', { input: {} });
+
+    mockedInvoke.mockRejectedValueOnce(new Error('Provider discovery failed.'));
+    await user.click(screen.getByRole('button', { name: 'Run diagnostics' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Provider discovery failed.');
   });
 });

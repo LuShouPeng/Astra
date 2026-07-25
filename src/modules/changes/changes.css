@@ -2,7 +2,7 @@
   display: grid;
   height: 100%;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 .changes-header {
   display: flex;
@@ -19,6 +19,122 @@
 .changes-header > p {
   color: var(--color-text-subtle);
   font-size: var(--text-xs);
+}
+.changes-git-section {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.changes-git-section__project {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-right: 1px solid var(--color-border);
+}
+.changes-git-section__project > span,
+.changes-git-section__project label > span {
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.changes-git-section__project strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.changes-git-section__project small {
+  overflow: hidden;
+  color: var(--color-text-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.changes-git-section__project label {
+  display: grid;
+  gap: var(--space-1);
+}
+.changes-git-section__project select,
+.git-operation-form input,
+.git-operation-form select,
+.git-operation-form textarea {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  outline: none;
+  color: var(--color-text);
+  background: var(--color-canvas);
+  font: inherit;
+}
+.changes-git-section__project select:focus,
+.git-operation-form input:focus,
+.git-operation-form select:focus,
+.git-operation-form textarea:focus {
+  border-color: var(--color-focus);
+}
+.git-operations {
+  display: grid;
+  min-width: 0;
+}
+.git-operations__toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+.git-feedback {
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-accent-status);
+  background: var(--color-accent-surface-subtle);
+  font-size: var(--text-xs);
+}
+.git-feedback--error {
+  color: var(--color-danger-status);
+  background: var(--color-danger-status-surface);
+}
+.git-operation-form {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+.git-operation-form > label:not(.checkbox-label) {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.git-operation-form textarea {
+  resize: vertical;
+}
+.git-operation-form .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.git-operation-form .warning-text {
+  min-height: 1.25rem;
+  margin: 0;
+  color: var(--color-danger-status);
+  font-size: var(--text-xs);
+}
+.git-operation-form .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 .changes-state,
 .changes-empty {
@@ -353,6 +469,13 @@
   .changes-header > p {
     display: none;
   }
+  .changes-git-section {
+    grid-template-columns: 1fr;
+  }
+  .changes-git-section__project {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
   .changes-review {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
@@ -388,6 +511,19 @@
   }
   .changes-header h1 {
     font-size: var(--text-lg);
+  }
+  .changes-git-section__project,
+  .git-operations__toolbar,
+  .git-feedback,
+  .git-operation-form {
+    padding-right: var(--space-3);
+    padding-left: var(--space-3);
+  }
+  .git-operation-form .form-actions {
+    flex-direction: column-reverse;
+  }
+  .git-operation-form .form-actions .button {
+    width: 100%;
   }
   .changes-files {
     max-height: 150px;

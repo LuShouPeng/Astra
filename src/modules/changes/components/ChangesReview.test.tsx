@@ -32,6 +32,13 @@ describe('ChangesReview', () => {
       list: vi.fn(),
       diff: vi.fn(),
       openFile: vi.fn(),
+      commit: vi.fn(),
+      checkout: vi.fn(),
+      merge: vi.fn(),
+      reset: vi.fn(),
+      worktreeList: vi.fn(),
+      worktreeCreate: vi.fn(),
+      worktreeRemove: vi.fn(),
     };
 
     render(

@@ -189,6 +189,29 @@ test('resolves attention and synchronizes command center counts', async ({ page 
   await expectNoDocumentOverflow(page);
 });
 
+test.describe('mobile attention controls', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('keeps additional filters discoverable when they overflow', async ({ page }) => {
+    await page.goto('/?scenario=populated');
+    await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
+    await page.getByRole('link', { name: 'Needs Attention', exact: true }).click();
+
+    const controls = page.locator('.attention-controls');
+    const metrics = await controls.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      overflowX: getComputedStyle(element).overflowX,
+      overflowCue: getComputedStyle(element, '::after').content,
+    }));
+
+    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+    expect(metrics.overflowX).toBe('auto');
+    expect(metrics.overflowCue).toBe('">"');
+    await expectNoDocumentOverflow(page);
+  });
+});
+
 test('reviews a text diff and requests a deterministic rerun', async ({ page }) => {
   await page.goto('/?scenario=populated');
   await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
@@ -270,11 +293,12 @@ test('plays, steps, and resets the deterministic demo', async ({ page }) => {
   await expectNoDocumentOverflow(page);
 });
 
-test('deep-links settings, persists theme, and navigates with shortcuts', async ({ page }) => {
+test('opens settings, persists theme, and navigates with shortcuts', async ({ page }) => {
   await page.goto('/?scenario=populated');
   await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
-  await page.getByRole('link', { name: 'Create simulated task' }).click();
+  await page.getByRole('link', { name: 'Settings' }).click();
 
+  await page.getByRole('tab', { name: 'Demo' }).click();
   await expect(page.getByRole('tab', { name: 'Demo' })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: 'General' }).click();
   await page.getByRole('combobox', { name: 'Theme' }).selectOption('light');

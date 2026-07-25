@@ -11,7 +11,43 @@ export interface WorkflowRunProjection extends WorkflowRun {
   nodeRuns: NodeRun[];
   approvals?: ApprovalRequest[];
   artifacts?: WorkflowArtifact[];
-  events: Array<{ at: string; message: string }>;
+  context?: WorkflowRunContext;
+  attentions?: WorkflowRunAttention[];
+  mergeApproval?: WorkflowMergeApproval;
+  events: Array<{ at: string; message: string; sequence?: number }>;
+}
+
+export interface WorkflowRunExecutionContext {
+  repositoryPath: string;
+  providerPaths: {
+    claudePath?: string;
+    codexPath?: string;
+  };
+}
+
+export interface WorkflowRunContext {
+  repositoryPath: string;
+  providerPathsJson: string;
+  runWorktreeJson?: string;
+}
+
+export interface WorkflowRunAttention {
+  id: string;
+  runId: string;
+  nodeRunId?: string;
+  kind: string;
+  priority: string;
+  status: string;
+  summary: string;
+  contextJson: string;
+}
+
+export interface WorkflowMergeApproval {
+  id: string;
+  runId: string;
+  status: 'pending' | 'approved' | 'rejected' | 'merged' | 'conflicted';
+  summary: string;
+  mergedCommit?: string;
 }
 
 export interface WorkflowArtifact {
@@ -24,10 +60,16 @@ export interface WorkflowArtifact {
   byteLength: number;
 }
 
+export interface WorkflowRunEventRecord {
+  sequence: number;
+  eventJson: string;
+  createdAt: string;
+}
+
 export interface WorkflowAdapter {
   list(): Promise<WorkflowDefinition[]>;
   save(workflow: WorkflowDefinition): Promise<void>;
-  saveRun(run: WorkflowRunProjection): Promise<void>;
+  saveRun(run: WorkflowRunProjection, context?: WorkflowRunExecutionContext): Promise<void>;
   getRun(id: string): Promise<WorkflowRunProjection | null>;
   decideRun?(id: string, approved: boolean): Promise<void>;
   cancelRun?(id: string): Promise<void>;
@@ -35,6 +77,18 @@ export interface WorkflowAdapter {
   decideApproval?(id: string, approved: boolean): Promise<void>;
   retryNode?(runId: string, nodeId: string, maxRetries: number): Promise<boolean>;
   resumeRun?(id: string): Promise<WorkflowRunProjection>;
+  scheduleRun?(id: string): Promise<WorkflowRunProjection>;
+  listRunEventsAfter?(
+    runId: string,
+    afterSequence: number,
+    limit: number,
+  ): Promise<WorkflowRunEventRecord[]>;
+  requestFinalMerge?(runId: string): Promise<WorkflowRunProjection | null>;
+  decideFinalMerge?(
+    runId: string,
+    approvalId: string,
+    approved: boolean,
+  ): Promise<WorkflowRunProjection | null>;
   listTemplates(): Promise<WorkflowDefinition[]>;
   saveTemplate(workflow: WorkflowDefinition): Promise<void>;
 }
@@ -108,7 +162,10 @@ interface BackendRunProjection {
   >;
   approvals: ApprovalRequest[];
   artifacts: WorkflowArtifact[];
-  events: Array<{ sequence: number; eventJson: string; createdAt: string }>;
+  context?: WorkflowRunContext;
+  attentions?: WorkflowRunAttention[];
+  mergeApproval?: WorkflowMergeApproval;
+  events: WorkflowRunEventRecord[];
 }
 
 function eventMessage(eventJson: string): string {
@@ -158,7 +215,13 @@ export class TauriWorkflowAdapter extends BrowserWorkflowAdapter {
     });
   }
 
-  override async saveRun(run: WorkflowRunProjection): Promise<void> {
+  override async saveRun(
+    run: WorkflowRunProjection,
+    context?: WorkflowRunExecutionContext,
+  ): Promise<void> {
+    if (!context?.repositoryPath) {
+      throw new Error('A desktop workflow run requires a project repository path.');
+    }
     await invoke('orchestration_create_run', {
       input: {
         id: run.id,
@@ -167,6 +230,10 @@ export class TauriWorkflowAdapter extends BrowserWorkflowAdapter {
         projectId: run.projectId,
         integrationBranch: run.integrationBranch,
         nodeIds: run.nodeRuns.map((node) => node.nodeId),
+        executionContext: {
+          repositoryPath: context.repositoryPath,
+          providerPathsJson: JSON.stringify(context.providerPaths),
+        },
       },
     });
     await super.saveRun(run);
@@ -196,9 +263,13 @@ export class TauriWorkflowAdapter extends BrowserWorkflowAdapter {
       })),
       approvals: backend.approvals,
       artifacts: backend.artifacts,
+      context: backend.context,
+      attentions: backend.attentions,
+      mergeApproval: backend.mergeApproval,
       events: backend.events.map((event) => ({
         at: event.createdAt,
         message: eventMessage(event.eventJson),
+        sequence: event.sequence,
       })),
     } satisfies WorkflowRunProjection;
   }
@@ -229,6 +300,30 @@ export class TauriWorkflowAdapter extends BrowserWorkflowAdapter {
 
   resumeRun(id: string) {
     return this.projection(id, 'orchestration_resume_run') as Promise<WorkflowRunProjection>;
+  }
+
+  scheduleRun(id: string) {
+    return this.projection(id, 'orchestration_schedule_run') as Promise<WorkflowRunProjection>;
+  }
+
+  listRunEventsAfter(runId: string, afterSequence: number, limit: number) {
+    return invoke<WorkflowRunEventRecord[]>('orchestration_list_run_events_after', {
+      runId,
+      afterSequence,
+      limit,
+    });
+  }
+
+  requestFinalMerge(runId: string) {
+    return this.projection(
+      runId,
+      'orchestration_request_final_merge',
+    ) as Promise<WorkflowRunProjection>;
+  }
+
+  async decideFinalMerge(runId: string, approvalId: string, approved: boolean) {
+    await invoke('orchestration_decide_final_merge', { approvalId, approved });
+    return this.projection(runId);
   }
 }
 
@@ -304,6 +399,14 @@ export function createWorkflowService(adapter: WorkflowAdapter) {
       await new BrowserWorkflowAdapter().saveRun(next);
       return next;
     },
+    async scheduleRun(id: string) {
+      if (!adapter.scheduleRun) return this.reconcileRun(id);
+      const next = await adapter.scheduleRun(id);
+      await new BrowserWorkflowAdapter().saveRun(next);
+      return next;
+    },
+    listRunEventsAfter: (runId: string, afterSequence: number, limit = 250) =>
+      adapter.listRunEventsAfter?.(runId, afterSequence, limit) ?? Promise.resolve([]),
     async cancelRun(id: string) {
       const run = await adapter.getRun(id);
       if (!run) throw new Error('Workflow run was not found.');
@@ -326,7 +429,56 @@ export function createWorkflowService(adapter: WorkflowAdapter) {
       await new BrowserWorkflowAdapter().saveRun(next);
       return next;
     },
-    async createRun(workflow: WorkflowDefinition): Promise<WorkflowRunProjection> {
+    async requestFinalMerge(id: string) {
+      const run = await adapter.getRun(id);
+      if (!run) throw new Error('Workflow run was not found.');
+      if (adapter.requestFinalMerge) {
+        const next = await adapter.requestFinalMerge(id);
+        if (!next) throw new Error('Workflow run was not found.');
+        await new BrowserWorkflowAdapter().saveRun(next);
+        return next;
+      }
+      if (run.status !== 'completed')
+        throw new Error('Only a completed workflow run can be merged.');
+      const next: WorkflowRunProjection = {
+        ...run,
+        mergeApproval: {
+          id: `merge-${crypto.randomUUID()}`,
+          runId: id,
+          status: 'pending',
+          summary: 'Merge reviewed workflow changes into the original branch.',
+        },
+      };
+      await new BrowserWorkflowAdapter().saveRun(next);
+      return next;
+    },
+    async decideFinalMerge(runId: string, approvalId: string, approved: boolean) {
+      const run = await adapter.getRun(runId);
+      if (!run) throw new Error('Workflow run was not found.');
+      if (adapter.decideFinalMerge) {
+        const next = await adapter.decideFinalMerge(runId, approvalId, approved);
+        if (!next) throw new Error('Workflow run was not found.');
+        await new BrowserWorkflowAdapter().saveRun(next);
+        return next;
+      }
+      if (run.mergeApproval?.id !== approvalId || run.mergeApproval.status !== 'pending') {
+        throw new Error('The final merge approval cannot be decided in its current state.');
+      }
+      const next: WorkflowRunProjection = {
+        ...run,
+        mergeApproval: {
+          ...run.mergeApproval,
+          status: approved ? 'merged' : 'rejected',
+          mergedCommit: approved ? 'simulation' : undefined,
+        },
+      };
+      await new BrowserWorkflowAdapter().saveRun(next);
+      return next;
+    },
+    async createRun(
+      workflow: WorkflowDefinition,
+      context?: WorkflowRunExecutionContext,
+    ): Promise<WorkflowRunProjection> {
       const now = new Date().toISOString();
       const runId = `run-${crypto.randomUUID()}`;
       const run: WorkflowRunProjection = {
@@ -359,7 +511,7 @@ export function createWorkflowService(adapter: WorkflowAdapter) {
         ],
         events: [{ at: now, message: 'Run created. Worktree creation requires approval.' }],
       };
-      await adapter.saveRun(run);
+      await adapter.saveRun(run, context);
       return run;
     },
   };

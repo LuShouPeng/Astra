@@ -1,4 +1,4 @@
-import type { ProviderCapability } from '../../../core/contracts/agents';
+import type { AgentProvider, ProviderCapability } from '../../../core/contracts/agents';
 import type { AttentionItem } from '../../../core/contracts/attention';
 import type { FileChange } from '../../../core/contracts/changes';
 import type { AppNotification } from '../../../core/contracts/notifications';
@@ -6,7 +6,7 @@ import type { Project } from '../../../core/contracts/projects';
 import type { AgentSession, TimelineEvent } from '../../../core/contracts/sessions';
 import type { WorkbenchSnapshot } from '../../../core/contracts/workbenchData';
 
-const PROVIDERS: Record<'claude' | 'codex' | 'gemini', ProviderCapability> = {
+const PROVIDERS: Record<AgentProvider, ProviderCapability> = {
   claude: {
     provider: 'claude',
     label: 'Claude',
@@ -14,12 +14,6 @@ const PROVIDERS: Record<'claude' | 'codex' | 'gemini', ProviderCapability> = {
     displayOnly: false,
   },
   codex: { provider: 'codex', label: 'Codex', runtimeAvailable: false, displayOnly: false },
-  gemini: {
-    provider: 'gemini',
-    label: 'Gemini',
-    runtimeAvailable: false,
-    displayOnly: true,
-  },
 };
 
 const projects: Project[] = [
@@ -99,12 +93,12 @@ const sessions: AgentSession[] = [
     source: 'demo',
   },
   {
-    id: 'session-backend-gemini',
+    id: 'session-backend-codex-docs',
     projectId: 'project-backend-api',
-    provider: 'gemini',
+    provider: 'codex',
     title: 'Update API documentation',
     status: 'completed',
-    currentAction: 'Display-only demo Session',
+    currentAction: 'Documentation update ready for review',
     startedAt: '2026-07-24T09:30:00.000Z',
     updatedAt: '2026-07-24T10:15:00.000Z',
     completedAt: '2026-07-24T10:15:00.000Z',
@@ -142,12 +136,12 @@ const sessions: AgentSession[] = [
     source: 'demo',
   },
   {
-    id: 'session-ai-gemini',
+    id: 'session-ai-claude',
     projectId: 'project-ai-service',
-    provider: 'gemini',
+    provider: 'claude',
     title: 'Optimize inference service configuration',
     status: 'running',
-    currentAction: 'Display-only demo Session',
+    currentAction: 'Reviewing inference service configuration',
     startedAt: '2026-07-24T13:05:00.000Z',
     updatedAt: '2026-07-24T13:58:00.000Z',
     changedFilesCount: 2,

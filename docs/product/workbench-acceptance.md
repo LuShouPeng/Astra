@@ -77,20 +77,21 @@ Status values: `pending`, `implemented`, `verified`, `deferred`, `excluded`.
 | Validation      | Project removal confirms; Request Changes requires text                    | verified |
 | Synchronization | Status updates dashboard, tree, Session, Attention and notifications       | verified |
 | Performance     | Cold start <5 s; page feedback <300 ms; 100 Sessions and 500 events usable | verified |
-| Security        | No upload/key storage/Agent command execution/Git write/out-of-root reads  | verified |
+| Security        | Scoped Agent commands and Git writes require policy approval; MCP secrets stay in the OS vault; out-of-root reads are rejected | verified |
 | Packaging       | Source, installer, executable, README, PRD and prototype documentation     | verified |
 | Localization    | English default; Simplified Chinese UI/demo text persists across reloads   | verified |
 | Demo kit        | Data guide, script, slide deck, backup video, known issues, roadmap        | verified |
 
 ## Explicit Exclusions
 
-| Capability                                                          | Status   |
-| ------------------------------------------------------------------- | -------- |
-| Real Claude or Codex CLI execution and native Session recovery      | excluded |
-| Gemini CLI/runtime/adapter                                          | excluded |
-| PTY terminal, workflow runtime and worktree automation              | excluded |
-| Git commit/reset/checkout/merge and all repository mutation         | excluded |
-| Full editor, cloud sync, collaboration, marketplace and remote host | excluded |
+| Capability                                                                           | Status   |
+| ------------------------------------------------------------------------------------ | -------- |
+| Scoped Claude/Codex workflow execution and native run recovery                      | verified |
+| Gemini CLI/runtime/adapter                                                           | excluded |
+| Bounded Rust workflow runtime, event recovery, and managed worktree automation      | verified |
+| Interactive PTY terminal and a standalone Runtime Launcher                          | excluded |
+| Confirmed Git commit/reset/checkout/merge and approval-gated managed final merge    | verified |
+| Unattended user-branch mutation, full source editor, cloud sync, collaboration, marketplace and remote host | excluded |
 
 Gemini provider labels may remain in frozen demo fixtures because the PRD requires three-provider
 visual coverage; no Gemini CLI behavior may be implemented.
@@ -126,12 +127,12 @@ visual coverage; no Gemini CLI behavior may be implemented.
 
 ## Release Evidence
 
-- Frontend unit/component suite: 173 tests passed across 50 files. Coverage was 87.95% statements,
-  80.72% branches, 87.82% functions, and 89.27% lines.
-- E2E suite: 30 tests passed across desktop projects at 1280x720 and 1440x900, including workflow
+- Frontend unit/component suite: 300 tests passed across 60 files. Coverage was 89.38% statements,
+  80.06% branches, 90.47% functions, and 91.32% lines.
+- E2E suite: 34 tests passed across desktop projects at 1280x720 and 1440x900, including workflow
   generation, MCP registration, target-size overflow checks, persistent Simplified Chinese, and
   browser-clock checks for primary page transitions.
-- Rust suite: 32 tests passed, covering orchestration validation and reconciliation, Provider
+- Rust suite: 88 tests passed, covering orchestration validation and reconciliation, Provider
   parsing, permissions, SQLite migration and recovery, MCP and Skill validation, managed Git
   worktrees, path confinement, and bounded Git reads.
 - NSIS build produced a current-user installer; the portable EXE launch probe passed.
@@ -141,7 +142,7 @@ visual coverage; no Gemini CLI behavior may be implemented.
 - Command Center actions add projects, create deterministic simulated tasks, filter status results,
   and expose full Active Session metadata without invoking an Agent runtime.
 - Session headers expose start time and duration plus message, approval, rejection, local stop,
-  project-open, and review navigation actions. Stop remains a local simulation only.
+  project-open, and review navigation actions. Managed workflow cancellation is policy-bounded and durable.
 - Every Attention type has a specific next action, Agent/Session/time context, and Mark Read support;
   Request Changes also creates a `review_requested` application notification.
 - Dark, Light, and System themes persist locally. `Alt+1` through `Alt+6` navigate primary pages,

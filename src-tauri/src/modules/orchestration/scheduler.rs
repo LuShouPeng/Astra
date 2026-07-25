@@ -9,7 +9,6 @@ pub enum JoinStrategy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NodeKind {
     Agent,
-    McpTool,
     Approval,
     Condition,
     Join(JoinStrategy),
@@ -46,6 +45,7 @@ pub enum NodeStatus {
     Succeeded,
     Failed,
     Skipped,
+    Blocked,
     Cancelled,
     Interrupted,
 }
@@ -64,6 +64,7 @@ pub enum RunDisposition {
     Failed,
     Cancelled,
     Interrupted,
+    Paused,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -246,6 +247,11 @@ pub fn reconcile(
         .any(|status| *status == NodeStatus::Interrupted)
     {
         RunDisposition::Interrupted
+    } else if effective
+        .values()
+        .any(|status| *status == NodeStatus::Blocked)
+    {
+        RunDisposition::Paused
     } else if effective
         .values()
         .any(|status| *status == NodeStatus::WaitingApproval)

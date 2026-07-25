@@ -26,10 +26,11 @@ describe('applyFollowUp', () => {
 
   it('rejects blank follow-ups and display-only providers', () => {
     const snapshot = createDemoSnapshot();
+    snapshot.providerCapabilities.codex.displayOnly = true;
     expect(() => applyFollowUp(snapshot, 'session-backend-claude', '   ', 'now')).toThrow(
       SessionTransitionError,
     );
-    expect(() => applyFollowUp(snapshot, 'session-backend-gemini', 'Continue', 'now')).toThrow(
+    expect(() => applyFollowUp(snapshot, 'session-backend-codex', 'Continue', 'now')).toThrow(
       'display-only',
     );
   });
@@ -81,10 +82,11 @@ describe('stopSession', () => {
 
   it('rejects completed, display-only, and missing sessions', () => {
     const snapshot = createDemoSnapshot();
+    snapshot.providerCapabilities.claude.displayOnly = true;
     expect(() => stopSession(snapshot, 'session-backend-codex', 'now')).toThrow(
       'Only active Sessions can be stopped.',
     );
-    expect(() => stopSession(snapshot, 'session-ai-gemini', 'now')).toThrow('display-only');
+    expect(() => stopSession(snapshot, 'session-ai-claude', 'now')).toThrow('display-only');
     expect(() => stopSession(snapshot, 'missing', 'now')).toThrow('does not exist');
   });
 });

@@ -1,10 +1,14 @@
 use super::commands::{
-    create_run, reconcile_persisted_run, retry_node_checked, update_node_evidence_checked,
-    update_node_provider_checked, update_node_status_checked, valid_external_node_transition,
-    validate_run_definition, validate_run_input, validate_workflow_input, RunCreateInput,
+    create_run, reconcile_persisted_run, request_final_merge, retry_node_checked,
+    update_node_evidence_checked, update_node_provider_checked, update_node_status_checked,
+    valid_external_node_transition, validate_run_definition, validate_run_input,
+    validate_workflow_input, validate_worktree_cleanup, RunCreateInput, RunExecutionContextInput,
     WorkflowSaveInput,
 };
-use super::store::{ApprovalRecord, NodeRunRecord, OrchestrationStore, WorkflowRunRecord};
+use super::store::{
+    ApprovalRecord, NodeRunRecord, OrchestrationStore, WorkflowMergeApprovalRecord,
+    WorkflowRunContextRecord, WorkflowRunRecord,
+};
 
 fn input() -> WorkflowSaveInput {
     WorkflowSaveInput {
@@ -27,6 +31,130 @@ fn input() -> WorkflowSaveInput {
         }"#
         .into(),
     }
+}
+
+fn execution_context() -> RunExecutionContextInput {
+    RunExecutionContextInput {
+        repository_path: "C:/projects/astra".into(),
+        provider_paths_json: r#"{"codexPath":"C:/tools/codex.exe"}"#.into(),
+    }
+}
+
+fn save_cleanup_run(store: &OrchestrationStore, id: &str, status: &str) {
+    store
+        .save_run(&WorkflowRunRecord {
+            id: id.into(),
+            workflow_id: "workflow-cleanup".into(),
+            workflow_version: 1,
+            project_id: "project-1".into(),
+            status: status.into(),
+            integration_branch: Some(format!("astra/run-{id}")),
+        })
+        .unwrap();
+    store
+        .save_run_context(&WorkflowRunContextRecord {
+            run_id: id.into(),
+            repository_path: "C:/projects/astra".into(),
+            provider_paths_json: "{}".into(),
+            run_worktree_json: Some(format!(r#"{{"id":"{id}","branch":"astra/run-{id}"}}"#)),
+        })
+        .unwrap();
+}
+
+#[test]
+fn cleanup_only_allows_safe_terminal_runs_without_active_final_merge_approval() {
+    let store = OrchestrationStore::in_memory().unwrap();
+
+    for status in ["completed", "failed", "cancelled"] {
+        let run_id = format!("run-cleanup-{status}");
+        save_cleanup_run(&store, &run_id, status);
+        assert_eq!(
+            validate_worktree_cleanup(&store, &run_id)
+                .unwrap()
+                .repository_path,
+            "C:/projects/astra"
+        );
+    }
+
+    for status in ["waiting", "queued", "running", "paused", "interrupted"] {
+        let run_id = format!("run-cleanup-unsafe-{status}");
+        save_cleanup_run(&store, &run_id, status);
+        assert_eq!(
+            validate_worktree_cleanup(&store, &run_id).unwrap_err(),
+            "Worktrees can only be cleaned up after a workflow run has completed, failed, or been cancelled."
+        );
+    }
+
+    save_cleanup_run(&store, "run-cleanup-pending-merge", "completed");
+    store
+        .request_merge_approval(&WorkflowMergeApprovalRecord {
+            id: "merge-cleanup-pending".into(),
+            run_id: "run-cleanup-pending-merge".into(),
+            status: "pending".into(),
+            summary: "Review final merge".into(),
+            merged_commit: None,
+        })
+        .unwrap();
+    assert_eq!(
+        validate_worktree_cleanup(&store, "run-cleanup-pending-merge").unwrap_err(),
+        "Worktrees cannot be cleaned up while a final merge approval is pending or in progress."
+    );
+
+    save_cleanup_run(&store, "run-cleanup-approved-merge", "completed");
+    store
+        .request_merge_approval(&WorkflowMergeApprovalRecord {
+            id: "merge-cleanup-approved".into(),
+            run_id: "run-cleanup-approved-merge".into(),
+            status: "pending".into(),
+            summary: "Review final merge".into(),
+            merged_commit: None,
+        })
+        .unwrap();
+    assert!(store
+        .decide_merge_approval("merge-cleanup-approved", true)
+        .unwrap());
+    assert_eq!(
+        validate_worktree_cleanup(&store, "run-cleanup-approved-merge").unwrap_err(),
+        "Worktrees cannot be cleaned up while a final merge approval is pending or in progress."
+    );
+}
+
+#[test]
+fn final_merge_requires_a_completed_run_with_persisted_execution_context() {
+    let store = OrchestrationStore::in_memory().unwrap();
+    store
+        .save_run(&WorkflowRunRecord {
+            id: "run-final-merge".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_version: 1,
+            project_id: "project-1".into(),
+            status: "completed".into(),
+            integration_branch: Some("astra/run-run-final-merge".into()),
+        })
+        .unwrap();
+    store
+        .save_run_context(&WorkflowRunContextRecord {
+            run_id: "run-final-merge".into(),
+            repository_path: "C:/projects/astra".into(),
+            provider_paths_json: "{}".into(),
+            run_worktree_json: Some(
+                r#"{"id":"run-final-merge","branch":"astra/run-run-final-merge"}"#.into(),
+            ),
+        })
+        .unwrap();
+
+    let requested = request_final_merge(&store, "run-final-merge").unwrap();
+    assert_eq!(requested.merge_approval.unwrap().status, "pending");
+    assert_eq!(
+        store
+            .list_events("run-final-merge")
+            .unwrap()
+            .iter()
+            .filter(|event| event.contains("merge_approval_requested"))
+            .count(),
+        1
+    );
+    assert!(request_final_merge(&store, "run-final-merge").is_err());
 }
 
 #[test]
@@ -104,9 +232,13 @@ fn validates_bounded_run_creation_input() {
         project_id: "project-1".into(),
         integration_branch: "astra/run-run-1".into(),
         node_ids: vec!["node-1".into()],
+        execution_context: execution_context(),
     };
     assert!(validate_run_input(&input).is_ok());
     input.node_ids.clear();
+    assert!(validate_run_input(&input).is_err());
+    input.node_ids = vec!["node-1".into()];
+    input.execution_context.repository_path = "relative/project".into();
     assert!(validate_run_input(&input).is_err());
 }
 
@@ -249,6 +381,7 @@ fn run_nodes_must_exactly_match_the_saved_workflow() {
         project_id: "project-1".into(),
         integration_branch: "astra/run-run-1".into(),
         node_ids: vec!["agent-1".into(), "join-1".into()],
+        execution_context: execution_context(),
     };
     let definition = serde_json::json!({
         "projectId": "project-1",
@@ -312,6 +445,7 @@ fn creating_a_run_snapshots_each_nodes_mcp_configuration() {
         project_id: "project-1".into(),
         integration_branch: "astra/run-run-snapshot".into(),
         node_ids: vec!["agent-1".into()],
+        execution_context: execution_context(),
     };
     create_run(&store, input.clone()).unwrap();
     assert!(create_run(&store, input).is_err());
@@ -322,6 +456,16 @@ fn creating_a_run_snapshots_each_nodes_mcp_configuration() {
         .unwrap();
     assert_eq!(snapshots.len(), 1);
     assert!(snapshots[0].config_json.contains("mcp.exa.ai"));
+    assert_eq!(
+        store
+            .get_run_projection("run-snapshot")
+            .unwrap()
+            .unwrap()
+            .context
+            .unwrap()
+            .repository_path,
+        "C:/projects/astra"
+    );
     let audit = store.list_events("run-snapshot").unwrap().join("\n");
     assert!(audit.contains("approval_requested"));
     assert!(audit.contains("worktree"));
@@ -360,6 +504,7 @@ fn creating_a_run_rejects_missing_skill_snapshots_without_partial_state() {
             project_id: "project-1".into(),
             integration_branch: "astra/run-missing-skill".into(),
             node_ids: vec!["agent".into()],
+            execution_context: execution_context(),
         },
     );
     assert!(result.is_err());

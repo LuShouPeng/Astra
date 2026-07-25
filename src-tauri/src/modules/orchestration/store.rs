@@ -1,4 +1,7 @@
-use std::{path::Path, sync::Mutex};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -97,10 +100,45 @@ pub struct RunEventRecord {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkflowRunContextRecord {
+    pub run_id: String,
+    pub repository_path: String,
+    pub provider_paths_json: String,
+    pub run_worktree_json: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowAttentionRecord {
+    pub id: String,
+    pub run_id: String,
+    pub node_run_id: Option<String>,
+    pub kind: String,
+    pub priority: String,
+    pub status: String,
+    pub summary: String,
+    pub context_json: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowMergeApprovalRecord {
+    pub id: String,
+    pub run_id: String,
+    pub status: String,
+    pub summary: String,
+    pub merged_commit: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct RunProjection {
     pub run: WorkflowRunRecord,
+    pub context: Option<WorkflowRunContextRecord>,
     pub nodes: Vec<NodeRunProjection>,
     pub approvals: Vec<ApprovalRecord>,
+    pub attentions: Vec<WorkflowAttentionRecord>,
+    pub merge_approval: Option<WorkflowMergeApprovalRecord>,
     pub events: Vec<RunEventRecord>,
     pub artifacts: Vec<ArtifactRecord>,
 }
@@ -127,8 +165,9 @@ pub struct SkillPackageRecord {
     pub uninstalled: bool,
 }
 
+#[derive(Clone)]
 pub struct OrchestrationStore {
-    connection: Mutex<Connection>,
+    connection: Arc<Mutex<Connection>>,
 }
 
 impl OrchestrationStore {
@@ -267,6 +306,36 @@ impl OrchestrationStore {
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (run_id, node_id, server_id)
             );
+            CREATE TABLE IF NOT EXISTS workflow_run_contexts (
+                run_id TEXT PRIMARY KEY REFERENCES workflow_runs(id) ON DELETE CASCADE,
+                repository_path TEXT NOT NULL,
+                provider_paths_json TEXT NOT NULL,
+                run_worktree_json TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS workflow_run_attentions (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+                node_run_id TEXT REFERENCES node_runs(id) ON DELETE SET NULL,
+                kind TEXT NOT NULL,
+                priority TEXT NOT NULL,
+                status TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                context_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS workflow_merge_approvals (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+                status TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                decided_at TEXT,
+                merged_at TEXT,
+                merged_commit TEXT
+            );
             ",
         )?;
         Self::ensure_column(&transaction, "workflow_runs", "started_at", "TEXT")?;
@@ -277,10 +346,10 @@ impl OrchestrationStore {
         Self::ensure_column(&transaction, "node_runs", "started_at", "TEXT")?;
         Self::ensure_column(&transaction, "node_runs", "completed_at", "TEXT")?;
         Self::ensure_column(&transaction, "skill_packages", "uninstalled_at", "TEXT")?;
-        transaction.pragma_update(None, "user_version", 3)?;
+        transaction.pragma_update(None, "user_version", 4)?;
         transaction.commit()?;
         Ok(Self {
-            connection: Mutex::new(connection),
+            connection: Arc::new(Mutex::new(connection)),
         })
     }
 
@@ -429,15 +498,331 @@ impl OrchestrationStore {
         Ok(())
     }
 
+    pub fn save_run_context(&self, context: &WorkflowRunContextRecord) -> Result<(), StoreError> {
+        self.connection().execute(
+            "INSERT INTO workflow_run_contexts
+               (run_id, repository_path, provider_paths_json, run_worktree_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(run_id) DO UPDATE SET
+               repository_path = excluded.repository_path,
+               provider_paths_json = excluded.provider_paths_json,
+               run_worktree_json = excluded.run_worktree_json,
+               updated_at = CURRENT_TIMESTAMP",
+            params![
+                context.run_id,
+                context.repository_path,
+                context.provider_paths_json,
+                context.run_worktree_json
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_run_context(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<WorkflowRunContextRecord>, StoreError> {
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT run_id, repository_path, provider_paths_json, run_worktree_json
+                 FROM workflow_run_contexts WHERE run_id = ?1",
+                [run_id],
+                |row| {
+                    Ok(WorkflowRunContextRecord {
+                        run_id: row.get(0)?,
+                        repository_path: row.get(1)?,
+                        provider_paths_json: row.get(2)?,
+                        run_worktree_json: row.get(3)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn set_run_worktree(&self, run_id: &str, worktree_json: &str) -> Result<(), StoreError> {
+        self.connection().execute(
+            "UPDATE workflow_run_contexts SET run_worktree_json = ?2,
+             updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1",
+            params![run_id, worktree_json],
+        )?;
+        Ok(())
+    }
+
+    pub fn create_attention(
+        &self,
+        attention: &WorkflowAttentionRecord,
+    ) -> Result<bool, StoreError> {
+        let created = self.connection().execute(
+            "INSERT OR IGNORE INTO workflow_run_attentions
+               (id, run_id, node_run_id, kind, priority, status, summary, context_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                attention.id,
+                attention.run_id,
+                attention.node_run_id,
+                attention.kind,
+                attention.priority,
+                attention.status,
+                attention.summary,
+                attention.context_json,
+            ],
+        )?;
+        Ok(created == 1)
+    }
+
+    pub fn list_attentions(
+        &self,
+        run_id: &str,
+    ) -> Result<Vec<WorkflowAttentionRecord>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT id, run_id, node_run_id, kind, priority, status, summary, context_json
+             FROM workflow_run_attentions WHERE run_id = ?1 ORDER BY created_at, id",
+        )?;
+        let attentions = statement
+            .query_map([run_id], |row| {
+                Ok(WorkflowAttentionRecord {
+                    id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    node_run_id: row.get(2)?,
+                    kind: row.get(3)?,
+                    priority: row.get(4)?,
+                    status: row.get(5)?,
+                    summary: row.get(6)?,
+                    context_json: row.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(attentions)
+    }
+
+    pub fn request_merge_approval(
+        &self,
+        approval: &WorkflowMergeApprovalRecord,
+    ) -> Result<bool, StoreError> {
+        if approval.status != "pending" || approval.merged_commit.is_some() {
+            return Err(StoreError::Integrity(
+                "A merge approval request must be pending and unmerged.".into(),
+            ));
+        }
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        let pending = transaction
+            .query_row(
+                "SELECT id FROM workflow_merge_approvals
+                 WHERE run_id = ?1 AND status = 'pending' LIMIT 1",
+                [&approval.run_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        if pending.is_some() {
+            return Ok(false);
+        }
+        let created = transaction.execute(
+            "INSERT OR IGNORE INTO workflow_merge_approvals (id, run_id, status, summary)
+             VALUES (?1, ?2, 'pending', ?3)",
+            params![approval.id, approval.run_id, approval.summary],
+        )?;
+        if created == 1 {
+            let event = serde_json::json!({
+                "type": "merge_approval_requested",
+                "approvalId": approval.id,
+                "capability": "merge",
+            });
+            transaction.execute(
+                "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+                params![approval.run_id, event.to_string()],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(created == 1)
+    }
+
+    pub fn decide_merge_approval(
+        &self,
+        approval_id: &str,
+        approved: bool,
+    ) -> Result<bool, StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        let run_id = transaction
+            .query_row(
+                "SELECT run_id FROM workflow_merge_approvals
+                 WHERE id = ?1 AND status = 'pending'",
+                [approval_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        let Some(run_id) = run_id else {
+            return Ok(false);
+        };
+        let decision = if approved { "approved" } else { "rejected" };
+        let changed = transaction.execute(
+            "UPDATE workflow_merge_approvals SET status = ?2, decided_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND status = 'pending'",
+            params![approval_id, decision],
+        )?;
+        if changed != 1 {
+            return Ok(false);
+        }
+        let event = serde_json::json!({
+            "type": "merge_approval_decided",
+            "approvalId": approval_id,
+            "capability": "merge",
+            "decision": decision,
+        });
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![run_id, event.to_string()],
+        )?;
+        transaction.commit()?;
+        Ok(true)
+    }
+
+    pub fn get_merge_approval(
+        &self,
+        approval_id: &str,
+    ) -> Result<Option<WorkflowMergeApprovalRecord>, StoreError> {
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT id, run_id, status, summary, merged_commit
+                 FROM workflow_merge_approvals WHERE id = ?1",
+                [approval_id],
+                |row| {
+                    Ok(WorkflowMergeApprovalRecord {
+                        id: row.get(0)?,
+                        run_id: row.get(1)?,
+                        status: row.get(2)?,
+                        summary: row.get(3)?,
+                        merged_commit: row.get(4)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn complete_merge_approval(
+        &self,
+        approval_id: &str,
+        merged_commit: &str,
+    ) -> Result<bool, StoreError> {
+        if merged_commit.is_empty()
+            || merged_commit.len() > 128
+            || !merged_commit
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric())
+        {
+            return Err(StoreError::Integrity("The merge commit is invalid.".into()));
+        }
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        let run_id = transaction
+            .query_row(
+                "SELECT run_id FROM workflow_merge_approvals
+                 WHERE id = ?1 AND status = 'approved'",
+                [approval_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        let Some(run_id) = run_id else {
+            return Ok(false);
+        };
+        transaction.execute(
+            "UPDATE workflow_merge_approvals
+             SET status = 'merged', merged_at = CURRENT_TIMESTAMP, merged_commit = ?2
+             WHERE id = ?1 AND status = 'approved'",
+            params![approval_id, merged_commit],
+        )?;
+        let event = serde_json::json!({
+            "type": "final_merge_completed",
+            "approvalId": approval_id,
+            "commit": merged_commit,
+        });
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![run_id, event.to_string()],
+        )?;
+        transaction.commit()?;
+        Ok(true)
+    }
+
+    pub fn mark_merge_conflicted(
+        &self,
+        approval_id: &str,
+        summary: &str,
+    ) -> Result<Option<String>, StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        let run_id = transaction
+            .query_row(
+                "SELECT run_id FROM workflow_merge_approvals
+                 WHERE id = ?1 AND status = 'approved'",
+                [approval_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        let Some(run_id) = run_id else {
+            return Ok(None);
+        };
+        transaction.execute(
+            "UPDATE workflow_merge_approvals SET status = 'conflicted'
+             WHERE id = ?1 AND status = 'approved'",
+            [approval_id],
+        )?;
+        let event = serde_json::json!({
+            "type": "final_merge_conflicted",
+            "approvalId": approval_id,
+            "summary": summary,
+        });
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![run_id, event.to_string()],
+        )?;
+        transaction.commit()?;
+        Ok(Some(run_id))
+    }
+
+    fn latest_merge_approval(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<WorkflowMergeApprovalRecord>, StoreError> {
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT id, run_id, status, summary, merged_commit
+                 FROM workflow_merge_approvals WHERE run_id = ?1
+                 ORDER BY created_at DESC, id DESC LIMIT 1",
+                [run_id],
+                |row| {
+                    Ok(WorkflowMergeApprovalRecord {
+                        id: row.get(0)?,
+                        run_id: row.get(1)?,
+                        status: row.get(2)?,
+                        summary: row.get(3)?,
+                        merged_commit: row.get(4)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
     pub fn create_run_bundle(
         &self,
         run: &WorkflowRunRecord,
+        context: &WorkflowRunContextRecord,
         nodes: &[NodeRunRecord],
         approval: &ApprovalRecord,
         skill_ids: &[String],
         node_mcp_servers: &[(String, Vec<String>)],
         event_json: &str,
     ) -> Result<(), StoreError> {
+        if context.run_id != run.id {
+            return Err(StoreError::Integrity(
+                "The execution context belongs to a different workflow run.".into(),
+            ));
+        }
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
         transaction.execute(
@@ -451,6 +836,17 @@ impl OrchestrationStore {
                 run.project_id,
                 run.status,
                 run.integration_branch
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO workflow_run_contexts
+               (run_id, repository_path, provider_paths_json, run_worktree_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                context.run_id,
+                context.repository_path,
+                context.provider_paths_json,
+                context.run_worktree_json
             ],
         )?;
         for skill_id in skill_ids {
@@ -684,6 +1080,28 @@ impl OrchestrationStore {
         Ok(records)
     }
 
+    pub fn get_approval(&self, approval_id: &str) -> Result<Option<ApprovalRecord>, StoreError> {
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT id, run_id, node_run_id, capability, risk, summary, status
+                 FROM approvals WHERE id = ?1",
+                [approval_id],
+                |row| {
+                    Ok(ApprovalRecord {
+                        id: row.get(0)?,
+                        run_id: row.get(1)?,
+                        node_run_id: row.get(2)?,
+                        capability: row.get(3)?,
+                        risk: row.get(4)?,
+                        summary: row.get(5)?,
+                        status: row.get(6)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
     pub fn append_event(&self, run_id: &str, event_json: &str) -> Result<i64, StoreError> {
         let connection = self.connection();
         connection.execute(
@@ -694,6 +1112,28 @@ impl OrchestrationStore {
     }
 
     pub fn decide_run(&self, run_id: &str, approved: bool) -> Result<bool, StoreError> {
+        self.decide_run_internal(run_id, approved, None)
+    }
+
+    pub fn decide_run_with_worktree(
+        &self,
+        run_id: &str,
+        worktree_json: &str,
+    ) -> Result<bool, StoreError> {
+        if worktree_json.trim().is_empty() {
+            return Err(StoreError::Integrity(
+                "The approved workflow run worktree is invalid.".into(),
+            ));
+        }
+        self.decide_run_internal(run_id, true, Some(worktree_json))
+    }
+
+    fn decide_run_internal(
+        &self,
+        run_id: &str,
+        approved: bool,
+        worktree_json: Option<&str>,
+    ) -> Result<bool, StoreError> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
         let target = transaction
@@ -712,33 +1152,66 @@ impl OrchestrationStore {
             return Ok(false);
         };
         if approved {
+            if let Some(worktree_json) = worktree_json {
+                let stored = transaction.execute(
+                    "UPDATE workflow_run_contexts SET run_worktree_json = ?2,
+                     updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1",
+                    params![run_id, worktree_json],
+                )?;
+                if stored != 1 {
+                    return Err(StoreError::Integrity(
+                        "The workflow run execution context is unavailable.".into(),
+                    ));
+                }
+            }
+        } else if worktree_json.is_some() {
+            return Err(StoreError::Integrity(
+                "A rejected workflow run cannot receive a worktree.".into(),
+            ));
+        }
+        let approvals_changed = if approved {
             transaction.execute(
-                "UPDATE approvals SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+                "UPDATE approvals SET status = 'approved', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status = 'pending'",
                 [approval_id],
-            )?;
+            )?
         } else {
             transaction.execute(
                 "UPDATE approvals SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
                  WHERE run_id = ?1 AND status = 'pending'",
                 [run_id],
-            )?;
+            )?
+        };
+        if approvals_changed == 0 {
+            return Ok(false);
         }
         if approved {
-            transaction.execute(
-                "UPDATE node_runs SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            let nodes_changed = transaction.execute(
+                "UPDATE node_runs SET status = 'pending', updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?1 AND status = 'waiting_approval'",
                 [node_run_id],
             )?;
+            if nodes_changed != 1 {
+                return Ok(false);
+            }
         } else {
-            transaction.execute(
+            let nodes_changed = transaction.execute(
                 "UPDATE node_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
                  WHERE run_id = ?1 AND status IN ('pending','ready','running','waiting_approval')",
                 [run_id],
             )?;
+            if nodes_changed == 0 {
+                return Ok(false);
+            }
         }
-        transaction.execute(
-            "UPDATE workflow_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+        let run_changed = transaction.execute(
+            "UPDATE workflow_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND status = 'waiting'",
             params![run_id, if approved { "queued" } else { "cancelled" }],
         )?;
+        if run_changed != 1 {
+            return Ok(false);
+        }
         transaction.execute(
             "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
             params![
@@ -818,7 +1291,7 @@ impl OrchestrationStore {
         let changed = transaction.execute(
             "UPDATE workflow_runs SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP,
              updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?1 AND status IN ('waiting','queued','running','interrupted')",
+             WHERE id = ?1 AND status IN ('waiting','queued','running','paused','interrupted')",
             [run_id],
         )?;
         if changed == 0 {
@@ -829,7 +1302,7 @@ impl OrchestrationStore {
              WHERE run_id = ?1 AND status = 'pending'",
             [run_id],
         )?;
-        transaction.execute("UPDATE node_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND status IN ('pending','ready','running','waiting_approval')", [run_id])?;
+        transaction.execute("UPDATE node_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND status IN ('pending','ready','running','waiting_approval','blocked')", [run_id])?;
         transaction.execute("INSERT INTO run_events (run_id, event_json) VALUES (?1, '{\"type\":\"run_cancelled\"}')", [run_id])?;
         transaction.commit()?;
         Ok(true)
@@ -840,7 +1313,7 @@ impl OrchestrationStore {
         let transaction = connection.transaction()?;
         let changed = transaction.execute(
             "UPDATE workflow_runs SET status = 'queued', completed_at = NULL,
-             updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND status = 'interrupted'",
+             updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND status IN ('interrupted','paused')",
             [run_id],
         )?;
         if changed == 0 {
@@ -848,7 +1321,7 @@ impl OrchestrationStore {
         }
         transaction.execute(
             "UPDATE node_runs SET status = 'pending', completed_at = NULL,
-             updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND status = 'interrupted'",
+             updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND status IN ('interrupted','blocked')",
             [run_id],
         )?;
         transaction.execute(
@@ -874,6 +1347,131 @@ impl OrchestrationStore {
             params![run_id, node_id, status, worktree_path],
         )?;
         Ok(())
+    }
+
+    pub fn claim_ready_node(
+        &self,
+        run_id: &str,
+        node_id: &str,
+    ) -> Result<Option<(i64, String)>, StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        let claimed = transaction.execute(
+            "UPDATE node_runs
+             SET status = 'running', started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE run_id = ?1 AND node_id = ?2 AND status = 'ready'
+               AND EXISTS (
+                   SELECT 1 FROM workflow_runs
+                   WHERE id = ?1 AND status IN ('queued','running')
+               )",
+            params![run_id, node_id],
+        )?;
+        if claimed != 1 {
+            return Ok(None);
+        }
+        transaction.execute(
+            "UPDATE workflow_runs SET status = 'running',
+             started_at = COALESCE(started_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1",
+            [run_id],
+        )?;
+        let event_json = serde_json::json!({
+            "type": "node_claimed",
+            "nodeId": node_id,
+            "status": "running",
+        })
+        .to_string();
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![run_id, event_json],
+        )?;
+        let sequence = transaction.last_insert_rowid();
+        transaction.commit()?;
+        Ok(Some((sequence, event_json)))
+    }
+
+    pub fn set_running_node_worktree(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        worktree_path: &str,
+    ) -> Result<bool, StoreError> {
+        let changed = self.connection().execute(
+            "UPDATE node_runs SET worktree_path = ?3, updated_at = CURRENT_TIMESTAMP
+             WHERE run_id = ?1 AND node_id = ?2 AND status = 'running'
+               AND EXISTS (SELECT 1 FROM workflow_runs WHERE id = ?1 AND status = 'running')",
+            params![run_id, node_id, worktree_path],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn transition_running_node(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        status: &str,
+    ) -> Result<bool, StoreError> {
+        if !matches!(status, "succeeded" | "failed") {
+            return Err(StoreError::Integrity(
+                "A running node may only transition to a terminal execution status.".into(),
+            ));
+        }
+        let changed = self.connection().execute(
+            "UPDATE node_runs SET status = ?3, completed_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+             WHERE run_id = ?1 AND node_id = ?2 AND status = 'running'
+               AND EXISTS (SELECT 1 FROM workflow_runs WHERE id = ?1 AND status = 'running')",
+            params![run_id, node_id, status],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn pause_run_for_attention(
+        &self,
+        attention: &WorkflowAttentionRecord,
+    ) -> Result<bool, StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        let paused = transaction.execute(
+            "UPDATE workflow_runs SET status = 'paused', updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND status IN ('queued','running','waiting')",
+            [attention.run_id.as_str()],
+        )?;
+        if paused == 0 {
+            return Ok(false);
+        }
+        transaction.execute(
+            "UPDATE node_runs SET status = 'blocked', updated_at = CURRENT_TIMESTAMP
+             WHERE run_id = ?1 AND status IN ('pending','ready','running','waiting_approval')",
+            [attention.run_id.as_str()],
+        )?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO workflow_run_attentions
+               (id, run_id, node_run_id, kind, priority, status, summary, context_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                attention.id,
+                attention.run_id,
+                attention.node_run_id,
+                attention.kind,
+                attention.priority,
+                attention.status,
+                attention.summary,
+                attention.context_json,
+            ],
+        )?;
+        let event = serde_json::json!({
+            "type": "run_paused",
+            "attentionId": attention.id,
+            "kind": attention.kind,
+        });
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![attention.run_id, event.to_string()],
+        )?;
+        transaction.commit()?;
+        Ok(true)
     }
 
     pub fn update_node_evidence(
@@ -938,10 +1536,16 @@ impl OrchestrationStore {
         drop(event_statement);
         drop(node_statement);
         drop(connection);
+        let context = self.get_run_context(id)?;
+        let attentions = self.list_attentions(id)?;
+        let merge_approval = self.latest_merge_approval(id)?;
         Ok(Some(RunProjection {
             run,
+            context,
             nodes,
             approvals: self.list_approvals(id)?,
+            attentions,
+            merge_approval,
             events,
             artifacts: self.list_artifacts(id)?,
         }))
@@ -1245,6 +1849,33 @@ impl OrchestrationStore {
             .prepare("SELECT event_json FROM run_events WHERE run_id = ?1 ORDER BY sequence")?;
         let events = statement
             .query_map([run_id], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(events)
+    }
+
+    pub fn list_events_after(
+        &self,
+        run_id: &str,
+        after_sequence: i64,
+        limit: usize,
+    ) -> Result<Vec<RunEventRecord>, StoreError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let limit = i64::try_from(limit.min(1_000)).expect("bounded event limit fits i64");
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT sequence, event_json, created_at FROM run_events
+             WHERE run_id = ?1 AND sequence > ?2 ORDER BY sequence LIMIT ?3",
+        )?;
+        let events = statement
+            .query_map(params![run_id, after_sequence, limit], |row| {
+                Ok(RunEventRecord {
+                    sequence: row.get(0)?,
+                    event_json: row.get(1)?,
+                    created_at: row.get(2)?,
+                })
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(events)
     }

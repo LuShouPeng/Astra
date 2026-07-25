@@ -113,10 +113,12 @@ describe('SessionDetailPage', () => {
     expect(repository.save).toHaveBeenCalledOnce();
   });
 
-  it('disables follow-ups for a display-only Gemini session', async () => {
+  it('disables follow-ups when a provider is display-only', async () => {
+    const snapshot = createDemoSnapshot();
+    snapshot.providerCapabilities.codex.displayOnly = true;
     render(
-      <MemoryRouter initialEntries={['/sessions/session-backend-gemini']}>
-        <WorkbenchProvider repository={createRepository()}>
+      <MemoryRouter initialEntries={['/sessions/session-backend-codex']}>
+        <WorkbenchProvider repository={createRepository(snapshot)}>
           <Routes>
             <Route path="sessions/:sessionId" element={<SessionDetailPage />} />
           </Routes>

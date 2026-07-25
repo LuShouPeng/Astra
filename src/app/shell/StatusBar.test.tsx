@@ -7,6 +7,7 @@ describe('StatusBar', () => {
     const { rerender } = render(<StatusBar workspaceName="Astra Nexus" saving={false} />);
 
     expect(screen.getByRole('status', { name: 'Workbench status' })).toHaveTextContent('Ready');
+    expect(screen.getByText('Local workspace')).toBeVisible();
 
     rerender(<StatusBar workspaceName="Astra Nexus" saving />);
     expect(screen.getByRole('status', { name: 'Workbench status' })).toHaveTextContent('Saving');

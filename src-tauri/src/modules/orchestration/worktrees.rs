@@ -33,6 +33,22 @@ pub struct IntegrationEvidence {
     pub commits: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum NodeIntegrationError {
+    Conflict { summary: String },
+    Failure(String),
+}
+
+impl std::fmt::Display for NodeIntegrationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Conflict { summary } | Self::Failure(summary) => formatter.write_str(summary),
+        }
+    }
+}
+
+impl std::error::Error for NodeIntegrationError {}
+
 pub struct WorktreeManager {
     repository: PathBuf,
     cache: PathBuf,
@@ -252,9 +268,15 @@ impl WorktreeManager {
         )
     }
 
-    pub fn integrate_node(&self, run: &RunWorktree, node: &NodeWorktree) -> Result<(), String> {
+    pub fn integrate_node(
+        &self,
+        run: &RunWorktree,
+        node: &NodeWorktree,
+    ) -> Result<(), NodeIntegrationError> {
         if node.run_id != run.id {
-            return Err("The node worktree belongs to a different run.".into());
+            return Err(NodeIntegrationError::Failure(
+                "The node worktree belongs to a different run.".into(),
+            ));
         }
         let message = format!("astra: integrate run {} node {}", run.id, node.id);
         let merge = git(
@@ -270,21 +292,39 @@ impl WorktreeManager {
                 OsString::from("-m"),
                 OsString::from(message),
             ],
-        )?;
+        )
+        .map_err(NodeIntegrationError::Failure)?;
         if !merge.status.success() {
+            let output = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&merge.stdout),
+                String::from_utf8_lossy(&merge.stderr)
+            );
+            let detail = output
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or("Git failed.")
+                .trim()
+                .to_string();
             let _ = git(
                 &run.path,
                 [OsString::from("merge"), OsString::from("--abort")],
             );
-            return Err("The node branch conflicts with the integration branch.".into());
+            if output.contains("CONFLICT") || output.contains("Automatic merge failed") {
+                return Err(NodeIntegrationError::Conflict {
+                    summary: format!(
+                        "The node branch conflicts with the integration branch. {detail}"
+                    ),
+                });
+            }
+            return Err(NodeIntegrationError::Failure(format!(
+                "The node branch could not be integrated. {detail}"
+            )));
         }
         Ok(())
     }
 
-    pub fn merge_to_user_branch(&self, run: &RunWorktree, approved: bool) -> Result<(), String> {
-        if !approved {
-            return Err("Final integration requires explicit approval.".into());
-        }
+    pub fn merge_to_user_branch(&self, run: &RunWorktree) -> Result<String, String> {
         let status = require_success(
             git(
                 &self.repository,
@@ -309,24 +349,41 @@ impl WorktreeManager {
             ));
         }
         let message = format!("astra: merge workflow run {}", run.id);
+        let merge = git(
+            &self.repository,
+            [
+                OsString::from("-c"),
+                OsString::from("user.name=Astra Nexus"),
+                OsString::from("-c"),
+                OsString::from("user.email=astra@localhost"),
+                OsString::from("merge"),
+                OsString::from("--no-ff"),
+                OsString::from(&run.branch),
+                OsString::from("-m"),
+                OsString::from(message),
+            ],
+        )?;
+        if !merge.status.success() {
+            let detail = String::from_utf8_lossy(&merge.stderr)
+                .lines()
+                .next()
+                .unwrap_or("Git failed.")
+                .to_string();
+            let _ = git(
+                &self.repository,
+                [OsString::from("merge"), OsString::from("--abort")],
+            );
+            return Err(format!(
+                "The final integration conflicts with the user branch. {detail}"
+            ));
+        }
         require_success(
             git(
                 &self.repository,
-                [
-                    OsString::from("-c"),
-                    OsString::from("user.name=Astra Nexus"),
-                    OsString::from("-c"),
-                    OsString::from("user.email=astra@localhost"),
-                    OsString::from("merge"),
-                    OsString::from("--no-ff"),
-                    OsString::from(&run.branch),
-                    OsString::from("-m"),
-                    OsString::from(message),
-                ],
+                [OsString::from("rev-parse"), OsString::from("HEAD")],
             )?,
-            "The final integration conflicts with the user branch.",
-        )?;
-        Ok(())
+            "The final merge commit could not be resolved.",
+        )
     }
 
     pub fn integration_evidence(&self, run: &RunWorktree) -> Result<IntegrationEvidence, String> {
@@ -359,9 +416,9 @@ impl WorktreeManager {
         Ok(IntegrationEvidence { diff_stat, commits })
     }
 
-    pub fn cleanup_run(&self, run_id: &str, approved: bool) -> Result<(), String> {
-        if !approved || !valid_id(run_id) {
-            return Err("Worktree cleanup requires explicit approval.".into());
+    pub fn cleanup_run(&self, run_id: &str) -> Result<(), String> {
+        if !valid_id(run_id) {
+            return Err("The workflow run identifier is invalid.".into());
         }
         let run_root = self.cache.join(run_id);
         if !run_root.exists() {
@@ -403,24 +460,13 @@ impl WorktreeManager {
     }
 }
 
-fn manager(app: &AppHandle, repository: &str) -> Result<WorktreeManager, String> {
+pub(crate) fn manager(app: &AppHandle, repository: &str) -> Result<WorktreeManager, String> {
     let cache = app
         .path()
         .app_data_dir()
         .map_err(|_| "The application data directory is unavailable.".to_string())?
         .join("worktrees");
     WorktreeManager::new(Path::new(repository), &cache)
-}
-
-#[tauri::command]
-pub async fn orchestration_prepare_run_worktree(
-    app: AppHandle,
-    repository: String,
-    run_id: String,
-) -> Result<RunWorktree, String> {
-    tauri::async_runtime::spawn_blocking(move || manager(&app, &repository)?.prepare_run(&run_id))
-        .await
-        .map_err(|_| "The worktree task stopped unexpectedly.".to_string())?
 }
 
 #[tauri::command]
@@ -448,61 +494,11 @@ pub async fn orchestration_integrate_node(
     tauri::async_runtime::spawn_blocking(move || {
         let manager = manager(&app, &repository)?;
         let commit = manager.commit_node(&node, &workflow_id, &run.id, &node.id)?;
-        manager.integrate_node(&run, &node)?;
+        manager
+            .integrate_node(&run, &node)
+            .map_err(|error| error.to_string())?;
         Ok(commit)
     })
     .await
     .map_err(|_| "The integration task stopped unexpectedly.".to_string())?
-}
-
-#[tauri::command]
-pub async fn orchestration_merge_run(
-    app: AppHandle,
-    repository: String,
-    run: RunWorktree,
-    approved: bool,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        manager(&app, &repository)?.merge_to_user_branch(&run, approved)
-    })
-    .await
-    .map_err(|_| "The final integration task stopped unexpectedly.".to_string())?
-}
-
-#[tauri::command]
-pub async fn orchestration_get_run_worktree(
-    app: AppHandle,
-    repository: String,
-    run_id: String,
-) -> Result<RunWorktree, String> {
-    tauri::async_runtime::spawn_blocking(move || manager(&app, &repository)?.prepare_run(&run_id))
-        .await
-        .map_err(|_| "The worktree recovery task stopped unexpectedly.".to_string())?
-}
-
-#[tauri::command]
-pub async fn orchestration_get_integration_evidence(
-    app: AppHandle,
-    repository: String,
-    run: RunWorktree,
-) -> Result<IntegrationEvidence, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        manager(&app, &repository)?.integration_evidence(&run)
-    })
-    .await
-    .map_err(|_| "The integration evidence task stopped unexpectedly.".to_string())?
-}
-
-#[tauri::command]
-pub async fn orchestration_cleanup_run_worktrees(
-    app: AppHandle,
-    repository: String,
-    run_id: String,
-    approved: bool,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        manager(&app, &repository)?.cleanup_run(&run_id, approved)
-    })
-    .await
-    .map_err(|_| "The worktree cleanup task stopped unexpectedly.".to_string())?
 }

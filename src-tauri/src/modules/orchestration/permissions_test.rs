@@ -29,3 +29,14 @@ fn redacts_non_empty_secrets_from_runtime_output() {
         "Authorization: Bearer [REDACTED]"
     );
 }
+
+#[test]
+fn redacts_common_provider_token_patterns_without_a_secret_lookup() {
+    let output = redact(
+        "Authorization: Bearer sk-live-example GitHub ghp_example_token Slack xoxb-example-token",
+        &[],
+    );
+    assert!(!output.contains("sk-live-example"));
+    assert!(!output.contains("ghp_example_token"));
+    assert!(!output.contains("xoxb-example-token"));
+}

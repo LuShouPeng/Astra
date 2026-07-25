@@ -13,7 +13,11 @@
   is available.
 - Conditions intentionally use a bounded grammar: boolean literals or `<node>.succeeded` /
   `<node>.failed`. Arbitrary script expressions and graph loops are rejected.
-- MCP tools run through explicit workflow nodes and per-call approvals. Legacy SSE is unsupported.
+- MCP servers attach to Agent nodes and are snapshotted at run creation. Claude receives a managed
+  runtime MCP config; Codex MCP execution stays disabled until its installed CLI configuration
+  contract is verified. Legacy SSE is unsupported.
+- The application does not provide a PTY terminal or a standalone Runtime Launcher. Provider
+  execution is visible through managed workflow events, artifacts, and Git integration evidence.
 - Provider resume restarts an interrupted node in its preserved worktree; transparent continuation
   of every Provider-specific conversation protocol is not guaranteed.
 - Dark, Light, and System themes and the English/Simplified Chinese language selection are

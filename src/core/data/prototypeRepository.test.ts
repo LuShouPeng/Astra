@@ -32,9 +32,9 @@ describe('demo fixtures', () => {
     ]);
     expect(snapshot.sessions).toHaveLength(6);
     expect(new Set(snapshot.sessions.map((session) => session.provider))).toEqual(
-      new Set(['claude', 'codex', 'gemini']),
+      new Set(['claude', 'codex']),
     );
-    expect(snapshot.providerCapabilities.gemini.runtimeAvailable).toBe(false);
+    expect(snapshot.providerCapabilities.codex.runtimeAvailable).toBe(false);
   });
 
   it('keeps all references valid, paths relative, and timelines ordered', () => {

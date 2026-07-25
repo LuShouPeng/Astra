@@ -1,11 +1,18 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceRecord, WorkspaceService } from '../core/contracts/workspace';
 import type { PrototypeRepository } from '../core/data/prototypeRepository';
+import type { WorkbenchSnapshot } from '../core/contracts/workbenchData';
 import { createDemoSnapshot } from '../modules/demo';
 import type { ProjectService } from '../modules/projects';
 import { App } from './App';
+
+vi.mock('../modules/workflows/pages/WorkflowEditorPage', () => ({
+  WorkflowEditorPage: () => <div>Workflow editor</div>,
+}));
+
+afterEach(() => localStorage.clear());
 
 const record: WorkspaceRecord = {
   id: 'astra',
@@ -18,21 +25,39 @@ const record: WorkspaceRecord = {
 };
 
 function createService(): WorkspaceService {
+  let opened = false;
   return {
-    list: vi.fn(async () => []),
-    chooseAndAdd: vi.fn(async () => record),
+    list: vi.fn(async () => (opened ? [record] : [])),
+    chooseAndAdd: vi.fn(async () => {
+      opened = true;
+      return record;
+    }),
     open: vi.fn(async () => ({ id: record.id, name: record.name, rootPath: record.rootPath })),
     removeRecent: vi.fn(async () => undefined),
     refreshAvailability: vi.fn(async () => undefined),
   };
 }
 
-function createRepository(): PrototypeRepository {
+function desktopActivityRail() {
+  const rail = document.querySelector<HTMLElement>('.activity-rail__desktop');
+  if (!rail) throw new Error('Desktop activity rail is unavailable.');
+  return rail;
+}
+
+interface TestRepository extends PrototypeRepository {
+  savedSnapshots: WorkbenchSnapshot[];
+}
+
+function createRepository(): TestRepository {
+  const savedSnapshots: WorkbenchSnapshot[] = [];
   return {
     load: vi.fn(async () => createDemoSnapshot()),
-    save: vi.fn(async () => undefined),
+    save: vi.fn(async (snapshot: WorkbenchSnapshot) => {
+      savedSnapshots.push(snapshot);
+    }),
     reset: vi.fn(async () => createDemoSnapshot()),
     consumeWarning: vi.fn(() => null),
+    savedSnapshots,
   };
 }
 
@@ -78,7 +103,7 @@ describe('App workspace flow', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: 'Open Folder' }));
-    await user.click(await screen.findByRole('link', { name: 'Projects' }));
+    await user.click(within(desktopActivityRail()).getByRole('link', { name: 'Projects' }));
     await user.click(await screen.findByRole('button', { name: 'Add Project' }));
     expect(await screen.findByText('4 projects')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Astra Nexus' })).toBeVisible();
@@ -86,5 +111,34 @@ describe('App workspace flow', () => {
     await user.click(screen.getByRole('button', { name: 'Add Project' }));
     expect(screen.getByText('4 projects')).toBeVisible();
     expect(repository.save).toHaveBeenCalledTimes(2);
+  });
+
+  it('derives a local project before creating a workflow from the active workspace', async () => {
+    localStorage.clear();
+    const user = userEvent.setup();
+    const repository = createRepository();
+    render(<App service={createService()} repository={repository} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Open Folder' }));
+    await user.click(within(desktopActivityRail()).getByRole('link', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'New workflow' }));
+
+    await waitFor(() => {
+      expect(localStorage.getItem('astra.workflow.definitions.v1')).toContain(
+        '"projectId":"project-astra"',
+      );
+    });
+    await waitFor(() =>
+      expect(
+        repository.savedSnapshots.some((snapshot) =>
+          snapshot.projects.some(
+            (project) =>
+              project.id === 'project-astra' &&
+              project.normalizedPath === record.normalizedPath &&
+              project.source === 'local',
+          ),
+        ),
+      ).toBe(true),
+    );
   });
 });

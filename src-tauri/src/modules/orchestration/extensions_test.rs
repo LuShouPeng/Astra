@@ -4,8 +4,8 @@ use std::{
 };
 
 use super::extensions::{
-    install_local_skill, mcp_environment_allowed, test_mcp_connection, validate_git_source,
-    validate_mcp_config, validate_mcp_tool_call, McpServerInput,
+    install_local_skill, mcp_environment_allowed, save_mcp_server_with_secret, test_mcp_connection,
+    validate_git_source, validate_mcp_config, validate_mcp_invocation, McpServerInput,
 };
 
 fn node_executable() -> Option<std::path::PathBuf> {
@@ -31,6 +31,173 @@ fn temp(label: &str) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!("astra-extension-{label}-{suffix}"));
     fs::create_dir_all(&path).unwrap();
     path
+}
+
+fn remote_mcp_input() -> McpServerInput {
+    McpServerInput {
+        id: "exa".into(),
+        name: "Exa".into(),
+        transport: "streamable_http".into(),
+        command: None,
+        args: vec![],
+        url: Some("https://mcp.exa.ai/mcp".into()),
+        secret_ref: Some("credentials/exa".into()),
+        secret_header: Some("x-api-key".into()),
+        enabled: true,
+    }
+}
+
+#[test]
+fn atomic_mcp_save_validates_before_writing_a_credential() {
+    let invalid = McpServerInput {
+        url: Some("http://localhost.evil.example/mcp".into()),
+        ..remote_mcp_input()
+    };
+    let mut credential_written = false;
+    assert_eq!(
+        save_mcp_server_with_secret(
+            &invalid,
+            Some("secret"),
+            |_, _| {
+                credential_written = true;
+                Ok(())
+            },
+            |_, _| Ok(()),
+            |_| Ok(false),
+            |_| Ok(()),
+        )
+        .unwrap_err(),
+        "The MCP URL must use HTTPS or local HTTP."
+    );
+    assert!(!credential_written);
+
+    let without_reference = McpServerInput {
+        secret_ref: None,
+        ..remote_mcp_input()
+    };
+    assert_eq!(
+        save_mcp_server_with_secret(
+            &without_reference,
+            Some("secret"),
+            |_, _| {
+                credential_written = true;
+                Ok(())
+            },
+            |_, _| Ok(()),
+            |_| Ok(false),
+            |_| Ok(()),
+        )
+        .unwrap_err(),
+        "The credential input is invalid."
+    );
+    assert!(!credential_written);
+}
+
+#[test]
+fn atomic_mcp_save_persists_the_credential_then_a_secret_free_configuration() {
+    let mut stored = Vec::new();
+    let mut saved_config = String::new();
+    let mut deleted = false;
+    save_mcp_server_with_secret(
+        &remote_mcp_input(),
+        Some("api-key-must-not-enter-registry"),
+        |reference, secret| {
+            stored.push((reference.to_string(), secret.to_string()));
+            Ok(())
+        },
+        |id, config_json| {
+            assert_eq!(id, "exa");
+            saved_config = config_json.to_string();
+            Ok(())
+        },
+        |_| Ok(false),
+        |_| {
+            deleted = true;
+            Ok(())
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        stored,
+        vec![(
+            "AstraNexus/credentials/exa".to_string(),
+            "api-key-must-not-enter-registry".to_string()
+        )]
+    );
+    assert!(saved_config.contains("\"secretRef\":\"credentials/exa\""));
+    assert!(!saved_config.contains("api-key-must-not-enter-registry"));
+    assert!(!deleted);
+}
+
+#[test]
+fn atomic_mcp_save_removes_only_an_unused_credential_when_registry_write_fails() {
+    let mut deleted_references = Vec::new();
+    assert_eq!(
+        save_mcp_server_with_secret(
+            &remote_mcp_input(),
+            Some("secret"),
+            |_, _| Ok(()),
+            |_, _| Err("Registry write failed.".into()),
+            |_| Ok(false),
+            |reference| {
+                deleted_references.push(reference.to_string());
+                Ok(())
+            },
+        )
+        .unwrap_err(),
+        "Registry write failed."
+    );
+    assert_eq!(deleted_references, ["AstraNexus/credentials/exa"]);
+
+    let mut deleted_shared_reference = false;
+    assert_eq!(
+        save_mcp_server_with_secret(
+            &remote_mcp_input(),
+            Some("secret"),
+            |_, _| Ok(()),
+            |_, _| Err("Registry write failed.".into()),
+            |_| Ok(true),
+            |_| {
+                deleted_shared_reference = true;
+                Ok(())
+            },
+        )
+        .unwrap_err(),
+        "Registry write failed."
+    );
+    assert!(!deleted_shared_reference);
+}
+
+#[test]
+fn atomic_mcp_save_without_a_new_secret_does_not_touch_credential_storage() {
+    let mut credential_written = false;
+    let mut reference_checked = false;
+    let mut credential_deleted = false;
+    save_mcp_server_with_secret(
+        &remote_mcp_input(),
+        None,
+        |_, _| {
+            credential_written = true;
+            Ok(())
+        },
+        |_, config_json| {
+            assert!(config_json.contains("\"secretRef\":\"credentials/exa\""));
+            Ok(())
+        },
+        |_| {
+            reference_checked = true;
+            Ok(false)
+        },
+        |_| {
+            credential_deleted = true;
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert!(!credential_written);
+    assert!(!reference_checked);
+    assert!(!credential_deleted);
 }
 
 #[test]
@@ -295,11 +462,13 @@ fn validates_https_git_sources_without_embedded_credentials() {
 }
 
 #[test]
-fn validates_bounded_mcp_tool_calls() {
-    assert!(validate_mcp_tool_call("search", &serde_json::json!({"q": "astra"})).is_ok());
-    assert!(validate_mcp_tool_call("../search", &serde_json::json!({})).is_err());
-    assert!(validate_mcp_tool_call("search", &serde_json::json!(["not", "an", "object"])).is_err());
+fn validates_bounded_mcp_invocations() {
+    assert!(validate_mcp_invocation("search", &serde_json::json!({"q": "astra"})).is_ok());
+    assert!(validate_mcp_invocation("../search", &serde_json::json!({})).is_err());
     assert!(
-        validate_mcp_tool_call("search", &serde_json::json!({"q": "x".repeat(70_000)})).is_err()
+        validate_mcp_invocation("search", &serde_json::json!(["not", "an", "object"])).is_err()
+    );
+    assert!(
+        validate_mcp_invocation("search", &serde_json::json!({"q": "x".repeat(70_000)})).is_err()
     );
 }

@@ -14,7 +14,7 @@ describe('selectCommandCenterSummary', () => {
     expect(summary.activeSessions.map((session) => session.id)).toEqual([
       'session-backend-claude',
       'session-frontend-codex',
-      'session-ai-gemini',
+      'session-ai-claude',
       'session-frontend-claude',
     ]);
     expect(summary.attentionPreview.map((item) => item.id)).toEqual([

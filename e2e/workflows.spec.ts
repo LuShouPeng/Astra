@@ -71,6 +71,35 @@ test('generates, edits, validates, and creates a workflow run', async ({ page })
   await expect(page.getByText('completed', { exact: true }).first()).toBeVisible();
 });
 
+test('keeps node properties and toolbar labels usable at compact editor widths', async ({
+  page,
+}) => {
+  await openWorkbench(page);
+  await page.getByRole('link', { name: 'Workflows' }).click();
+  await page.getByLabel('Workflow goal').fill('Review compact workflow editing');
+  await page.getByRole('button', { name: 'Generate draft' }).click();
+
+  await page.setViewportSize({ width: 1000, height: 720 });
+  const autoLayout = page.getByRole('button', { name: 'Auto layout' });
+  await expect(autoLayout).toHaveText('Auto layout');
+  await expect(autoLayout).not.toHaveCSS('font-size', '0px');
+
+  await page.setViewportSize({ width: 760, height: 720 });
+  await page.locator('.react-flow__node').first().click();
+  await expect(page.getByRole('button', { name: 'Inspector' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+
+  const inspector = page.locator('#workflow-inspector');
+  await expect(inspector).toBeVisible();
+  await inspector.getByLabel('Name').fill('Compact edit');
+  await expect(inspector.getByLabel('Name')).toHaveValue('Compact edit');
+  await page.getByRole('button', { name: 'Close' }).click();
+  await expect(inspector).toBeHidden();
+  await expectNoDocumentOverflow(page);
+});
+
 test('registers MCP and keeps workflow surfaces contained at target sizes', async ({ page }) => {
   await openWorkbench(page);
   await page.getByRole('link', { name: 'Extensions' }).click();

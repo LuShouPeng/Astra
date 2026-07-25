@@ -23,15 +23,27 @@
   color: var(--color-text-subtle);
   font-size: var(--text-xs);
 }
-.attention-tabs {
+.attention-controls {
   display: flex;
+  align-items: flex-end;
   gap: var(--space-1);
   margin-top: var(--space-5);
   overflow-x: auto;
   border-bottom: 1px solid var(--color-border);
 }
+.attention-queue,
+.attention-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+}
+.attention-queue {
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
 .attention-sort {
-  display: inline-flex;
+  display: flex;
+  flex: 0 0 auto;
   margin-left: auto;
   align-items: center;
   gap: var(--space-2);
@@ -44,6 +56,7 @@
   color: var(--color-text);
   background: var(--color-surface);
 }
+.attention-queue button,
 .attention-tabs button {
   flex: 0 0 auto;
   height: 38px;
@@ -54,6 +67,7 @@
   background: transparent;
   font-size: var(--text-xs);
 }
+.attention-queue button[aria-pressed='true'],
 .attention-tabs button[aria-selected='true'] {
   border-bottom-color: var(--color-accent);
   color: var(--color-text);
@@ -162,8 +176,27 @@
   .attention-page {
     padding: var(--space-4);
   }
-  .attention-tabs {
+  .attention-controls {
+    position: relative;
     margin-right: calc(var(--space-4) * -1);
+    padding-right: 36px;
+  }
+  .attention-controls::after {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    right: 0;
+    display: grid;
+    width: 36px;
+    height: 37px;
+    padding-right: var(--space-2);
+    place-items: center end;
+    color: var(--color-text-muted);
+    background: linear-gradient(90deg, transparent, var(--color-canvas) 52%);
+    content: '>';
+    font-size: var(--text-lg);
+    line-height: 1;
+    pointer-events: none;
   }
   .attention-item__actions .button {
     min-width: 38px;

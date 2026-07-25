@@ -145,10 +145,10 @@ describe('WorkbenchProvider', () => {
 
     function CapabilityProbe() {
       const { loadState, snapshot } = useWorkbench();
-      const gemini = snapshot?.providerCapabilities.gemini;
+      const codex = snapshot?.providerCapabilities.codex;
       return (
         <span>
-          {loadState}:{gemini ? String(gemini.displayOnly) : 'none'}
+          {loadState}:{codex ? String(codex.displayOnly) : 'none'}
         </span>
       );
     }
@@ -159,7 +159,7 @@ describe('WorkbenchProvider', () => {
       </WorkbenchProvider>,
     );
 
-    expect(await screen.findByText('ready:true')).toBeVisible();
+    expect(await screen.findByText('ready:false')).toBeVisible();
   });
 
   it('resets and publishes the frozen repository snapshot', async () => {

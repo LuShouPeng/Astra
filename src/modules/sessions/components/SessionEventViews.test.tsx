@@ -97,11 +97,12 @@ describe('SessionEventViews', () => {
       />,
     );
     expect(screen.getByText('Deterministic mock')).toBeVisible();
+    const displayOnly: ProviderCapability = { ...snapshot.providerCapabilities.codex, displayOnly: true };
     rerender(
       <ContextView
         session={session}
         project={project}
-        capability={snapshot.providerCapabilities.gemini}
+        capability={displayOnly}
       />,
     );
     expect(screen.getByText('Display only')).toBeVisible();

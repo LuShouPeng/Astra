@@ -86,14 +86,14 @@ describe('planning Provider output', () => {
     ).toThrow(/invalid/i);
   });
 
-  it('rejects standalone MCP nodes because MCP is an Agent capability', () => {
+  it('rejects unsupported standalone capability nodes', () => {
     expect(() =>
       finalizePlannedWorkflow('project-1', {
         name: 'Legacy MCP plan',
         nodes: [
           {
             id: 'mcp-1',
-            type: 'mcp_tool',
+            type: 'tool',
             name: 'Search',
             position: { x: 0, y: 0 },
             serverId: 'exa',
@@ -103,7 +103,7 @@ describe('planning Provider output', () => {
         ],
         edges: [],
       }),
-    ).toThrow(/Agent capability/);
+    ).toThrow(/invalid/i);
   });
 
   it('instantiates templates with fresh graph identifiers', () => {

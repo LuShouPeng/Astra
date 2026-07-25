@@ -102,6 +102,40 @@ describe('workflow service browser fallback', () => {
     ]);
   });
 
+  it('requires a completed browser run before creating and deciding a final merge approval', async () => {
+    const adapter = new BrowserWorkflowAdapter();
+    const service = createWorkflowService(adapter);
+    const workflow = createWorkflowDraft('project-1', 'Build');
+    const run = await service.createRun(workflow);
+
+    await expect(service.requestFinalMerge(run.id)).rejects.toThrow('Only a completed workflow run');
+    await expect(service.requestFinalMerge('missing')).rejects.toThrow('not found');
+
+    const completed = { ...run, status: 'completed' as const };
+    await adapter.saveRun(completed);
+    const awaitingApproval = await service.requestFinalMerge(run.id);
+    const approval = awaitingApproval.mergeApproval!;
+
+    await expect(service.decideFinalMerge(run.id, 'wrong-approval', true)).rejects.toThrow(
+      'cannot be decided',
+    );
+    await expect(service.decideFinalMerge('missing', approval.id, true)).rejects.toThrow('not found');
+
+    const rejected = await service.decideFinalMerge(run.id, approval.id, false);
+    expect(rejected.mergeApproval).toMatchObject({ id: approval.id, status: 'rejected' });
+    expect(rejected.mergeApproval?.mergedCommit).toBeUndefined();
+  });
+
+  it('uses stable browser fallbacks when the coordinator hooks are absent', async () => {
+    const adapter = new BrowserWorkflowAdapter();
+    const service = createWorkflowService(adapter);
+    const workflow = createWorkflowDraft('project-1', 'Build');
+    const run = await service.createRun(workflow);
+
+    expect(await service.scheduleRun(run.id)).toEqual(run);
+    expect(await service.listRunEventsAfter(run.id, 4)).toEqual([]);
+  });
+
   it('selects the desktop adapter only when the Tauri runtime is present', async () => {
     expect(createDefaultWorkflowService()).toBeDefined();
     Object.defineProperty(window, '__TAURI_INTERNALS__', { value: {}, configurable: true });
@@ -197,6 +231,95 @@ describe('Tauri workflow adapter', () => {
     ]);
   });
 
+  it('sends the immutable desktop execution context when creating a run', async () => {
+    const adapter = new TauriWorkflowAdapter();
+    const run: WorkflowRunProjection = {
+      id: 'run-context',
+      workflowId: 'workflow-1',
+      workflowVersion: 1,
+      projectId: 'project-1',
+      status: 'waiting',
+      integrationBranch: 'astra/run-run-context',
+      createdAt: '2026-01-01',
+      nodeRuns: [{ id: 'run-context-agent', runId: 'run-context', nodeId: 'agent', status: 'pending', attempt: 1 }],
+      events: [],
+    };
+    mockedInvoke.mockResolvedValueOnce(undefined);
+
+    await adapter.saveRun(run, {
+      repositoryPath: 'C:/projects/astra',
+      providerPaths: { codexPath: 'C:/tools/codex.exe' },
+    });
+
+    expect(mockedInvoke).toHaveBeenCalledWith('orchestration_create_run', {
+      input: {
+        id: run.id,
+        workflowId: run.workflowId,
+        workflowVersion: run.workflowVersion,
+        projectId: run.projectId,
+        integrationBranch: run.integrationBranch,
+        nodeIds: ['agent'],
+        executionContext: {
+          repositoryPath: 'C:/projects/astra',
+          providerPathsJson: '{"codexPath":"C:/tools/codex.exe"}',
+        },
+      },
+    });
+  });
+
+  it('rejects Tauri run persistence without a repository execution context', async () => {
+    const adapter = new TauriWorkflowAdapter();
+    const run: WorkflowRunProjection = {
+      id: 'run-missing-context',
+      workflowId: 'workflow-1',
+      workflowVersion: 1,
+      projectId: 'project-1',
+      status: 'waiting',
+      createdAt: '2026-01-01',
+      nodeRuns: [],
+      events: [],
+    };
+
+    await expect(adapter.saveRun(run)).rejects.toThrow('requires a project repository path');
+  });
+
+  it('uses the persisted final-merge approval commands instead of passing Git paths from the page', async () => {
+    const adapter = new TauriWorkflowAdapter();
+    const backend = {
+      run: {
+        id: 'run-merge',
+        workflowId: 'workflow-1',
+        workflowVersion: 1,
+        projectId: 'project-1',
+        status: 'completed',
+      },
+      nodes: [],
+      approvals: [],
+      artifacts: [],
+      attentions: [],
+      events: [],
+      mergeApproval: {
+        id: 'merge-1',
+        runId: 'run-merge',
+        status: 'pending',
+        summary: 'Merge reviewed workflow changes.',
+      },
+    };
+    mockedInvoke.mockResolvedValueOnce(backend).mockResolvedValueOnce(undefined).mockResolvedValueOnce(backend);
+
+    expect((await adapter.requestFinalMerge('run-merge'))?.mergeApproval?.id).toBe('merge-1');
+    expect(
+      (await adapter.decideFinalMerge('run-merge', 'merge-1', true))?.mergeApproval?.status,
+    ).toBe('pending');
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, 'orchestration_request_final_merge', {
+      runId: 'run-merge',
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, 'orchestration_decide_final_merge', {
+      approvalId: 'merge-1',
+      approved: true,
+    });
+  });
+
   it('falls back to the local projection and forwards runtime controls', async () => {
     const adapter = new TauriWorkflowAdapter();
     const local: WorkflowRunProjection = {
@@ -251,5 +374,49 @@ describe('Tauri workflow adapter', () => {
     expect((await service.decideApproval(run.id, 'approval-1', true)).status).toBe('running');
     expect((await service.resumeRun(run.id)).status).toBe('queued');
     expect(adapter.decideApproval).toHaveBeenCalledWith('approval-1', true);
+  });
+
+  it('uses the coordinator for scheduling and recovers persisted events by cursor', async () => {
+    const adapter = new TauriWorkflowAdapter();
+    const backend = {
+      run: {
+        id: 'run-events',
+        workflowId: 'workflow-1',
+        workflowVersion: 1,
+        projectId: 'project-1',
+        status: 'running',
+      },
+      nodes: [],
+      approvals: [],
+      artifacts: [],
+      attentions: [],
+      events: [],
+    };
+    mockedInvoke
+      .mockResolvedValueOnce([
+        {
+          sequence: 4,
+          eventJson: '{"type":"node_succeeded","nodeId":"agent-1"}',
+          createdAt: '2026-07-25T12:00:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce(backend);
+
+    await expect(adapter.listRunEventsAfter('run-events', 3, 100)).resolves.toEqual([
+      {
+        sequence: 4,
+        eventJson: '{"type":"node_succeeded","nodeId":"agent-1"}',
+        createdAt: '2026-07-25T12:00:00.000Z',
+      },
+    ]);
+    expect((await adapter.scheduleRun('run-events'))?.status).toBe('running');
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, 'orchestration_list_run_events_after', {
+      runId: 'run-events',
+      afterSequence: 3,
+      limit: 100,
+    });
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, 'orchestration_schedule_run', {
+      runId: 'run-events',
+    });
   });
 });

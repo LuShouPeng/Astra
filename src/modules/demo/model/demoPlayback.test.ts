@@ -52,4 +52,41 @@ describe('deterministic demo playback', () => {
     expect(completed.demo.speed).toBe(2);
     expect(advanceDemo(completed)).toEqual(completed);
   });
+
+  it('advances safely when the recorded target session is no longer available', () => {
+    const snapshot = createDemoSnapshot();
+    snapshot.sessions = snapshot.sessions.filter(
+      (session) => session.id !== 'session-backend-claude',
+    );
+
+    const completed = Array.from({ length: DEMO_STEP_COUNT }).reduce(advanceDemo, snapshot);
+
+    expect(completed.demo).toEqual({ isRunning: false, speed: 1, currentStep: DEMO_STEP_COUNT });
+    expect(completed.timelineEvents.some((event) => event.id.startsWith('event-demo-'))).toBe(
+      false,
+    );
+    expect(completed.attentionItems.some((item) => item.id.startsWith('attention-demo-'))).toBe(
+      false,
+    );
+    expect(completed.notifications.some((item) => item.id.startsWith('notification-demo-'))).toBe(
+      false,
+    );
+  });
+
+  it('does not restart a completed demo and returns independent snapshots at the advance boundary', () => {
+    const completed = {
+      ...createDemoSnapshot(),
+      demo: { isRunning: false, speed: 1 as const, currentStep: DEMO_STEP_COUNT },
+    };
+
+    const playback = setDemoPlayback(completed, true);
+    const oncePastTheBoundary = advanceDemo(playback);
+    const twicePastTheBoundary = advanceDemo(oncePastTheBoundary);
+
+    expect(playback.demo).toEqual({ isRunning: false, speed: 1, currentStep: DEMO_STEP_COUNT });
+    expect(oncePastTheBoundary).toEqual(playback);
+    expect(oncePastTheBoundary).not.toBe(playback);
+    expect(twicePastTheBoundary).toEqual(playback);
+    expect(twicePastTheBoundary).not.toBe(oncePastTheBoundary);
+  });
 });

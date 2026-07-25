@@ -211,9 +211,6 @@
   color: var(--color-accent-status);
 }
 
-.agent-mark--gemini {
-  color: var(--color-brand);
-}
 
 .session-row:hover {
   background: var(--color-surface-hover);

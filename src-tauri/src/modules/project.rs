@@ -1,6 +1,6 @@
 use git2::{
-    BranchType, Delta, DiffFormat, DiffOptions, IndexAddOption, Oid, Patch, Repository,
-    ResetType, Signature, StatusOptions,
+    BranchType, Delta, DiffFormat, DiffOptions, IndexAddOption, Oid, Patch, Repository, ResetType,
+    Signature, StatusOptions,
 };
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -462,7 +462,10 @@ fn get_signature<'a>(
 ) -> Result<Signature<'a>, ProjectError> {
     if let (Some(name), Some(email)) = (author_name, author_email) {
         return Signature::now(name, email).map_err(|_| {
-            ProjectError::new("INVALID_SIGNATURE", "Invalid author name or email provided.")
+            ProjectError::new(
+                "INVALID_SIGNATURE",
+                "Invalid author name or email provided.",
+            )
         });
     }
 
@@ -474,11 +477,14 @@ fn get_signature<'a>(
     })
 }
 
-fn git_commit_impl(root: &Path, request: GitCommitRequest) -> Result<GitCommitResult, ProjectError> {
+fn git_commit_impl(
+    root: &Path,
+    request: GitCommitRequest,
+) -> Result<GitCommitResult, ProjectError> {
     let repository = open_repository(root)?;
-    let mut index = repository.index().map_err(|_| {
-        ProjectError::new("GIT_UNAVAILABLE", "Could not access git index.")
-    })?;
+    let mut index = repository
+        .index()
+        .map_err(|_| ProjectError::new("GIT_UNAVAILABLE", "Could not access git index."))?;
 
     // Stage files
     if let Some(file_paths) = &request.file_paths {
@@ -487,35 +493,30 @@ fn git_commit_impl(root: &Path, request: GitCommitRequest) -> Result<GitCommitRe
             let relative = Path::new(path);
             validate_relative_path(root, path)?;
             index.add_path(relative).map_err(|_| {
-                ProjectError::new(
-                    "GIT_ADD_FAILED",
-                    format!("Could not stage file: {}", path),
-                )
+                ProjectError::new("GIT_ADD_FAILED", format!("Could not stage file: {}", path))
             })?;
         }
     } else {
         // Stage all changes (similar to git add -A)
         index
             .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
-            .map_err(|_| {
-                ProjectError::new("GIT_ADD_FAILED", "Could not stage changes.")
-            })?;
-        index.update_all(["*"].iter(), None).map_err(|_| {
-            ProjectError::new("GIT_ADD_FAILED", "Could not update staged changes.")
-        })?;
+            .map_err(|_| ProjectError::new("GIT_ADD_FAILED", "Could not stage changes."))?;
+        index
+            .update_all(["*"].iter(), None)
+            .map_err(|_| ProjectError::new("GIT_ADD_FAILED", "Could not update staged changes."))?;
     }
 
-    index.write().map_err(|_| {
-        ProjectError::new("GIT_ADD_FAILED", "Could not write git index.")
-    })?;
+    index
+        .write()
+        .map_err(|_| ProjectError::new("GIT_ADD_FAILED", "Could not write git index."))?;
 
-    let tree_id = index.write_tree().map_err(|_| {
-        ProjectError::new("GIT_COMMIT_FAILED", "Could not create tree from index.")
-    })?;
+    let tree_id = index
+        .write_tree()
+        .map_err(|_| ProjectError::new("GIT_COMMIT_FAILED", "Could not create tree from index."))?;
 
-    let tree = repository.find_tree(tree_id).map_err(|_| {
-        ProjectError::new("GIT_COMMIT_FAILED", "Could not find tree object.")
-    })?;
+    let tree = repository
+        .find_tree(tree_id)
+        .map_err(|_| ProjectError::new("GIT_COMMIT_FAILED", "Could not find tree object."))?;
 
     let signature = get_signature(
         &repository,
@@ -523,13 +524,13 @@ fn git_commit_impl(root: &Path, request: GitCommitRequest) -> Result<GitCommitRe
         request.author_email.as_deref(),
     )?;
 
-    let head = repository.head().map_err(|_| {
-        ProjectError::new("GIT_COMMIT_FAILED", "Could not get HEAD reference.")
-    })?;
+    let head = repository
+        .head()
+        .map_err(|_| ProjectError::new("GIT_COMMIT_FAILED", "Could not get HEAD reference."))?;
 
-    let parent_commit = head.peel_to_commit().map_err(|_| {
-        ProjectError::new("GIT_COMMIT_FAILED", "Could not find parent commit.")
-    })?;
+    let parent_commit = head
+        .peel_to_commit()
+        .map_err(|_| ProjectError::new("GIT_COMMIT_FAILED", "Could not find parent commit."))?;
 
     let commit_id = repository
         .commit(
@@ -540,9 +541,7 @@ fn git_commit_impl(root: &Path, request: GitCommitRequest) -> Result<GitCommitRe
             &tree,
             &[&parent_commit],
         )
-        .map_err(|_| {
-            ProjectError::new("GIT_COMMIT_FAILED", "Could not create commit.")
-        })?;
+        .map_err(|_| ProjectError::new("GIT_COMMIT_FAILED", "Could not create commit."))?;
 
     let branch = head
         .shorthand()
@@ -579,14 +578,12 @@ fn git_checkout_impl(root: &Path, request: GitCheckoutRequest) -> Result<(), Pro
     }
 
     // Checkout the branch
-    let (object, reference) = repository
-        .revparse_ext(&request.branch_name)
-        .map_err(|_| {
-            ProjectError::new(
-                "GIT_CHECKOUT_FAILED",
-                format!("Could not find branch: {}", request.branch_name),
-            )
-        })?;
+    let (object, reference) = repository.revparse_ext(&request.branch_name).map_err(|_| {
+        ProjectError::new(
+            "GIT_CHECKOUT_FAILED",
+            format!("Could not find branch: {}", request.branch_name),
+        )
+    })?;
 
     repository
         .checkout_tree(&object, None)
@@ -612,6 +609,25 @@ fn git_checkout_impl(root: &Path, request: GitCheckoutRequest) -> Result<(), Pro
 fn git_merge_impl(root: &Path, request: GitMergeRequest) -> Result<GitMergeResult, ProjectError> {
     let repository = open_repository(root)?;
 
+    let mut status_options = StatusOptions::new();
+    status_options
+        .include_untracked(true)
+        .recurse_untracked_dirs(true);
+    let statuses = repository
+        .statuses(Some(&mut status_options))
+        .map_err(|_| {
+            ProjectError::new(
+                "GIT_MERGE_FAILED",
+                "Could not inspect the working tree before merge.",
+            )
+        })?;
+    if !statuses.is_empty() {
+        return Err(ProjectError::new(
+            "GIT_MERGE_DIRTY_WORKTREE",
+            "Commit, stash, or discard local changes before merging.",
+        ));
+    }
+
     // Find the branch to merge
     let branch = repository
         .find_branch(&request.branch_name, BranchType::Local)
@@ -622,17 +638,18 @@ fn git_merge_impl(root: &Path, request: GitMergeRequest) -> Result<GitMergeResul
             )
         })?;
 
-    let branch_commit = branch.get().peel_to_commit().map_err(|_| {
-        ProjectError::new("GIT_MERGE_FAILED", "Could not find branch commit.")
-    })?;
+    let branch_commit = branch
+        .get()
+        .peel_to_commit()
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not find branch commit."))?;
 
-    let head = repository.head().map_err(|_| {
-        ProjectError::new("GIT_MERGE_FAILED", "Could not get HEAD reference.")
-    })?;
+    let head = repository
+        .head()
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not get HEAD reference."))?;
 
-    let head_commit = head.peel_to_commit().map_err(|_| {
-        ProjectError::new("GIT_MERGE_FAILED", "Could not find HEAD commit.")
-    })?;
+    let head_commit = head
+        .peel_to_commit()
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not find HEAD commit."))?;
 
     let annotated_commit = repository
         .find_annotated_commit(branch_commit.id())
@@ -667,11 +684,9 @@ fn git_merge_impl(root: &Path, request: GitMergeRequest) -> Result<GitMergeResul
                 ProjectError::new("GIT_MERGE_FAILED", "Could not update HEAD reference.")
             })?;
 
-        repository
-            .checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
-            .map_err(|_| {
-                ProjectError::new("GIT_MERGE_FAILED", "Could not checkout HEAD after merge.")
-            })?;
+        repository.checkout_head(None).map_err(|_| {
+            ProjectError::new("GIT_MERGE_FAILED", "Could not checkout HEAD after merge.")
+        })?;
 
         return Ok(GitMergeResult {
             success: true,
@@ -680,11 +695,7 @@ fn git_merge_impl(root: &Path, request: GitMergeRequest) -> Result<GitMergeResul
     }
 
     // Normal merge
-    let mut index = repository.index().map_err(|_| {
-        ProjectError::new("GIT_MERGE_FAILED", "Could not access git index.")
-    })?;
-
-    repository
+    let mut index = repository
         .merge_commits(&head_commit, &branch_commit, None)
         .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not merge commits."))?;
 
@@ -697,6 +708,8 @@ fn git_merge_impl(root: &Path, request: GitMergeRequest) -> Result<GitMergeResul
             .filter_map(|conflict| {
                 conflict
                     .our
+                    .or(conflict.their)
+                    .or(conflict.ancestor)
                     .and_then(|entry| String::from_utf8(entry.path.clone()).ok())
             })
             .collect();
@@ -708,13 +721,13 @@ fn git_merge_impl(root: &Path, request: GitMergeRequest) -> Result<GitMergeResul
     }
 
     // Complete the merge with a commit
-    let tree_id = index.write_tree().map_err(|_| {
-        ProjectError::new("GIT_MERGE_FAILED", "Could not write tree after merge.")
-    })?;
+    let tree_id = index
+        .write_tree_to(&repository)
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not write tree after merge."))?;
 
-    let tree = repository.find_tree(tree_id).map_err(|_| {
-        ProjectError::new("GIT_MERGE_FAILED", "Could not find tree after merge.")
-    })?;
+    let tree = repository
+        .find_tree(tree_id)
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not find tree after merge."))?;
 
     let signature = repository.signature().map_err(|_| {
         ProjectError::new(
@@ -756,9 +769,8 @@ fn git_reset_impl(root: &Path, request: GitResetRequest) -> Result<(), ProjectEr
     };
 
     let target_oid = if let Some(commit_id) = request.commit_id {
-        Oid::from_str(&commit_id).map_err(|_| {
-            ProjectError::new("INVALID_COMMIT_ID", "Invalid commit ID provided.")
-        })?
+        Oid::from_str(&commit_id)
+            .map_err(|_| ProjectError::new("INVALID_COMMIT_ID", "Invalid commit ID provided."))?
     } else {
         repository
             .head()
@@ -767,9 +779,9 @@ fn git_reset_impl(root: &Path, request: GitResetRequest) -> Result<(), ProjectEr
             .ok_or_else(|| ProjectError::new("GIT_RESET_FAILED", "Could not get HEAD target."))?
     };
 
-    let target_commit = repository.find_commit(target_oid).map_err(|_| {
-        ProjectError::new("GIT_RESET_FAILED", "Could not find target commit.")
-    })?;
+    let target_commit = repository
+        .find_commit(target_oid)
+        .map_err(|_| ProjectError::new("GIT_RESET_FAILED", "Could not find target commit."))?;
 
     repository
         .reset(target_commit.as_object(), reset_type, None)
@@ -781,17 +793,14 @@ fn git_reset_impl(root: &Path, request: GitResetRequest) -> Result<(), ProjectEr
 fn git_worktree_list_impl(root: &Path) -> Result<Vec<GitWorktreeInfo>, ProjectError> {
     let repository = open_repository(root)?;
 
-    let worktrees = repository.worktrees().map_err(|_| {
-        ProjectError::new("GIT_WORKTREE_FAILED", "Could not list worktrees.")
-    })?;
+    let worktrees = repository
+        .worktrees()
+        .map_err(|_| ProjectError::new("GIT_WORKTREE_FAILED", "Could not list worktrees."))?;
 
     let mut result = Vec::new();
     for name in worktrees.iter().flatten() {
         if let Ok(worktree) = repository.find_worktree(name) {
-            let path = worktree
-                .path()
-                .to_string_lossy()
-                .to_string();
+            let path = worktree.path().to_string_lossy().to_string();
 
             // Try to get the branch name for this worktree
             let branch = if let Ok(wt_repo) = Repository::open(worktree.path()) {
@@ -830,7 +839,10 @@ fn git_worktree_create_impl(
     }
 
     std::fs::create_dir_all(&worktree_path).map_err(|_| {
-        ProjectError::new("GIT_WORKTREE_FAILED", "Could not create worktree directory.")
+        ProjectError::new(
+            "GIT_WORKTREE_FAILED",
+            "Could not create worktree directory.",
+        )
     })?;
 
     let branch_name = request
@@ -887,9 +899,9 @@ fn git_worktree_remove_impl(root: &Path, name: String) -> Result<(), ProjectErro
     }
 
     // Prune the worktree from git
-    worktree.prune(None).map_err(|_| {
-        ProjectError::new("GIT_WORKTREE_FAILED", "Could not prune worktree.")
-    })?;
+    worktree
+        .prune(None)
+        .map_err(|_| ProjectError::new("GIT_WORKTREE_FAILED", "Could not prune worktree."))?;
 
     Ok(())
 }
@@ -1025,11 +1037,12 @@ pub async fn git_worktree_remove(root_path: String, name: String) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::{
-        file_diff, git_changes, inspect_git, project_file_diff, project_git_changes,
-        project_git_summary,
+        file_diff, git_changes, git_merge_impl, inspect_git, project_file_diff,
+        project_git_changes, project_git_summary, GitMergeRequest,
     };
     use git2::{Repository, Signature};
     use std::fs;
+    use std::path::Path;
     use std::thread;
     use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1070,6 +1083,131 @@ mod tests {
                 Err(error) => panic!("remove temporary repository: {error}"),
             }
         }
+    }
+
+    fn configure_repository_signature(repository: &Repository) {
+        let mut config = repository.config().expect("open repository config");
+        config
+            .set_str("user.name", "Astra")
+            .expect("configure repository user name");
+        config
+            .set_str("user.email", "astra@example.test")
+            .expect("configure repository user email");
+    }
+
+    fn commit_file(
+        repository: &Repository,
+        relative_path: &str,
+        contents: &str,
+        message: &str,
+    ) -> git2::Oid {
+        let workdir = repository.workdir().expect("repository workdir");
+        fs::write(workdir.join(relative_path), contents).expect("write fixture");
+
+        let mut index = repository.index().expect("open index");
+        index
+            .add_path(Path::new(relative_path))
+            .expect("stage fixture");
+        index.write().expect("persist index");
+        let tree_id = index.write_tree().expect("write fixture tree");
+        let tree = repository.find_tree(tree_id).expect("find fixture tree");
+        let signature = Signature::now("Astra", "astra@example.test").expect("signature");
+
+        let parent = repository
+            .head()
+            .ok()
+            .and_then(|head| head.peel_to_commit().ok());
+        match parent.as_ref() {
+            Some(parent) => repository
+                .commit(
+                    Some("HEAD"),
+                    &signature,
+                    &signature,
+                    message,
+                    &tree,
+                    &[parent],
+                )
+                .expect("create fixture commit"),
+            None => repository
+                .commit(Some("HEAD"), &signature, &signature, message, &tree, &[])
+                .expect("create initial fixture commit"),
+        }
+    }
+
+    fn delete_file(repository: &Repository, relative_path: &str, message: &str) -> git2::Oid {
+        let workdir = repository.workdir().expect("repository workdir");
+        fs::remove_file(workdir.join(relative_path)).expect("delete fixture");
+
+        let mut index = repository.index().expect("open index");
+        index
+            .remove_path(Path::new(relative_path))
+            .expect("stage deleted fixture");
+        index.write().expect("persist index");
+        let tree_id = index.write_tree().expect("write fixture tree");
+        let tree = repository.find_tree(tree_id).expect("find fixture tree");
+        let signature = Signature::now("Astra", "astra@example.test").expect("signature");
+        let parent = repository
+            .head()
+            .expect("fixture HEAD")
+            .peel_to_commit()
+            .expect("fixture parent commit");
+
+        repository
+            .commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                message,
+                &tree,
+                &[&parent],
+            )
+            .expect("create deletion fixture commit")
+    }
+
+    fn checkout_branch(repository: &Repository, branch_name: &str) {
+        let reference_name = format!("refs/heads/{branch_name}");
+        let object = repository
+            .revparse_single(&reference_name)
+            .expect("resolve fixture branch");
+        let mut checkout_options = git2::build::CheckoutBuilder::default();
+        repository
+            .checkout_tree(&object, Some(&mut checkout_options))
+            .expect("checkout fixture branch");
+        repository
+            .set_head(&reference_name)
+            .expect("set fixture branch HEAD");
+    }
+
+    fn initialize_merge_repository(root: &Path) -> Repository {
+        let repository = Repository::init(root).expect("initialize repository");
+        configure_repository_signature(&repository);
+        commit_file(&repository, "README.md", "initial\n", "initial");
+        {
+            let initial = repository
+                .head()
+                .expect("initial HEAD")
+                .peel_to_commit()
+                .expect("initial commit");
+            repository
+                .branch("feature", &initial, false)
+                .expect("create feature branch");
+            repository
+                .branch("main", &initial, false)
+                .expect("create main branch");
+        }
+        checkout_branch(&repository, "main");
+        repository
+    }
+
+    fn read_commit_file(repository: &Repository, commit_id: git2::Oid, path: &str) -> Vec<u8> {
+        let commit = repository.find_commit(commit_id).expect("find commit");
+        let tree = commit.tree().expect("find commit tree");
+        let entry = tree.get_path(Path::new(path)).expect("find tree entry");
+        repository
+            .find_blob(entry.id())
+            .expect("find file blob")
+            .content()
+            .to_vec()
     }
 
     #[test]
@@ -1178,6 +1316,173 @@ mod tests {
         assert!(diff.diff.is_none());
         drop(index);
         drop(tree);
+        drop(repository);
+        remove_temporary_directory(root);
+    }
+
+    #[test]
+    fn non_fast_forward_merge_commits_the_merged_branch_tree() {
+        let root = temporary_directory("merge-non-fast-forward");
+        let repository = initialize_merge_repository(&root);
+
+        checkout_branch(&repository, "feature");
+        commit_file(
+            &repository,
+            "feature.txt",
+            "from feature branch\n",
+            "feature change",
+        );
+
+        checkout_branch(&repository, "main");
+        commit_file(&repository, "main.txt", "from main branch\n", "main change");
+
+        let result = git_merge_impl(
+            &root,
+            GitMergeRequest {
+                branch_name: "feature".to_owned(),
+            },
+        )
+        .expect("merge divergent branches");
+
+        assert!(result.success);
+        assert!(result.conflicts.is_empty());
+        let merge_head = repository
+            .head()
+            .expect("merge HEAD")
+            .peel_to_commit()
+            .expect("merge commit");
+        assert_eq!(merge_head.parent_count(), 2);
+        assert_eq!(
+            read_commit_file(&repository, merge_head.id(), "feature.txt"),
+            b"from feature branch\n"
+        );
+
+        drop(merge_head);
+        drop(repository);
+        remove_temporary_directory(root);
+    }
+
+    #[test]
+    fn conflicted_merge_reports_conflicts_without_moving_head() {
+        let root = temporary_directory("merge-conflict");
+        let repository = initialize_merge_repository(&root);
+
+        checkout_branch(&repository, "feature");
+        commit_file(
+            &repository,
+            "README.md",
+            "feature version\n",
+            "feature change",
+        );
+
+        checkout_branch(&repository, "main");
+        commit_file(&repository, "README.md", "main version\n", "main change");
+        let head_before = repository
+            .head()
+            .expect("pre-merge HEAD")
+            .target()
+            .expect("pre-merge HEAD target");
+
+        let result = git_merge_impl(
+            &root,
+            GitMergeRequest {
+                branch_name: "feature".to_owned(),
+            },
+        )
+        .expect("report merge conflicts");
+
+        assert!(!result.success);
+        assert_eq!(result.conflicts, vec!["README.md"]);
+        let head_after = repository
+            .head()
+            .expect("post-merge HEAD")
+            .target()
+            .expect("post-merge HEAD target");
+        assert_eq!(head_after, head_before);
+        let head_commit = repository
+            .find_commit(head_after)
+            .expect("unchanged HEAD commit");
+        assert_eq!(head_commit.parent_count(), 1);
+
+        drop(head_commit);
+        drop(repository);
+        remove_temporary_directory(root);
+    }
+
+    #[test]
+    fn deleted_ours_conflict_reports_their_path() {
+        let root = temporary_directory("merge-delete-modify-conflict");
+        let repository = initialize_merge_repository(&root);
+
+        checkout_branch(&repository, "feature");
+        commit_file(
+            &repository,
+            "README.md",
+            "feature version\n",
+            "feature change",
+        );
+
+        checkout_branch(&repository, "main");
+        delete_file(&repository, "README.md", "main deletion");
+
+        let result = git_merge_impl(
+            &root,
+            GitMergeRequest {
+                branch_name: "feature".to_owned(),
+            },
+        )
+        .expect("report delete-modify conflict");
+
+        assert!(!result.success);
+        assert_eq!(result.conflicts, vec!["README.md"]);
+
+        drop(repository);
+        remove_temporary_directory(root);
+    }
+
+    #[test]
+    fn merge_rejects_a_dirty_worktree_without_forcing_checkout() {
+        let root = temporary_directory("merge-dirty-worktree");
+        let repository = initialize_merge_repository(&root);
+
+        checkout_branch(&repository, "feature");
+        commit_file(
+            &repository,
+            "feature.txt",
+            "from feature branch\n",
+            "feature change",
+        );
+        checkout_branch(&repository, "main");
+
+        let head_before = repository
+            .head()
+            .expect("pre-merge HEAD")
+            .target()
+            .expect("pre-merge HEAD target");
+        fs::write(root.join("README.md"), "uncommitted local edit\n").expect("dirty worktree");
+
+        let error = git_merge_impl(
+            &root,
+            GitMergeRequest {
+                branch_name: "feature".to_owned(),
+            },
+        )
+        .expect_err("reject dirty worktree");
+
+        assert_eq!(error.code, "GIT_MERGE_DIRTY_WORKTREE");
+        assert_eq!(
+            repository
+                .head()
+                .expect("post-merge HEAD")
+                .target()
+                .expect("post-merge HEAD target"),
+            head_before
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("README.md")).expect("read local edit"),
+            "uncommitted local edit\n"
+        );
+
         drop(repository);
         remove_temporary_directory(root);
     }

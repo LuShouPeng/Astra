@@ -218,14 +218,11 @@ export function ExtensionsPage() {
         enabled: true,
         source: 'manual',
       };
-      if (form.secret && form.credential && '__TAURI_INTERNALS__' in window) {
-        await invoke('orchestration_store_secret', {
-          reference: form.credential,
-          secret: form.secret,
-        });
-      }
       if ('__TAURI_INTERNALS__' in window) {
-        await invoke('orchestration_save_mcp_server', { input: runtimeInput(server) });
+        await invoke('orchestration_save_mcp_server_with_secret', {
+          input: runtimeInput(server),
+          secret: form.secret || null,
+        });
       }
       const next = [server, ...servers];
       setServers(next);
@@ -259,7 +256,10 @@ export function ExtensionsPage() {
   async function toggleServer(server: McpServerConfig) {
     const updated = { ...server, enabled: !server.enabled };
     if ('__TAURI_INTERNALS__' in window) {
-      await invoke('orchestration_save_mcp_server', { input: runtimeInput(updated) });
+      await invoke('orchestration_save_mcp_server_with_secret', {
+        input: runtimeInput(updated),
+        secret: null,
+      });
     }
     const next = servers.map((item) => (item.id === server.id ? updated : item));
     setServers(next);

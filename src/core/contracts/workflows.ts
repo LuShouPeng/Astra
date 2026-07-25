@@ -4,14 +4,23 @@ import type { ProjectId } from './projects';
 export type WorkflowId = string;
 export type WorkflowNodeId = string;
 export type WorkflowRunId = string;
-export type WorkflowNodeType = 'agent' | 'mcp_tool' | 'approval' | 'condition' | 'join';
+export type WorkflowNodeType = 'agent' | 'approval' | 'condition' | 'join';
 export type WorkflowRunStatus =
-  'draft' | 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+  | 'draft'
+  | 'queued'
+  | 'running'
+  | 'waiting'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
 export type NodeRunStatus =
   | 'pending'
   | 'ready'
   | 'running'
   | 'waiting_approval'
+  | 'blocked'
   | 'succeeded'
   | 'failed'
   | 'skipped'
@@ -40,13 +49,6 @@ export interface AgentWorkflowNode extends WorkflowNodeBase {
   mcpServerIds: string[];
 }
 
-export interface McpToolWorkflowNode extends WorkflowNodeBase {
-  type: 'mcp_tool';
-  serverId: string;
-  toolName: string;
-  arguments: Record<string, unknown>;
-}
-
 export interface ApprovalWorkflowNode extends WorkflowNodeBase {
   type: 'approval';
   risk: 'low' | 'medium' | 'high';
@@ -65,7 +67,6 @@ export interface JoinWorkflowNode extends WorkflowNodeBase {
 
 export type WorkflowNode =
   | AgentWorkflowNode
-  | McpToolWorkflowNode
   | ApprovalWorkflowNode
   | ConditionWorkflowNode
   | JoinWorkflowNode;

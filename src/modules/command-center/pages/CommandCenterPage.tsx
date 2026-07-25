@@ -5,7 +5,6 @@ import {
   CircleDot,
   Clock3,
   FolderPlus,
-  SlidersHorizontal,
   XCircle,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -129,10 +128,6 @@ export function CommandCenterPage() {
         </div>
         <div className="command-center__actions">
           <span>{t('command.activeProjects', { count: snapshot.projects.length })}</span>
-          <Link className="button button--secondary button--compact" to="/settings?tab=demo">
-            <SlidersHorizontal size={15} aria-hidden="true" />
-            {t('command.createTask')}
-          </Link>
           <Link className="button button--compact" to="/projects">
             <FolderPlus size={15} aria-hidden="true" />
             {t('command.addProject')}
