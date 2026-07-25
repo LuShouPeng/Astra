@@ -24,6 +24,7 @@ tauri-plugin-notification = "2.3.3"
 tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
 thiserror = "2"
+tokio = { version = "1", features = ["io-util", "process", "sync", "time"] }
 
 [profile.release]
 codegen-units = 1

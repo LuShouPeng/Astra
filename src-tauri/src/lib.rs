@@ -17,11 +17,15 @@ pub fn run() {
             )?;
             store.interrupt_active_runs()?;
             app.manage(store);
+            app.manage(modules::orchestration::OrchestrationRuntime::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             modules::orchestration::commands::orchestration_list_workflows,
             modules::orchestration::commands::orchestration_save_workflow,
+            modules::orchestration::runtime::orchestration_discover_providers,
+            modules::orchestration::runtime::orchestration_start_agent,
+            modules::orchestration::runtime::orchestration_cancel_agent,
             modules::workspace::workspace_inspect_path,
             modules::workspace::workspace_check_exists,
             modules::project::project_git_summary,
