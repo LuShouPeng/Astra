@@ -10,7 +10,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import type { SessionStatus, TestStatus } from '../../../core/contracts/sessions';
 import { appEventBus } from '../../../core/events/appEventBus';
+import { useI18n } from '../../../core/i18n/I18nContext';
+import type { TranslationKey } from '../../../core/i18n/translations';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import { ChangesReview, type ChangesService } from '../../changes';
 import { resolveAttention } from '../../attention';
@@ -20,6 +23,22 @@ import { Timeline } from '../components/Timeline';
 import { applyFollowUp, nextSessionTimestamp, stopSession } from '../model/sessionTransitions';
 
 type SessionTab = 'timeline' | 'changes' | 'tests' | 'commands' | 'context';
+
+const sessionStatusKeys: Record<SessionStatus, TranslationKey> = {
+  idle: 'session.status.idle',
+  running: 'session.status.running',
+  waiting: 'session.status.waiting',
+  completed: 'session.status.completed',
+  failed: 'session.status.failed',
+  stopped: 'session.status.stopped',
+};
+
+const testStatusKeys: Record<TestStatus, TranslationKey> = {
+  not_run: 'test.notRun',
+  running: 'test.running',
+  passed: 'test.passed',
+  failed: 'test.failed',
+};
 
 function sessionTab(value: string | null): SessionTab {
   return value === 'changes' || value === 'tests' || value === 'commands' || value === 'context'
@@ -45,6 +64,7 @@ export function SessionDetailPage({
   changesService?: ChangesService;
   projectService?: ProjectService;
 }) {
+  const { language, t } = useI18n();
   const { sessionId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
@@ -56,12 +76,12 @@ export function SessionDetailPage({
   useEffect(() => {
     if (searchParams.get('focus') === 'message') followUpRef.current?.focus();
   }, [searchParams]);
-  if (!snapshot) return <div className="session-state">Loading session...</div>;
+  if (!snapshot) return <div className="session-state">{t('session.loading')}</div>;
   const session = snapshot.sessions.find((item) => item.id === sessionId);
   if (!session)
     return (
       <div className="session-state" role="alert">
-        Session not found.
+        {t('session.notFound')}
       </div>
     );
   const project = snapshot.projects.find((item) => item.id === session.projectId);
@@ -95,7 +115,7 @@ export function SessionDetailPage({
       appEventBus.emit('session:status-changed', { session: updated, previousStatus });
       setMessage('');
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The follow-up could not be saved.');
+      setError(caught instanceof Error ? caught.message : t('session.followUpError'));
     }
   }
 
@@ -115,7 +135,7 @@ export function SessionDetailPage({
         appEventBus.emit('session:status-changed', { session: updated, previousStatus });
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The approval could not be updated.');
+      setError(caught instanceof Error ? caught.message : t('session.approvalError'));
     }
   }
 
@@ -128,7 +148,7 @@ export function SessionDetailPage({
       const updated = next.sessions.find((item) => item.id === session!.id)!;
       appEventBus.emit('session:status-changed', { session: updated, previousStatus });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The Session could not be stopped.');
+      setError(caught instanceof Error ? caught.message : t('session.stopError'));
     }
   }
 
@@ -139,7 +159,7 @@ export function SessionDetailPage({
     try {
       await projectService.openDirectory(project);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The project directory could not open.');
+      setError(caught instanceof Error ? caught.message : t('session.openProjectError'));
     } finally {
       setOpeningProject(false);
     }
@@ -148,25 +168,25 @@ export function SessionDetailPage({
   return (
     <div className="session-page">
       <header className="session-header">
-        <Link
-          className="session-header__back"
-          to="/command-center"
-          aria-label="Back to Command Center"
-        >
+        <Link className="session-header__back" to="/command-center" aria-label={t('session.back')}>
           <ArrowLeft size={16} />
         </Link>
         <div className="session-header__title">
           <p>
-            {project?.name ?? 'Unknown project'} /{' '}
+            {project?.name ?? t('common.unknownProject')} /{' '}
             <span className="session-header__provider">{capability.label}</span>
           </p>
           <h1>{session.title}</h1>
         </div>
-        <span className={`session-status session-status--${session.status}`}>{session.status}</span>
-        {capability.displayOnly && <span className="display-only-badge">Display only</span>}
+        <span className={`session-status session-status--${session.status}`}>
+          {t(sessionStatusKeys[session.status])}
+        </span>
+        {capability.displayOnly && (
+          <span className="display-only-badge">{t('session.displayOnly')}</span>
+        )}
       </header>
 
-      <div className="session-header__actions" aria-label="Session actions">
+      <div className="session-header__actions" aria-label={t('session.actions')}>
         <button
           className="button button--secondary button--compact"
           type="button"
@@ -174,7 +194,7 @@ export function SessionDetailPage({
           onClick={() => followUpRef.current?.focus()}
         >
           <MessageSquare size={15} aria-hidden="true" />
-          Send Message
+          {t('session.sendMessage')}
         </button>
         {approval && (
           <>
@@ -185,7 +205,7 @@ export function SessionDetailPage({
               onClick={() => void resolveApproval('approve')}
             >
               <Check size={15} aria-hidden="true" />
-              Approve
+              {t('session.approve')}
             </button>
             <button
               className="button button--secondary button--compact"
@@ -194,7 +214,7 @@ export function SessionDetailPage({
               onClick={() => void resolveApproval('reject')}
             >
               <X size={15} aria-hidden="true" />
-              Reject
+              {t('session.reject')}
             </button>
           </>
         )}
@@ -206,14 +226,14 @@ export function SessionDetailPage({
             onClick={() => void stop()}
           >
             <Square size={14} aria-hidden="true" />
-            Stop
+            {t('session.stop')}
           </button>
         )}
         <button
           className="button button--secondary button--compact"
           type="button"
           disabled={!canOpenProject || openingProject}
-          title={canOpenProject ? undefined : 'Only local projects can be opened.'}
+          title={canOpenProject ? undefined : t('session.onlyLocalProjects')}
           onClick={() => void openProject()}
         >
           {openingProject ? (
@@ -221,7 +241,7 @@ export function SessionDetailPage({
           ) : (
             <FolderOpen size={15} aria-hidden="true" />
           )}
-          {openingProject ? 'Opening Project' : 'Open Project'}
+          {openingProject ? t('session.openingProject') : t('session.openProject')}
         </button>
         <button
           className="button button--secondary button--compact"
@@ -229,19 +249,19 @@ export function SessionDetailPage({
           onClick={() => selectTab('changes')}
         >
           <GitCompareArrows size={15} aria-hidden="true" />
-          Review Changes
+          {t('session.reviewChanges')}
         </button>
       </div>
 
-      <div className="session-summary" aria-label="Session summary">
+      <div className="session-summary" aria-label={t('session.summary')}>
         <span>
-          <small>Current action</small>
-          {session.currentAction ?? 'No active operation'}
+          <small>{t('session.currentAction')}</small>
+          {session.currentAction ?? t('session.noActiveOperation')}
         </span>
         <span>
-          <small>Start time</small>
+          <small>{t('session.startTime')}</small>
           <time dateTime={session.startedAt}>
-            {new Intl.DateTimeFormat('en', {
+            {new Intl.DateTimeFormat(language, {
               month: 'short',
               day: 'numeric',
               hour: '2-digit',
@@ -250,34 +270,34 @@ export function SessionDetailPage({
           </time>
         </span>
         <span>
-          <small>Duration</small>
+          <small>{t('session.duration')}</small>
           {duration}
         </span>
         <span>
-          <small>Files changed</small>
+          <small>{t('session.filesChanged')}</small>
           {session.changedFilesCount}
         </span>
         <span>
-          <small>Tests</small>
-          {session.testStatus.replace('_', ' ')}
+          <small>{t('session.tests')}</small>
+          {t(testStatusKeys[session.testStatus])}
         </span>
       </div>
 
-      <div className="session-tabs" role="tablist" aria-label="Session views">
+      <div className="session-tabs" role="tablist" aria-label={t('session.views')}>
         <button role="tab" aria-selected={tab === 'timeline'} onClick={() => selectTab('timeline')}>
-          Timeline <span>{events.length}</span>
+          {t('session.timeline')} <span>{events.length}</span>
         </button>
         <button role="tab" aria-selected={tab === 'changes'} onClick={() => selectTab('changes')}>
-          Changes <span>{changes.length}</span>
+          {t('session.changes')} <span>{changes.length}</span>
         </button>
         <button role="tab" aria-selected={tab === 'tests'} onClick={() => selectTab('tests')}>
-          Tests <span>{tests.length}</span>
+          {t('session.tests')} <span>{tests.length}</span>
         </button>
         <button role="tab" aria-selected={tab === 'commands'} onClick={() => selectTab('commands')}>
-          Commands <span>{commands.length}</span>
+          {t('session.commands')} <span>{commands.length}</span>
         </button>
         <button role="tab" aria-selected={tab === 'context'} onClick={() => selectTab('context')}>
-          Context
+          {t('session.context')}
         </button>
       </div>
 
@@ -298,7 +318,7 @@ export function SessionDetailPage({
       </div>
 
       <form className="follow-up" onSubmit={(event) => void submitFollowUp(event)}>
-        <label htmlFor="follow-up-message">Follow-up message</label>
+        <label htmlFor="follow-up-message">{t('session.followUp')}</label>
         <textarea
           ref={followUpRef}
           id="follow-up-message"
@@ -310,11 +330,11 @@ export function SessionDetailPage({
         <button
           className="button button--primary"
           type="submit"
-          aria-label="Send follow-up"
+          aria-label={t('session.sendFollowUp')}
           disabled={capability.displayOnly || saving || message.trim().length === 0}
         >
           <Send size={16} aria-hidden="true" />
-          Send
+          {t('session.send')}
         </button>
         {error && <p role="alert">{error}</p>}
       </form>

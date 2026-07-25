@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { DemoSpeed } from '../../../core/contracts/demo';
 import type { WorkbenchSnapshot } from '../../../core/contracts/workbenchData';
 import { appEventBus } from '../../../core/events/appEventBus';
+import { useI18n } from '../../../core/i18n/I18nContext';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import {
   advanceDemo,
@@ -38,6 +39,7 @@ function emitTransition(previous: WorkbenchSnapshot, next: WorkbenchSnapshot): v
 }
 
 export function DemoControls() {
+  const { t } = useI18n();
   const { snapshot, saveSnapshot, resetSnapshot, saving } = useWorkbench();
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -52,7 +54,7 @@ export function DemoControls() {
       emitTransition(snapshot, next);
       setFeedback(message ?? null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Demo state could not be saved.');
+      setError(caught instanceof Error ? caught.message : t('demo.saveError'));
     } finally {
       setPending(false);
     }
@@ -76,9 +78,9 @@ export function DemoControls() {
     try {
       await resetSnapshot();
       appEventBus.emit('demo:reset', { timestamp: DEMO_RESET_TIMESTAMP });
-      setFeedback('Demo data reset');
+      setFeedback(t('demo.resetDone'));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Demo data could not be reset.');
+      setError(caught instanceof Error ? caught.message : t('demo.resetError'));
     } finally {
       setPending(false);
     }
@@ -88,16 +90,16 @@ export function DemoControls() {
     <div className="demo-controls">
       <div className="settings-row demo-controls__playback">
         <div>
-          <strong>Simulation Timeline</strong>
+          <strong>{t('demo.timeline')}</strong>
           <small>
-            Step {snapshot.demo.currentStep} of {DEMO_STEP_COUNT}
+            {t('demo.step', { current: snapshot.demo.currentStep, total: DEMO_STEP_COUNT })}
           </small>
         </div>
         <div className="demo-controls__commands">
           <button
             className="icon-button"
-            aria-label={snapshot.demo.isRunning ? 'Pause demo' : 'Play demo'}
-            title={snapshot.demo.isRunning ? 'Pause demo' : 'Play demo'}
+            aria-label={snapshot.demo.isRunning ? t('demo.pause') : t('demo.play')}
+            title={snapshot.demo.isRunning ? t('demo.pause') : t('demo.play')}
             disabled={controlsDisabled || finished}
             onClick={() => void persist(setDemoPlayback(snapshot, !snapshot.demo.isRunning))}
           >
@@ -105,10 +107,10 @@ export function DemoControls() {
           </button>
           <button
             className="icon-button"
-            aria-label="Next demo step"
-            title="Next demo step"
+            aria-label={t('demo.nextStep')}
+            title={t('demo.nextStep')}
             disabled={controlsDisabled || snapshot.demo.isRunning || finished}
-            onClick={() => void persist(advanceDemo(snapshot), 'Demo advanced one step')}
+            onClick={() => void persist(advanceDemo(snapshot), t('demo.advanced'))}
           >
             <StepForward size={16} />
           </button>
@@ -117,10 +119,10 @@ export function DemoControls() {
 
       <div className="settings-row">
         <div>
-          <strong>Simulation Speed</strong>
-          <small>Playback interval</small>
+          <strong>{t('demo.speed')}</strong>
+          <small>{t('demo.interval')}</small>
         </div>
-        <div className="demo-speed" role="radiogroup" aria-label="Simulation speed">
+        <div className="demo-speed" role="radiogroup" aria-label={t('demo.speedLabel')}>
           {speeds.map((speed) => (
             <button
               key={speed}
@@ -137,17 +139,17 @@ export function DemoControls() {
 
       <div className="settings-row">
         <div>
-          <strong>Reset Demo Data</strong>
-          <small>Restore frozen projects, Sessions, and activity</small>
+          <strong>{t('demo.resetData')}</strong>
+          <small>{t('demo.resetDescription')}</small>
         </div>
         <button
           className="button button--compact"
-          aria-label="Reset Demo Data"
+          aria-label={t('demo.resetData')}
           disabled={controlsDisabled}
           onClick={() => void reset()}
         >
           <RotateCcw size={15} aria-hidden="true" />
-          Reset
+          {t('demo.reset')}
         </button>
       </div>
 

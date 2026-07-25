@@ -8,21 +8,52 @@ import {
   TestTube2,
 } from 'lucide-react';
 import type { TimelineEvent } from '../../../core/contracts/sessions';
+import { useI18n } from '../../../core/i18n/I18nContext';
+import type { TranslationKey, TranslationParams } from '../../../core/i18n/translations';
 import { useState } from 'react';
 
 const EVENT_BATCH_SIZE = 100;
 
 const eventMeta = {
-  user_message: { label: 'You', icon: MessageSquare },
-  agent_message: { label: 'Agent', icon: Bot },
-  command: { label: 'Command', icon: TerminalSquare },
-  file_change: { label: 'File change', icon: FilePenLine },
-  test: { label: 'Test', icon: TestTube2 },
-  approval: { label: 'Approval', icon: ShieldQuestion },
-  status: { label: 'Status', icon: CheckCircle2 },
+  user_message: { labelKey: 'event.you', icon: MessageSquare },
+  agent_message: { labelKey: 'event.agent', icon: Bot },
+  command: { labelKey: 'activity.command', icon: TerminalSquare },
+  file_change: { labelKey: 'activity.fileChange', icon: FilePenLine },
+  test: { labelKey: 'activity.test', icon: TestTube2 },
+  approval: { labelKey: 'activity.approval', icon: ShieldQuestion },
+  status: { labelKey: 'activity.status', icon: CheckCircle2 },
 } as const;
 
-function EventContent({ event }: { event: TimelineEvent }) {
+type Translate = (key: TranslationKey, params?: TranslationParams) => string;
+
+const resultKeys = {
+  running: 'result.running',
+  passed: 'result.passed',
+  failed: 'result.failed',
+} as const satisfies Record<string, TranslationKey>;
+
+const riskKeys = {
+  low: 'risk.low',
+  medium: 'risk.medium',
+  high: 'risk.high',
+} as const satisfies Record<string, TranslationKey>;
+
+const decisionKeys = {
+  pending: 'decision.pending',
+  approved: 'decision.approved',
+  rejected: 'decision.rejected',
+} as const satisfies Record<string, TranslationKey>;
+
+const statusKeys = {
+  idle: 'session.status.idle',
+  running: 'session.status.running',
+  waiting: 'session.status.waiting',
+  completed: 'session.status.completed',
+  failed: 'session.status.failed',
+  stopped: 'session.status.stopped',
+} as const satisfies Record<string, TranslationKey>;
+
+function EventContent({ event, t }: { event: TimelineEvent; t: Translate }) {
   switch (event.type) {
     case 'user_message':
     case 'agent_message':
@@ -34,8 +65,10 @@ function EventContent({ event }: { event: TimelineEvent }) {
           <code>{event.command}</code>
           {event.outputSummary && <p>{event.outputSummary}</p>}
           <small>
-            {event.status}
-            {event.exitCode !== undefined ? ` · exit ${event.exitCode}` : ''}
+            {t(resultKeys[event.status])}
+            {event.exitCode !== undefined
+              ? ` · ${t('event.exitCodeInline', { code: event.exitCode })}`
+              : ''}
           </small>
         </>
       );
@@ -43,10 +76,8 @@ function EventContent({ event }: { event: TimelineEvent }) {
       return (
         <>
           <code>{event.command}</code>
-          <p>
-            {event.passed} passed, {event.failed} failed
-          </p>
-          <small>{event.status}</small>
+          <p>{t('event.testSummary', { passed: event.passed, failed: event.failed })}</p>
+          <small>{t(resultKeys[event.status])}</small>
         </>
       );
     case 'approval':
@@ -54,7 +85,7 @@ function EventContent({ event }: { event: TimelineEvent }) {
         <>
           <p>{event.request}</p>
           <small>
-            {event.risk} risk · {event.decision}
+            {t('event.risk', { risk: t(riskKeys[event.risk]) })} · {t(decisionKeys[event.decision])}
           </small>
         </>
       );
@@ -63,7 +94,10 @@ function EventContent({ event }: { event: TimelineEvent }) {
         <>
           <p>{event.content}</p>
           <small>
-            {event.from} to {event.to}
+            {t('event.statusTransition', {
+              from: t(statusKeys[event.from]),
+              to: t(statusKeys[event.to]),
+            })}
           </small>
         </>
       );
@@ -71,19 +105,20 @@ function EventContent({ event }: { event: TimelineEvent }) {
 }
 
 export function Timeline({ events }: { events: readonly TimelineEvent[] }) {
+  const { language, t } = useI18n();
   const [visibleCount, setVisibleCount] = useState(EVENT_BATCH_SIZE);
   const ordered = [...events].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   const visible = ordered.slice(-visibleCount);
   const hiddenCount = Math.max(0, ordered.length - visible.length);
   const nextBatch = Math.min(EVENT_BATCH_SIZE, hiddenCount);
   return (
-    <section className="timeline" aria-label="Session timeline">
+    <section className="timeline" aria-label={t('event.timeline')}>
       {hiddenCount > 0 && (
         <button
           className="timeline__load-earlier"
           onClick={() => setVisibleCount((current) => current + EVENT_BATCH_SIZE)}
         >
-          Show {nextBatch} earlier events
+          {t('event.showEarlier', { count: nextBatch })}
         </button>
       )}
       {visible.map((event) => {
@@ -96,15 +131,15 @@ export function Timeline({ events }: { events: readonly TimelineEvent[] }) {
             </div>
             <div className="timeline-event__body">
               <header>
-                <strong>{meta.label}</strong>
+                <strong>{t(meta.labelKey)}</strong>
                 <time dateTime={event.timestamp}>
-                  {new Intl.DateTimeFormat(undefined, {
+                  {new Intl.DateTimeFormat(language, {
                     hour: '2-digit',
                     minute: '2-digit',
                   }).format(new Date(event.timestamp))}
                 </time>
               </header>
-              <EventContent event={event} />
+              <EventContent event={event} t={t} />
             </div>
           </article>
         );

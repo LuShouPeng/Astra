@@ -1,33 +1,44 @@
 import type { ProviderCapability } from '../../../core/contracts/agents';
 import type { Project } from '../../../core/contracts/projects';
 import type { AgentSession, CommandEvent, TestEvent } from '../../../core/contracts/sessions';
+import { useI18n } from '../../../core/i18n/I18nContext';
+import type { TranslationKey, TranslationParams } from '../../../core/i18n/translations';
 
-function duration(value?: number): string {
-  return value === undefined ? 'Not recorded' : `${value} ms`;
+type Translate = (key: TranslationKey, params?: TranslationParams) => string;
+
+const resultKeys = {
+  running: 'result.running',
+  passed: 'result.passed',
+  failed: 'result.failed',
+} as const satisfies Record<string, TranslationKey>;
+
+function duration(value: number | undefined, t: Translate): string {
+  return value === undefined ? t('session.notRecorded') : `${value} ms`;
 }
 
 export function TestsView({ events }: { events: readonly TestEvent[] }) {
-  if (events.length === 0) return <p className="session-view-empty">No test events recorded.</p>;
+  const { t } = useI18n();
+  if (events.length === 0) return <p className="session-view-empty">{t('session.noTestEvents')}</p>;
   return (
-    <section className="session-event-view" aria-label="Session tests">
+    <section className="session-event-view" aria-label={t('session.testsLabel')}>
       {events.map((event) => (
         <article key={event.id}>
           <header>
             <code>{event.command}</code>
-            <span data-status={event.status}>{event.status}</span>
+            <span data-status={event.status}>{t(resultKeys[event.status])}</span>
           </header>
           <dl>
             <div>
-              <dt>Passed</dt>
-              <dd>{event.passed} passed</dd>
+              <dt>{t('session.passed')}</dt>
+              <dd>{t('session.passedCount', { count: event.passed })}</dd>
             </div>
             <div>
-              <dt>Failed</dt>
-              <dd>{event.failed} failed</dd>
+              <dt>{t('session.failedLabel')}</dt>
+              <dd>{t('session.failedCount', { count: event.failed })}</dd>
             </div>
             <div>
-              <dt>Duration</dt>
-              <dd>{duration(event.durationMs)}</dd>
+              <dt>{t('session.duration')}</dt>
+              <dd>{duration(event.durationMs, t)}</dd>
             </div>
           </dl>
         </article>
@@ -37,26 +48,30 @@ export function TestsView({ events }: { events: readonly TestEvent[] }) {
 }
 
 export function CommandsView({ events }: { events: readonly CommandEvent[] }) {
-  if (events.length === 0) return <p className="session-view-empty">No command events recorded.</p>;
+  const { t } = useI18n();
+  if (events.length === 0)
+    return <p className="session-view-empty">{t('session.noCommandEvents')}</p>;
   return (
-    <section className="session-event-view" aria-label="Session commands">
+    <section className="session-event-view" aria-label={t('session.commandsLabel')}>
       {events.map((event) => (
         <article key={event.id}>
           <header>
             <code>{event.command}</code>
-            <span data-status={event.status}>{event.status}</span>
+            <span data-status={event.status}>{t(resultKeys[event.status])}</span>
           </header>
           {event.outputSummary && <p>{event.outputSummary}</p>}
           <dl>
             <div>
-              <dt>Exit code</dt>
+              <dt>{t('session.exitCode')}</dt>
               <dd>
-                {event.exitCode === undefined ? 'Not recorded' : `Exit code ${event.exitCode}`}
+                {event.exitCode === undefined
+                  ? t('session.notRecorded')
+                  : t('session.exitCodeValue', { code: event.exitCode })}
               </dd>
             </div>
             <div>
-              <dt>Duration</dt>
-              <dd>{duration(event.durationMs)}</dd>
+              <dt>{t('session.duration')}</dt>
+              <dd>{duration(event.durationMs, t)}</dd>
             </div>
           </dl>
         </article>
@@ -74,49 +89,50 @@ export function ContextView({
   project?: Project;
   capability: ProviderCapability;
 }) {
+  const { language, t } = useI18n();
   const runtime = capability.displayOnly
-    ? 'Display only'
+    ? t('runtime.displayOnly')
     : capability.runtimeAvailable
-      ? 'Available'
-      : 'Deterministic mock';
+      ? t('runtime.available')
+      : t('runtime.mock');
   return (
-    <section className="session-context" aria-label="Session context">
+    <section className="session-context" aria-label={t('session.contextLabel')}>
       <dl>
         <div>
-          <dt>Provider</dt>
+          <dt>{t('session.provider')}</dt>
           <dd>{capability.label}</dd>
         </div>
         <div>
-          <dt>Runtime</dt>
+          <dt>{t('session.runtime')}</dt>
           <dd>{runtime}</dd>
         </div>
         <div>
-          <dt>Project</dt>
-          <dd>{project?.name ?? 'Unknown project'}</dd>
+          <dt>{t('session.project')}</dt>
+          <dd>{project?.name ?? t('common.unknownProject')}</dd>
         </div>
         <div>
-          <dt>Project root</dt>
-          <dd>{project?.rootPath ?? 'Not available'}</dd>
+          <dt>{t('session.projectRoot')}</dt>
+          <dd>{project?.rootPath ?? t('common.notAvailable')}</dd>
         </div>
         <div>
-          <dt>Started</dt>
+          <dt>{t('session.started')}</dt>
           <dd>
-            {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+            {new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(
               new Date(session.startedAt),
             )}
           </dd>
         </div>
         <div>
-          <dt>Last update</dt>
+          <dt>{t('session.lastUpdate')}</dt>
           <dd>
-            {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+            {new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }).format(
               new Date(session.updatedAt),
             )}
           </dd>
         </div>
         <div>
-          <dt>Summary</dt>
-          <dd>{session.summary ?? 'No summary recorded.'}</dd>
+          <dt>{t('session.summaryLabel')}</dt>
+          <dd>{session.summary ?? t('session.noSummary')}</dd>
         </div>
       </dl>
     </section>
