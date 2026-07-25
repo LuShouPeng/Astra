@@ -1,13 +1,53 @@
 import { ArrowLeft, ExternalLink, FolderOpen } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import type { GitStatus, ProjectSource, ProjectStatus } from '../../../core/contracts/projects';
 import type { TimelineEvent } from '../../../core/contracts/sessions';
+import { useI18n } from '../../../core/i18n/I18nContext';
+import type { TranslationKey, TranslationParams } from '../../../core/i18n/translations';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import type { ProjectService } from '../services/projectService';
 
 type ProjectTab = 'overview' | 'sessions' | 'changes' | 'activity' | 'configuration';
 
-function activityText(event: TimelineEvent): string {
+type Translate = (key: TranslationKey, params?: TranslationParams) => string;
+
+const sessionStatusKeys = {
+  idle: 'session.status.idle',
+  running: 'session.status.running',
+  waiting: 'session.status.waiting',
+  completed: 'session.status.completed',
+  failed: 'session.status.failed',
+  stopped: 'session.status.stopped',
+} as const satisfies Record<string, TranslationKey>;
+
+const eventTypeKeys = {
+  user_message: 'activity.userMessage',
+  agent_message: 'activity.agentMessage',
+  command: 'activity.command',
+  file_change: 'activity.fileChange',
+  test: 'activity.test',
+  approval: 'activity.approval',
+  status: 'activity.status',
+} as const satisfies Record<TimelineEvent['type'], TranslationKey>;
+
+const sourceKeys: Record<ProjectSource, TranslationKey> = {
+  local: 'source.local',
+  demo: 'source.demo',
+};
+
+const projectStatusKeys: Record<ProjectStatus, TranslationKey> = {
+  available: 'workspace.available',
+  missing: 'workspace.missing',
+};
+
+const gitStatusKeys: Record<GitStatus, TranslationKey> = {
+  clean: 'git.clean',
+  modified: 'git.modified',
+  unknown: 'git.unknown',
+};
+
+function activityText(event: TimelineEvent, t: Translate): string {
   switch (event.type) {
     case 'user_message':
     case 'agent_message':
@@ -17,24 +57,25 @@ function activityText(event: TimelineEvent): string {
     case 'command':
       return event.outputSummary ?? event.command;
     case 'test':
-      return `${event.passed} passed, ${event.failed} failed`;
+      return t('event.testSummary', { passed: event.passed, failed: event.failed });
     case 'approval':
       return event.request;
   }
 }
 
 export function ProjectDetailPage({ service }: { service?: ProjectService }) {
+  const { language, t } = useI18n();
   const { projectId } = useParams();
   const { snapshot } = useWorkbench();
   const [tab, setTab] = useState<ProjectTab>('overview');
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (!snapshot) return <div className="projects-state">Loading project...</div>;
+  if (!snapshot) return <div className="projects-state">{t('projects.loadingOne')}</div>;
   const project = snapshot.projects.find((candidate) => candidate.id === projectId);
   if (!project)
     return (
       <div className="projects-state" role="alert">
-        Project not found.
+        {t('projects.notFound')}
       </div>
     );
 
@@ -57,44 +98,44 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
     try {
       await service.openDirectory(project!);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Project directory could not be opened.');
+      setError(caught instanceof Error ? caught.message : t('project.openError'));
     } finally {
       setOpening(false);
     }
   }
 
   const tabs: Array<{ id: ProjectTab; label: string; count?: number }> = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'sessions', label: 'Sessions', count: sessions.length },
-    { id: 'changes', label: 'Changes', count: changes.length },
-    { id: 'activity', label: 'Activity', count: activity.length },
-    { id: 'configuration', label: 'Configuration' },
+    { id: 'overview', label: t('project.overview') },
+    { id: 'sessions', label: t('projects.sessions'), count: sessions.length },
+    { id: 'changes', label: t('project.changes'), count: changes.length },
+    { id: 'activity', label: t('projects.activity'), count: activity.length },
+    { id: 'configuration', label: t('project.configuration') },
   ];
 
   return (
     <div className="project-detail">
       <header className="project-detail__header">
-        <Link to="/projects" aria-label="Back to Projects">
+        <Link to="/projects" aria-label={t('project.back')}>
           <ArrowLeft size={16} />
         </Link>
         <div>
-          <p className="eyebrow">{project.source} project</p>
+          <p className="eyebrow">{t('project.kind', { source: t(sourceKeys[project.source]) })}</p>
           <h1>{project.name}</h1>
-          <span>{project.description ?? 'No project description'}</span>
+          <span>{project.description ?? t('project.noDescription')}</span>
         </div>
         <button
           className="button button--secondary"
-          aria-label="Open project directory"
+          aria-label={t('project.openDirectoryLabel')}
           disabled={!openEnabled || opening}
-          title={project.source === 'demo' ? 'Demo projects have no local directory' : undefined}
+          title={project.source === 'demo' ? t('project.demoNoDirectory') : undefined}
           onClick={() => void openProject()}
         >
           <FolderOpen size={16} aria-hidden="true" />
-          {opening ? 'Opening...' : 'Open folder'}
+          {opening ? t('workspace.opening') : t('project.openButton')}
         </button>
       </header>
 
-      <div className="project-detail__tabs" role="tablist" aria-label="Project views">
+      <div className="project-detail__tabs" role="tablist" aria-label={t('project.views')}>
         {tabs.map((item) => (
           <button
             key={item.id}
@@ -115,24 +156,20 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
       )}
       <div className="project-detail__content">
         {tab === 'overview' && (
-          <section className="project-overview" aria-label="Project overview">
+          <section className="project-overview" aria-label={t('project.overviewLabel')}>
             <div className="project-metrics">
               <span>
-                <strong>{activeCount}</strong> active {activeCount === 1 ? 'Session' : 'Sessions'}
+                {t(activeCount === 1 ? 'project.activeSessionOne' : 'project.activeSessionMany', {
+                  count: activeCount,
+                })}
               </span>
-              <span>
-                <strong>{sessions.length}</strong> total Sessions
-              </span>
-              <span>
-                <strong>{changes.length}</strong> changed files
-              </span>
-              <span>
-                <strong>{project.gitStatus}</strong> Git status
-              </span>
+              <span>{t('project.totalSessions', { count: sessions.length })}</span>
+              <span>{t('project.changedFileCount', { count: changes.length })}</span>
+              <span>{t('project.gitStatus', { status: t(gitStatusKeys[project.gitStatus]) })}</span>
             </div>
             <div className="project-detail__section-heading">
-              <h2>Recent Sessions</h2>
-              <span>{sessions.length} total</span>
+              <h2>{t('project.recentSessions')}</h2>
+              <span>{t('common.total', { count: sessions.length })}</span>
             </div>
             <div className="project-detail__rows">
               {[...sessions]
@@ -145,19 +182,19 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
                       <small>{session.provider}</small>
                     </span>
                     <span className={`session-status session-status--${session.status}`}>
-                      {session.status}
+                      {t(sessionStatusKeys[session.status])}
                     </span>
                   </Link>
                 ))}
               {sessions.length === 0 && (
-                <p className="project-detail__empty">No Sessions recorded for this project.</p>
+                <p className="project-detail__empty">{t('project.noSessions')}</p>
               )}
             </div>
           </section>
         )}
 
         {tab === 'sessions' && (
-          <section className="project-detail__rows" aria-label="Project Sessions">
+          <section className="project-detail__rows" aria-label={t('project.sessionsLabel')}>
             {sessions.map((session) => (
               <Link key={session.id} to={`/sessions/${session.id}`}>
                 <span>
@@ -165,25 +202,25 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
                   <small>{session.currentAction ?? session.provider}</small>
                 </span>
                 <span className={`session-status session-status--${session.status}`}>
-                  {session.status}
+                  {t(sessionStatusKeys[session.status])}
                 </span>
               </Link>
             ))}
             {sessions.length === 0 && (
-              <p className="project-detail__empty">No Sessions recorded for this project.</p>
+              <p className="project-detail__empty">{t('project.noSessions')}</p>
             )}
           </section>
         )}
 
         {tab === 'changes' && (
-          <section className="project-detail__rows" aria-label="Project changes">
+          <section className="project-detail__rows" aria-label={t('project.changesLabel')}>
             {changes.map((change) => {
               const session = sessions.find((candidate) => candidate.id === change.sessionId);
               return (
                 <Link key={change.id} to={`/sessions/${change.sessionId}?tab=changes`}>
                   <span>
                     <strong>{change.relativePath}</strong>
-                    <small>{session?.title ?? 'Unknown Session'}</small>
+                    <small>{session?.title ?? t('common.unknownSession')}</small>
                   </span>
                   <span>
                     {change.additions > 0 ? `+${change.additions}` : '0'} / -{change.deletions}
@@ -192,21 +229,21 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
               );
             })}
             {changes.length === 0 && (
-              <p className="project-detail__empty">No changed files recorded for this project.</p>
+              <p className="project-detail__empty">{t('project.noChanges')}</p>
             )}
           </section>
         )}
 
         {tab === 'activity' && (
-          <section className="project-detail__rows" aria-label="Project activity">
+          <section className="project-detail__rows" aria-label={t('project.activityLabel')}>
             {activity.slice(0, 50).map((event) => (
               <Link key={event.id} to={`/sessions/${event.sessionId}`}>
                 <span>
-                  <strong>{activityText(event)}</strong>
-                  <small>{event.type.replace('_', ' ')}</small>
+                  <strong>{activityText(event, t)}</strong>
+                  <small>{t(eventTypeKeys[event.type])}</small>
                 </span>
                 <time dateTime={event.timestamp}>
-                  {new Intl.DateTimeFormat(undefined, {
+                  {new Intl.DateTimeFormat(language, {
                     hour: '2-digit',
                     minute: '2-digit',
                   }).format(new Date(event.timestamp))}
@@ -214,37 +251,37 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
               </Link>
             ))}
             {activity.length === 0 && (
-              <p className="project-detail__empty">No activity recorded for this project.</p>
+              <p className="project-detail__empty">{t('project.noActivity')}</p>
             )}
           </section>
         )}
 
         {tab === 'configuration' && (
-          <section className="project-configuration" aria-label="Project configuration">
+          <section className="project-configuration" aria-label={t('project.configurationLabel')}>
             <dl>
               <div>
-                <dt>Root</dt>
+                <dt>{t('project.root')}</dt>
                 <dd>{project.rootPath}</dd>
               </div>
               <div>
-                <dt>Source</dt>
-                <dd>{project.source}</dd>
+                <dt>{t('project.source')}</dt>
+                <dd>{t(sourceKeys[project.source])}</dd>
               </div>
               <div>
-                <dt>Availability</dt>
-                <dd>{project.status}</dd>
+                <dt>{t('project.availability')}</dt>
+                <dd>{t(projectStatusKeys[project.status])}</dd>
               </div>
               <div>
-                <dt>Git repository</dt>
-                <dd>{project.gitRepository ? 'Yes' : 'No'}</dd>
+                <dt>{t('project.gitRepository')}</dt>
+                <dd>{project.gitRepository ? t('common.yes') : t('common.no')}</dd>
               </div>
               <div>
-                <dt>Branch</dt>
-                <dd>{project.branch ?? 'Not available'}</dd>
+                <dt>{t('projects.branch')}</dt>
+                <dd>{project.branch ?? t('common.notAvailable')}</dd>
               </div>
             </dl>
             <Link className="project-configuration__changes" to="/changes">
-              Review project changes <ExternalLink size={14} aria-hidden="true" />
+              {t('project.reviewChanges')} <ExternalLink size={14} aria-hidden="true" />
             </Link>
           </section>
         )}

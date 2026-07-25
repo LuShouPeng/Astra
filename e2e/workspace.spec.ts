@@ -301,6 +301,8 @@ test('switches to Simplified Chinese and persists it after reload', async ({ pag
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await page.getByRole('button', { name: '打开 Astra Nexus' }).click();
+  await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
+  await page.getByRole('link', { name: '控制中心' }).click();
   await expect(page.getByRole('heading', { name: '控制中心' })).toBeVisible();
   await expectNoDocumentOverflow(page);
 });

@@ -1,12 +1,30 @@
 import { FolderOpen, GitBranch, Plus, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Project, ProjectSort } from '../../../core/contracts/projects';
+import type {
+  GitStatus,
+  Project,
+  ProjectSort,
+  ProjectSource,
+} from '../../../core/contracts/projects';
+import { useI18n } from '../../../core/i18n/I18nContext';
+import type { TranslationKey } from '../../../core/i18n/translations';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import { ConfirmDialog } from '../../../shared/components/ConfirmDialog';
 import { appEventBus } from '../../../core/events/appEventBus';
 import { selectProjectCardStats, selectProjects } from '../selectors/projectSelectors';
 import type { ProjectService } from '../services/projectService';
+
+const gitStatusKeys: Record<GitStatus, TranslationKey> = {
+  clean: 'git.clean',
+  modified: 'git.modified',
+  unknown: 'git.unknown',
+};
+
+const projectSourceKeys: Record<ProjectSource, TranslationKey> = {
+  local: 'source.local',
+  demo: 'source.demo',
+};
 
 export function ProjectsPage({
   service,
@@ -17,6 +35,7 @@ export function ProjectsPage({
   onAddProject?: () => Promise<void>;
   addProjectError?: string | null;
 }) {
+  const { language, t } = useI18n();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<ProjectSort>('recent');
@@ -54,7 +73,7 @@ export function ProjectsPage({
       appEventBus.emit('project:removed', { projectId: removeTarget.id });
       setRemoveTarget(null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'The project could not be removed.');
+      setMessage(error instanceof Error ? error.message : t('projects.removeError'));
     }
   }
 
@@ -65,7 +84,7 @@ export function ProjectsPage({
     try {
       await service.openDirectory(project);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'The project could not be opened.');
+      setMessage(error instanceof Error ? error.message : t('projects.openError'));
     } finally {
       setOpeningProjectId(null);
     }
@@ -78,21 +97,21 @@ export function ProjectsPage({
     try {
       await onAddProject();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'The project could not be added.');
+      setMessage(error instanceof Error ? error.message : t('projects.addError'));
     } finally {
       setAdding(false);
     }
   }
 
-  if (!snapshot) return <div className="projects-state">Loading projects...</div>;
+  if (!snapshot) return <div className="projects-state">{t('projects.loading')}</div>;
 
   return (
     <div className="projects-page">
       <header className="projects-page__header">
         <div>
-          <p className="eyebrow">Registered workspaces</p>
-          <h1>Projects</h1>
-          <span>{snapshot.projects.length} projects</span>
+          <p className="eyebrow">{t('projects.registered')}</p>
+          <h1>{t('nav.projects')}</h1>
+          <span>{t('projects.count', { count: snapshot.projects.length })}</span>
         </div>
         {onAddProject && (
           <button
@@ -101,7 +120,7 @@ export function ProjectsPage({
             onClick={() => void addProject()}
           >
             {adding ? <span className="spinner" /> : <Plus size={16} aria-hidden="true" />}
-            {adding ? 'Adding Project' : 'Add Project'}
+            {adding ? t('projects.adding') : t('projects.add')}
           </button>
         )}
       </header>
@@ -109,20 +128,20 @@ export function ProjectsPage({
       <div className="project-toolbar">
         <label className="project-search">
           <Search size={15} aria-hidden="true" />
-          <span className="sr-only">Search projects</span>
+          <span className="sr-only">{t('projects.search')}</span>
           <input
             type="search"
-            aria-label="Search projects"
-            placeholder="Search projects"
+            aria-label={t('projects.search')}
+            placeholder={t('projects.search')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
         </label>
         <label className="project-sort">
-          <span>Sort</span>
+          <span>{t('projects.sort')}</span>
           <select value={sort} onChange={(event) => setSort(event.target.value as ProjectSort)}>
-            <option value="recent">Recent activity</option>
-            <option value="name">Name</option>
+            <option value="recent">{t('projects.sortRecent')}</option>
+            <option value="name">{t('projects.sortName')}</option>
           </select>
         </label>
       </div>
@@ -133,7 +152,7 @@ export function ProjectsPage({
         </div>
       )}
 
-      <section className="project-grid" aria-label="Projects list">
+      <section className="project-grid" aria-label={t('projects.list')}>
         {projects.map((project) => {
           const stats = selectProjectCardStats(snapshot, project.id);
           const opening = openingProjectId === project.id;
@@ -150,38 +169,38 @@ export function ProjectsPage({
                   </code>
                 </div>
                 <span className={`project-source project-source--${project.source}`}>
-                  {project.source}
+                  {t(projectSourceKeys[project.source])}
                 </span>
               </div>
               <dl className="project-card__meta">
                 <div>
-                  <dt>Branch</dt>
+                  <dt>{t('projects.branch')}</dt>
                   <dd>
                     <GitBranch size={13} aria-hidden="true" />
-                    {project.branch ?? 'Not a repository'}
+                    {project.branch ?? t('projects.notRepository')}
                   </dd>
                 </div>
                 <div>
-                  <dt>Git</dt>
-                  <dd>{project.gitStatus}</dd>
+                  <dt>{t('projects.git')}</dt>
+                  <dd>{t(gitStatusKeys[project.gitStatus])}</dd>
                 </div>
                 <div>
-                  <dt>Sessions</dt>
+                  <dt>{t('projects.sessions')}</dt>
                   <dd>{stats.sessionCount}</dd>
                 </div>
                 <div>
-                  <dt>Active Agents</dt>
+                  <dt>{t('projects.activeAgents')}</dt>
                   <dd>{stats.activeAgentCount}</dd>
                 </div>
                 <div>
-                  <dt>Changed Files</dt>
+                  <dt>{t('projects.changedFiles')}</dt>
                   <dd>{stats.changedFileCount}</dd>
                 </div>
                 <div>
-                  <dt>Activity</dt>
+                  <dt>{t('projects.activity')}</dt>
                   <dd>
                     <time dateTime={project.lastActivityAt}>
-                      {new Intl.DateTimeFormat(undefined, {
+                      {new Intl.DateTimeFormat(language, {
                         month: 'short',
                         day: 'numeric',
                       }).format(new Date(project.lastActivityAt))}
@@ -192,8 +211,11 @@ export function ProjectsPage({
               <div className="project-card__actions">
                 <button
                   className="icon-button"
-                  aria-label={`${opening ? 'Opening' : 'Open'} ${project.name} directory`}
-                  title={opening ? 'Opening directory' : 'Open directory'}
+                  aria-label={t(
+                    opening ? 'projects.openingDirectoryNamed' : 'projects.openDirectoryNamed',
+                    { name: project.name },
+                  )}
+                  title={opening ? t('projects.openingDirectory') : t('projects.openDirectory')}
                   disabled={
                     Boolean(openingProjectId) ||
                     project.source !== 'local' ||
@@ -209,8 +231,8 @@ export function ProjectsPage({
                 </button>
                 <button
                   className="icon-button project-card__remove"
-                  aria-label={`Remove ${project.name}`}
-                  title="Remove project metadata"
+                  aria-label={t('projects.removeNamed', { name: project.name })}
+                  title={t('projects.removeMetadata')}
                   onClick={() => setRemoveTarget(project)}
                 >
                   <Trash2 size={16} aria-hidden="true" />
@@ -223,10 +245,10 @@ export function ProjectsPage({
 
       {projects.length === 0 && (
         <div className="projects-empty">
-          <span>No projects match this search.</span>
+          <span>{t('projects.noSearchResults')}</span>
           {search && (
             <button className="button button--secondary" onClick={() => setSearch('')}>
-              Clear search
+              {t('projects.clearSearch')}
             </button>
           )}
         </div>
@@ -234,9 +256,11 @@ export function ProjectsPage({
 
       <ConfirmDialog
         open={Boolean(removeTarget)}
-        title="Remove project?"
-        description={`${removeTarget?.name ?? 'This project'} will be removed from Astra Nexus. Files on disk will not be deleted.`}
-        confirmLabel="Remove"
+        title={t('projects.removeTitle')}
+        description={t('projects.removeDescription', {
+          name: removeTarget?.name ?? t('nav.projects'),
+        })}
+        confirmLabel={t('workspace.remove')}
         pending={saving}
         onCancel={() => setRemoveTarget(null)}
         onConfirm={() => void removeProject()}

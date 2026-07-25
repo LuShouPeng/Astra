@@ -10,22 +10,24 @@ import {
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { AgentSession, SessionStatus, TimelineEvent } from '../../../core/contracts/sessions';
+import { useI18n } from '../../../core/i18n/I18nContext';
+import type { TranslationKey } from '../../../core/i18n/translations';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import { selectCommandCenterSummary } from '../selectors/commandCenterSelectors';
 
 const statusMeta = {
   running: {
-    label: 'Running Agents',
+    labelKey: 'command.runningAgents',
     icon: CircleDot,
     href: '/command-center?status=running',
   },
-  waiting: { label: 'Needs Attention', icon: Clock3, href: '/attention' },
+  waiting: { labelKey: 'nav.attention', icon: Clock3, href: '/attention' },
   completed: {
-    label: 'Completed Today',
+    labelKey: 'command.completedToday',
     icon: CheckCircle2,
     href: '/command-center?status=completed',
   },
-  failed: { label: 'Failed', icon: XCircle, href: '/command-center?status=failed' },
+  failed: { labelKey: 'command.failed', icon: XCircle, href: '/command-center?status=failed' },
 } as const;
 
 type FilteredStatus = Extract<SessionStatus, 'running' | 'completed' | 'failed'>;
@@ -46,14 +48,23 @@ function formatElapsed(session: AgentSession): string {
   return remainder === 0 ? `${hours}h` : `${hours}h ${remainder}m`;
 }
 
-const activityLabels: Record<TimelineEvent['type'], string> = {
-  user_message: 'User message',
-  agent_message: 'Agent message',
-  command: 'Command',
-  file_change: 'File change',
-  test: 'Test',
-  approval: 'Approval',
-  status: 'Status',
+const activityLabels: Record<TimelineEvent['type'], TranslationKey> = {
+  user_message: 'activity.userMessage',
+  agent_message: 'activity.agentMessage',
+  command: 'activity.command',
+  file_change: 'activity.fileChange',
+  test: 'activity.test',
+  approval: 'activity.approval',
+  status: 'activity.status',
+};
+
+const sessionStatusKeys: Record<SessionStatus, TranslationKey> = {
+  idle: 'session.status.idle',
+  running: 'session.status.running',
+  waiting: 'session.status.waiting',
+  completed: 'session.status.completed',
+  failed: 'session.status.failed',
+  stopped: 'session.status.stopped',
 };
 
 function activityLabel(
@@ -68,19 +79,20 @@ function activityLabel(
         notification.sessionId === event.sessionId &&
         notification.createdAt === event.timestamp,
     );
-  return isReviewFeedback ? 'Review' : activityLabels[event.type];
+  return isReviewFeedback ? 'activity.review' : activityLabels[event.type];
 }
 
 export function CommandCenterPage() {
   const { loadState, snapshot, error } = useWorkbench();
+  const { language, t } = useI18n();
   const [searchParams] = useSearchParams();
 
   if (loadState === 'loading')
-    return <div className="command-center-state">Loading workbench...</div>;
+    return <div className="command-center-state">{t('command.loading')}</div>;
   if (!snapshot) {
     return (
       <div className="command-center-state" role="alert">
-        {error ?? 'Workbench data is unavailable.'}
+        {error ?? t('command.unavailable')}
       </div>
     );
   }
@@ -95,41 +107,47 @@ export function CommandCenterPage() {
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
         .slice(0, 6)
     : summary.activeSessions;
-  const sessionSectionTitle = selectedStatus
-    ? `${selectedStatus[0].toUpperCase()}${selectedStatus.slice(1)} Sessions`
-    : 'Active Sessions';
+  const selectedStatusLabel = selectedStatus ? t(sessionStatusKeys[selectedStatus]) : null;
+  const sessionSectionTitle = selectedStatusLabel
+    ? t('command.filteredSessions', {
+        status:
+          language === 'en'
+            ? `${selectedStatusLabel[0].toUpperCase()}${selectedStatusLabel.slice(1)}`
+            : selectedStatusLabel,
+      })
+    : t('command.activeSessions');
 
   return (
     <div className="command-center">
       <header className="command-center__header">
         <div>
           <p className="eyebrow">Astra Nexus</p>
-          <h1>Command Center</h1>
+          <h1>{t('command.title')}</h1>
           <time className="command-center__date" dateTime={new Date().toISOString()}>
-            {new Intl.DateTimeFormat('en', { dateStyle: 'full' }).format(new Date())}
+            {new Intl.DateTimeFormat(language, { dateStyle: 'full' }).format(new Date())}
           </time>
         </div>
         <div className="command-center__actions">
-          <span>{snapshot.projects.length} active projects</span>
+          <span>{t('command.activeProjects', { count: snapshot.projects.length })}</span>
           <Link className="button button--secondary button--compact" to="/settings?tab=demo">
             <SlidersHorizontal size={15} aria-hidden="true" />
-            Create simulated task
+            {t('command.createTask')}
           </Link>
           <Link className="button button--compact" to="/projects">
             <FolderPlus size={15} aria-hidden="true" />
-            Add project
+            {t('command.addProject')}
           </Link>
         </div>
       </header>
 
-      <section className="status-grid" aria-label="Session status summary">
+      <section className="status-grid" aria-label={t('command.statusSummary')}>
         {Object.entries(statusMeta).map(([status, meta]) => {
           const Icon = meta.icon;
           return (
             <Link className="status-metric" data-status={status} key={status} to={meta.href}>
               <span>
                 <Icon size={16} aria-hidden="true" />
-                {meta.label}
+                {t(meta.labelKey)}
               </span>
               <strong>
                 {status === 'waiting'
@@ -144,8 +162,8 @@ export function CommandCenterPage() {
       <Link className="attention-strip" to="/attention">
         <AlertTriangle size={18} aria-hidden="true" />
         <span>
-          <strong>{summary.openAttentionCount} items need attention</strong>
-          <small>Approvals and failed sessions are waiting for review.</small>
+          <strong>{t('command.attentionCount', { count: summary.openAttentionCount })}</strong>
+          <small>{t('command.attentionDescription')}</small>
         </span>
         <ArrowRight size={17} aria-hidden="true" />
       </Link>
@@ -153,13 +171,13 @@ export function CommandCenterPage() {
       <section className="dashboard-section" aria-labelledby="active-sessions-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">In progress</p>
+            <p className="eyebrow">{t('command.inProgress')}</p>
             <h2 id="active-sessions-title">{sessionSectionTitle}</h2>
           </div>
           {selectedStatus ? (
-            <Link to="/command-center">Clear status filter</Link>
+            <Link to="/command-center">{t('command.clearFilter')}</Link>
           ) : (
-            <span>{summary.sessionTotal} total</span>
+            <span>{t('common.total', { count: summary.sessionTotal })}</span>
           )}
         </div>
         <div className="session-list">
@@ -173,13 +191,16 @@ export function CommandCenterPage() {
                 <strong>{session.title}</strong>
                 <small>
                   {snapshot.providerCapabilities[session.provider].label} /{' '}
-                  {projects.get(session.projectId)?.name ?? 'Unknown project'} / {session.status}
+                  {projects.get(session.projectId)?.name ?? t('common.unknownProject')} /{' '}
+                  {t(sessionStatusKeys[session.status])}
                 </small>
               </span>
               <span className="session-row__metrics">
                 <small>{formatElapsed(session)}</small>
                 <small>
-                  {session.changedFilesCount} {session.changedFilesCount === 1 ? 'file' : 'files'}
+                  {t(session.changedFilesCount === 1 ? 'command.fileOne' : 'command.fileMany', {
+                    count: session.changedFilesCount,
+                  })}
                 </small>
               </span>
               <span className="session-row__action">
@@ -189,7 +210,7 @@ export function CommandCenterPage() {
             </Link>
           ))}
           {visibleSessions.length === 0 && (
-            <div className="session-list__empty">No Sessions match this status.</div>
+            <div className="session-list__empty">{t('command.noMatchingSessions')}</div>
           )}
         </div>
       </section>
@@ -198,10 +219,10 @@ export function CommandCenterPage() {
         <section className="dashboard-section" aria-labelledby="attention-preview-title">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Action queue</p>
-              <h2 id="attention-preview-title">Needs Attention</h2>
+              <p className="eyebrow">{t('command.actionQueue')}</p>
+              <h2 id="attention-preview-title">{t('nav.attention')}</h2>
             </div>
-            <Link to="/attention">View all</Link>
+            <Link to="/attention">{t('command.viewAll')}</Link>
           </div>
           <div className="dashboard-list">
             {summary.attentionPreview.map((item) => (
@@ -209,7 +230,7 @@ export function CommandCenterPage() {
                 <span className={`priority-dot priority-dot--${item.priority}`} />
                 <span>
                   <strong>{item.title}</strong>
-                  <small>{projects.get(item.projectId)?.name ?? 'Unknown project'}</small>
+                  <small>{projects.get(item.projectId)?.name ?? t('common.unknownProject')}</small>
                 </span>
                 <ArrowRight size={15} aria-hidden="true" />
               </Link>
@@ -220,18 +241,18 @@ export function CommandCenterPage() {
         <section className="dashboard-section" aria-labelledby="project-matrix-title">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Portfolio</p>
-              <h2 id="project-matrix-title">Project Matrix</h2>
+              <p className="eyebrow">{t('command.portfolio')}</p>
+              <h2 id="project-matrix-title">{t('command.projectMatrix')}</h2>
             </div>
           </div>
-          <div className="project-matrix" aria-label="Project status matrix">
+          <div className="project-matrix" aria-label={t('command.projectMatrixLabel')}>
             <div className="project-matrix__header">
-              <span>Project</span>
+              <span>{t('command.project')}</span>
               <span>R</span>
               <span>W</span>
               <span>C</span>
               <span>F</span>
-              <span>Files</span>
+              <span>{t('command.files')}</span>
             </div>
             {summary.projectMatrix.map((row) => (
               <Link
@@ -244,7 +265,7 @@ export function CommandCenterPage() {
                 <span>{row.waiting}</span>
                 <span>{row.completed}</span>
                 <span>{row.failed}</span>
-                <span>{row.changedFiles} changed</span>
+                <span>{t('command.changed', { count: row.changedFiles })}</span>
               </Link>
             ))}
           </div>
@@ -254,8 +275,8 @@ export function CommandCenterPage() {
       <section className="dashboard-section" aria-labelledby="recent-activity-title">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Audit trail</p>
-            <h2 id="recent-activity-title">Recent Activity</h2>
+            <p className="eyebrow">{t('command.auditTrail')}</p>
+            <h2 id="recent-activity-title">{t('command.recentActivity')}</h2>
           </div>
         </div>
         <div className="activity-list">
@@ -263,10 +284,10 @@ export function CommandCenterPage() {
             const session = sessions.get(event.sessionId);
             return (
               <Link className="activity-row" key={event.id} to={`/sessions/${event.sessionId}`}>
-                <span>{activityLabel(event, snapshot)}</span>
-                <strong>{session?.title ?? 'Unknown Session'}</strong>
+                <span>{t(activityLabel(event, snapshot))}</span>
+                <strong>{session?.title ?? t('common.unknownSession')}</strong>
                 <time dateTime={event.timestamp}>
-                  {new Intl.DateTimeFormat('en', {
+                  {new Intl.DateTimeFormat(language, {
                     hour: '2-digit',
                     minute: '2-digit',
                   }).format(new Date(event.timestamp))}
