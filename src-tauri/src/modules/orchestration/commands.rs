@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::State;
 
-use super::store::{OrchestrationStore, WorkflowRecord};
+use super::store::{
+    ApprovalRecord, NodeRunRecord, OrchestrationStore, WorkflowRecord, WorkflowRunRecord,
+};
 
 const MAX_DEFINITION_BYTES: usize = 1024 * 1024;
 
@@ -70,4 +72,84 @@ pub fn orchestration_save_workflow(
             &input.definition_json,
         )
         .map_err(|error| error.to_string())
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunCreateInput {
+    pub id: String,
+    pub workflow_id: String,
+    pub workflow_version: i64,
+    pub project_id: String,
+    pub integration_branch: String,
+    pub node_ids: Vec<String>,
+}
+
+pub(super) fn validate_run_input(input: &RunCreateInput) -> Result<(), String> {
+    if !valid_identifier(&input.id)
+        || !valid_identifier(&input.workflow_id)
+        || !valid_identifier(&input.project_id)
+        || input.workflow_version < 1
+        || input.node_ids.is_empty()
+        || input.node_ids.len() > 256
+        || input.node_ids.iter().any(|id| !valid_identifier(id))
+        || !input.integration_branch.starts_with("astra/run-")
+        || input.integration_branch.len() > 180
+    {
+        return Err("Workflow run input is invalid.".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn orchestration_create_run(
+    store: State<'_, OrchestrationStore>,
+    input: RunCreateInput,
+) -> Result<(), String> {
+    validate_run_input(&input)?;
+    store
+        .save_run(&WorkflowRunRecord {
+            id: input.id.clone(),
+            workflow_id: input.workflow_id,
+            workflow_version: input.workflow_version,
+            project_id: input.project_id,
+            status: "waiting".into(),
+            integration_branch: Some(input.integration_branch),
+        })
+        .map_err(|error| error.to_string())?;
+    for (index, node_id) in input.node_ids.iter().enumerate() {
+        let node_run_id = format!("{}-{node_id}", input.id);
+        store
+            .save_node_run(&NodeRunRecord {
+                id: node_run_id.clone(),
+                run_id: input.id.clone(),
+                node_id: node_id.clone(),
+                status: if index == 0 {
+                    "waiting_approval".into()
+                } else {
+                    "pending".into()
+                },
+                attempt: 1,
+                provider: None,
+                worktree_path: None,
+            })
+            .map_err(|error| error.to_string())?;
+        if index == 0 {
+            store
+                .save_approval(&ApprovalRecord {
+                    id: format!("approval-{}", input.id),
+                    run_id: input.id.clone(),
+                    node_run_id,
+                    capability: "worktree".into(),
+                    risk: "medium".into(),
+                    summary: "Create isolated integration and Agent worktrees.".into(),
+                    status: "pending".into(),
+                })
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    store
+        .append_event(&input.id, r#"{"type":"run_created","status":"waiting"}"#)
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }

@@ -1,4 +1,6 @@
-use super::commands::{validate_workflow_input, WorkflowSaveInput};
+use super::commands::{
+    validate_run_input, validate_workflow_input, RunCreateInput, WorkflowSaveInput,
+};
 
 fn input() -> WorkflowSaveInput {
     WorkflowSaveInput {
@@ -8,6 +10,21 @@ fn input() -> WorkflowSaveInput {
         project_id: "project-1".into(),
         definition_json: r#"{"id":"workflow-1","nodes":[],"edges":[]}"#.into(),
     }
+}
+
+#[test]
+fn validates_bounded_run_creation_input() {
+    let mut input = RunCreateInput {
+        id: "run-1".into(),
+        workflow_id: "workflow-1".into(),
+        workflow_version: 1,
+        project_id: "project-1".into(),
+        integration_branch: "astra/run-run-1".into(),
+        node_ids: vec!["node-1".into()],
+    };
+    assert!(validate_run_input(&input).is_ok());
+    input.node_ids.clear();
+    assert!(validate_run_input(&input).is_err());
 }
 
 #[test]

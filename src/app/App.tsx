@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo, type ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { WorkspaceService } from '../core/contracts/workspace';
 import type { Project, ProjectGitSummary } from '../core/contracts/projects';
@@ -42,6 +42,31 @@ import { resolveAppRoute } from './routes';
 import { WorkbenchShell } from './shell/WorkbenchShell';
 import { startThemePreference } from '../core/preferences/appearance';
 import { I18nProvider } from '../core/i18n/I18nContext';
+
+const WorkflowsPage = lazy(() =>
+  import('../modules/workflows/pages/WorkflowsPage').then((module) => ({
+    default: module.WorkflowsPage,
+  })),
+);
+const WorkflowEditorPage = lazy(() =>
+  import('../modules/workflows/pages/WorkflowEditorPage').then((module) => ({
+    default: module.WorkflowEditorPage,
+  })),
+);
+const WorkflowRunPage = lazy(() =>
+  import('../modules/workflows/pages/WorkflowRunPage').then((module) => ({
+    default: module.WorkflowRunPage,
+  })),
+);
+const ExtensionsPage = lazy(() =>
+  import('../modules/extensions/pages/ExtensionsPage').then((module) => ({
+    default: module.ExtensionsPage,
+  })),
+);
+
+function lazyPage(page: ReactNode) {
+  return <Suspense fallback={<div className="slot-loading" />}>{page}</Suspense>;
+}
 
 function createDefaultService(): WorkspaceService {
   return createWorkspaceService(createTauriWorkspaceAdapters());
@@ -117,6 +142,7 @@ function AppRouter({
 }) {
   const { activeWorkspace } = useWorkspace();
   if (resolveAppRoute(activeWorkspace) === 'projects') return <WelcomePage />;
+  const workspaceId = activeWorkspace!.id;
 
   return (
     <WorkbenchProvider repository={repository}>
@@ -126,6 +152,10 @@ function AppRouter({
           <Route index element={<Navigate replace to="/command-center" />} />
           <Route path="command-center" element={<CommandCenterPage />} />
           <Route path="projects" element={<ProjectsRoute service={projectService} />} />
+          <Route path="workflows" element={lazyPage(<WorkflowsPage projectId={workspaceId} />)} />
+          <Route path="workflows/:workflowId" element={lazyPage(<WorkflowEditorPage />)} />
+          <Route path="runs/:runId" element={lazyPage(<WorkflowRunPage />)} />
+          <Route path="extensions" element={lazyPage(<ExtensionsPage />)} />
           <Route
             path="projects/:projectId"
             element={<ProjectDetailPage service={projectService} />}

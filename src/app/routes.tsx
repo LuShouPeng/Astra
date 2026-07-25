@@ -5,6 +5,8 @@ export type AppRoute = 'projects' | 'workbench';
 export const workbenchPaths = {
   commandCenter: '/command-center',
   projects: '/projects',
+  workflows: '/workflows',
+  extensions: '/extensions',
   attention: '/attention',
   changes: '/changes',
   settings: '/settings',

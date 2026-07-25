@@ -1,0 +1,182 @@
+.extensions-page {
+  min-height: 100%;
+  padding: var(--space-6);
+}
+.extensions-tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+.extensions-tabs button {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-muted);
+  background: transparent;
+}
+.extensions-tabs button.is-active {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-text);
+}
+.extension-list {
+  border-top: 1px solid var(--color-border);
+}
+.extension-list article {
+  display: grid;
+  min-height: 64px;
+  grid-template-columns: 38px minmax(0, 1fr) 130px auto 36px;
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.extension-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-info);
+  background: var(--color-info-surface);
+}
+.extension-list strong,
+.extension-list small {
+  display: block;
+}
+.extension-list small {
+  max-width: 620px;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.extension-list code {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.extension-search {
+  display: flex;
+  max-width: 420px;
+  height: 40px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+.extension-search input {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  color: var(--color-text);
+  background: transparent;
+}
+.extension-heading {
+  margin: var(--space-5) 0 var(--space-3);
+  font-size: var(--text-md);
+}
+.skill-catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-3);
+}
+.skill-catalog article {
+  display: grid;
+  min-height: 190px;
+  grid-template-rows: auto 1fr auto;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.skill-catalog small {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+.skill-catalog dl {
+  min-width: 0;
+  margin: var(--space-3) 0;
+  font-size: var(--text-xs);
+}
+.skill-catalog dl div {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  gap: var(--space-2);
+  margin-top: 4px;
+}
+.skill-catalog dt {
+  color: var(--color-text-subtle);
+}
+.skill-catalog dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.extension-dialog {
+  position: relative;
+  display: grid;
+  width: min(520px, 100%);
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-dialog);
+}
+.extension-dialog__close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+.extension-dialog h2 {
+  font-size: var(--text-lg);
+}
+.extension-dialog label {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.extension-dialog input,
+.extension-dialog select {
+  height: 38px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  background: var(--color-canvas);
+}
+.extension-dialog p {
+  color: var(--color-warning);
+  font-size: var(--text-xs);
+}
+.extension-dialog > div:last-child {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+@media (max-width: 800px) {
+  .extension-list article {
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+  }
+  .extension-list code,
+  .extension-list .button {
+    display: none;
+  }
+  .skill-catalog {
+    grid-template-columns: 1fr;
+  }
+}

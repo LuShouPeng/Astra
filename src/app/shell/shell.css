@@ -65,6 +65,10 @@
   min-height: 0;
 }
 
+.workbench-shell__body--wide {
+  grid-template-columns: var(--activity-rail-width) minmax(0, 1fr);
+}
+
 .activity-rail {
   display: flex;
   min-height: 0;

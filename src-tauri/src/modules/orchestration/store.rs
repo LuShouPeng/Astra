@@ -325,6 +325,25 @@ impl OrchestrationStore {
         Ok(records)
     }
 
+    pub fn append_event(&self, run_id: &str, event_json: &str) -> Result<i64, StoreError> {
+        let connection = self.connection();
+        connection.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![run_id, event_json],
+        )?;
+        Ok(connection.last_insert_rowid())
+    }
+
+    pub fn list_events(&self, run_id: &str) -> Result<Vec<String>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection
+            .prepare("SELECT event_json FROM run_events WHERE run_id = ?1 ORDER BY sequence")?;
+        let events = statement
+            .query_map([run_id], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(events)
+    }
+
     pub fn interrupt_active_runs(&self) -> Result<usize, StoreError> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;

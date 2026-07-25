@@ -14,6 +14,8 @@ import './modules/attention/attention.css';
 import './modules/changes/changes.css';
 import './modules/notifications/notifications.css';
 import './modules/settings/settings.css';
+import './modules/workflows/workflows.css';
+import './modules/extensions/extensions.css';
 import './app/shell/shell.css';
 
 const acceptanceService =

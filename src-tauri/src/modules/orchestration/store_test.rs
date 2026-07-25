@@ -40,6 +40,9 @@ fn persists_versioned_workflows_and_runtime_state() {
             status: "pending".into(),
         })
         .expect("save approval");
+    store
+        .append_event("run-1", r#"{"type":"run_created"}"#)
+        .expect("append event");
 
     assert_eq!(store.list_workflows().expect("list").len(), 1);
     assert_eq!(
@@ -48,6 +51,7 @@ fn persists_versioned_workflows_and_runtime_state() {
     );
     assert_eq!(store.list_node_runs("run-1").expect("nodes").len(), 1);
     assert_eq!(store.list_approvals("run-1").expect("approvals").len(), 1);
+    assert_eq!(store.list_events("run-1").expect("events").len(), 1);
 }
 
 #[test]
