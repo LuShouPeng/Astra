@@ -223,7 +223,8 @@ fn validate_relative_path(root: &Path, relative_path: &str) -> Result<PathBuf, P
                 "The selected file could not be normalized.",
             )
         })?;
-        if !canonical.starts_with(root) {
+        let canonical_root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+        if !canonical.starts_with(&canonical_root) {
             return Err(ProjectError::new(
                 "INVALID_RELATIVE_PATH",
                 "The selected file path is outside the registered project.",
