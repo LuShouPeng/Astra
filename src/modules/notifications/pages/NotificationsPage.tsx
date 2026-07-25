@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { AppNotification } from '../../../core/contracts/notifications';
 import type { WorkbenchSnapshot } from '../../../core/contracts/workbenchData';
+import { useI18n } from '../../../core/i18n/I18nContext';
+import type { TranslationKey } from '../../../core/i18n/translations';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import {
   clearReadNotifications,
@@ -18,8 +20,18 @@ const toneIcons = {
   error: XCircle,
 } as const;
 
-function notificationTime(timestamp: string) {
-  return new Intl.DateTimeFormat('en-US', {
+const eventKeys: Record<AppNotification['event'], TranslationKey> = {
+  agent_started: 'notification.agentStarted',
+  waiting_input: 'notification.waitingInput',
+  waiting_approval: 'notification.waitingApproval',
+  completed: 'notification.completed',
+  failed: 'notification.failed',
+  test_failed: 'notification.testFailed',
+  review_requested: 'notification.reviewRequested',
+};
+
+function notificationTime(timestamp: string, locale: string) {
+  return new Intl.DateTimeFormat(locale, {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
@@ -28,6 +40,7 @@ function notificationTime(timestamp: string) {
 }
 
 export function NotificationsPage() {
+  const { language, t } = useI18n();
   const navigate = useNavigate();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -42,7 +55,7 @@ export function NotificationsPage() {
   const unread = sorted.filter((notification) => !notification.read);
   const visible = filter === 'unread' ? unread : sorted;
 
-  if (!snapshot) return <div className="notifications-state">Loading notifications...</div>;
+  if (!snapshot) return <div className="notifications-state">{t('notifications.loading')}</div>;
   const projects = new Map(snapshot.projects.map((project) => [project.id, project.name]));
   const sessions = new Map(snapshot.sessions.map((session) => [session.id, session.title]));
 
@@ -51,7 +64,7 @@ export function NotificationsPage() {
       setError(null);
       await saveSnapshot(next);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Notifications could not be updated.');
+      setError(caught instanceof Error ? caught.message : t('notifications.updateError'));
     }
   }
 
@@ -67,23 +80,27 @@ export function NotificationsPage() {
     <div className="notifications-page">
       <header className="notifications-header">
         <div>
-          <p className="eyebrow">Activity inbox</p>
-          <h1>Notifications</h1>
+          <p className="eyebrow">{t('notifications.eyebrow')}</p>
+          <h1>{t('nav.notifications')}</h1>
         </div>
-        <strong>{unread.length} unread</strong>
+        <strong>{t('notifications.unreadCount', { count: unread.length })}</strong>
       </header>
 
       <div className="notifications-toolbar">
-        <div className="notification-filters" role="tablist" aria-label="Notification filters">
+        <div
+          className="notification-filters"
+          role="tablist"
+          aria-label={t('notifications.filters')}
+        >
           <button role="tab" aria-selected={filter === 'all'} onClick={() => setFilter('all')}>
-            All {sorted.length}
+            {t('notifications.all')} {sorted.length}
           </button>
           <button
             role="tab"
             aria-selected={filter === 'unread'}
             onClick={() => setFilter('unread')}
           >
-            Unread {unread.length}
+            {t('notifications.unread')} {unread.length}
           </button>
         </div>
         <div>
@@ -93,7 +110,7 @@ export function NotificationsPage() {
             onClick={() => void persist(markAllNotificationsRead(snapshot))}
           >
             <CheckCircle2 size={15} aria-hidden="true" />
-            Mark all read
+            {t('notifications.markAllRead')}
           </button>
           <button
             className="button button--compact"
@@ -101,7 +118,7 @@ export function NotificationsPage() {
             onClick={() => void persist(clearReadNotifications(snapshot))}
           >
             <Trash2 size={15} aria-hidden="true" />
-            Clear read
+            {t('notifications.clearRead')}
           </button>
         </div>
       </div>
@@ -112,7 +129,7 @@ export function NotificationsPage() {
         </div>
       )}
 
-      <section className="notifications-list" aria-label="Notification history">
+      <section className="notifications-list" aria-label={t('notifications.history')}>
         {visible.map((notification) => {
           const Icon = toneIcons[notification.tone];
           return (
@@ -127,24 +144,28 @@ export function NotificationsPage() {
                 <header>
                   <div>
                     <h2>{notification.title}</h2>
-                    {!notification.read && <span>Unread</span>}
+                    {!notification.read && <span>{t('notifications.unread')}</span>}
                   </div>
                   <time dateTime={notification.createdAt}>
-                    {notificationTime(notification.createdAt)}
+                    {notificationTime(notification.createdAt, language)}
                   </time>
                 </header>
                 <p>{notification.message}</p>
                 <footer>
-                  <span>{projects.get(notification.projectId ?? '') ?? 'Workspace'}</span>
+                  <span>
+                    {projects.get(notification.projectId ?? '') ?? t('notifications.workspace')}
+                  </span>
                   {notification.sessionId && (
-                    <span>{sessions.get(notification.sessionId) ?? 'Unknown Session'}</span>
+                    <span>
+                      {sessions.get(notification.sessionId) ?? t('common.unknownSession')}
+                    </span>
                   )}
-                  <span>{notification.event.replaceAll('_', ' ')}</span>
+                  <span>{t(eventKeys[notification.event])}</span>
                 </footer>
               </div>
               <button
                 className="icon-button"
-                aria-label={`Open ${notification.title}`}
+                aria-label={t('notifications.openNamed', { name: notification.title })}
                 disabled={saving}
                 onClick={() => void openNotification(notification)}
               >
@@ -156,9 +177,11 @@ export function NotificationsPage() {
         {visible.length === 0 && (
           <div className="notifications-empty">
             <CheckCircle2 size={24} aria-hidden="true" />
-            <strong>{filter === 'unread' ? 'No unread notifications' : 'No notifications'}</strong>
+            <strong>
+              {filter === 'unread' ? t('notifications.noUnread') : t('notifications.none')}
+            </strong>
             <Link className="button button--secondary" to="/command-center">
-              Open Command Center
+              {t('notifications.openCommandCenter')}
             </Link>
           </div>
         )}
