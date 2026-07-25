@@ -42,8 +42,8 @@ test('generates, edits, validates, and creates a workflow run', async ({ page })
   await expect(page.getByText('Waiting for approval').first()).toBeVisible();
   await page.getByRole('button', { name: 'Approve worktree creation' }).click();
   await expect(page.getByText('ready', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Approve and start Agent' }).click();
-  await expect(page.getByText('succeeded', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Run ready batch' }).click();
+  await expect(page.getByText('completed', { exact: true }).first()).toBeVisible();
 });
 
 test('registers MCP and keeps workflow surfaces contained at target sizes', async ({ page }) => {

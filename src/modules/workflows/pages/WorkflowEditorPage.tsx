@@ -36,9 +36,11 @@ import type {
   WorkflowNode,
   WorkflowNodeType,
 } from '../../../core/contracts/workflows';
+import type { McpServerConfig, SkillPackage } from '../../../core/contracts/extensions';
 import { useI18n } from '../../../core/i18n/I18nContext';
 import { validateWorkflow } from '../model/workflowGraph';
 import { routeWorkflowProviders, type ProviderAvailability } from '../model/providerRouting';
+import { loadProviderPreferences } from '../model/providerPreferences';
 import { createDefaultWorkflowService, type WorkflowService } from '../services/workflowService';
 import { workflowCopy } from '../workflowCopy';
 
@@ -49,6 +51,14 @@ const kinds: Array<{ type: WorkflowNodeType; icon: typeof Wrench; en: string; zh
   { type: 'condition', icon: GitBranch, en: 'Condition', zh: '条件' },
   { type: 'join', icon: Hand, en: 'Join', zh: '汇合' },
 ];
+
+function storedExtensions<T>(key: string): T[] {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? '[]') as T[];
+  } catch {
+    return [];
+  }
+}
 
 function toFlowNode(node: WorkflowNode): FlowNode {
   return {
@@ -80,6 +90,12 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
   const [selectedId, setSelectedId] = useState<string>();
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [availableSkills] = useState(() =>
+    storedExtensions<SkillPackage>('astra.extensions.skills.v1'),
+  );
+  const [availableMcp] = useState(() =>
+    storedExtensions<McpServerConfig>('astra.extensions.mcp.v1'),
+  );
   const [past, setPast] = useState<
     Array<{ definition: WorkflowDefinition; nodes: FlowNode[]; edges: FlowEdge[] }>
   >([]);
@@ -207,6 +223,15 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       setSaving(false);
     }
   }
+  async function saveTemplate() {
+    const next = sync();
+    if (!next || validateWorkflow(next).length > 0) {
+      setMessage(c.invalid);
+      return;
+    }
+    await service.saveTemplate(next);
+    setMessage(language === 'zh-CN' ? '模板已保存' : 'Template saved');
+  }
   async function run() {
     const next = sync();
     if (!next || validateWorkflow(next).length) {
@@ -217,7 +242,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       '__TAURI_INTERNALS__' in window
         ? await invoke<Array<ProviderAvailability & { reason?: string }>>(
             'orchestration_discover_providers',
-            { input: {} },
+            { input: loadProviderPreferences() },
           )
         : [
             { provider: 'claude', available: true },
@@ -285,6 +310,10 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
           <button className="button button--compact" onClick={() => void save()} disabled={saving}>
             <Save size={15} />
             {saving ? c.saving : c.save}
+          </button>
+          <button className="button button--compact" onClick={() => void saveTemplate()}>
+            <Copy size={15} />
+            {language === 'zh-CN' ? '保存模板' : 'Save template'}
           </button>
           <button className="button button--primary" onClick={() => void run()}>
             <Play size={15} />
@@ -377,7 +406,146 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
                       onChange={(e) => updateSelected({ prompt: e.target.value })}
                     />
                   </label>
+                  <fieldset className="workflow-fieldset">
+                    <legend>Skills</legend>
+                    {availableSkills.length === 0 ? (
+                      <small>
+                        {language === 'zh-CN' ? '尚未安装 Skill' : 'No Skills installed'}
+                      </small>
+                    ) : (
+                      availableSkills.map((skill) => (
+                        <label key={`${skill.id}-${skill.contentHash}`}>
+                          <input
+                            type="checkbox"
+                            checked={selected.skillIds.includes(skill.id)}
+                            onChange={(event) =>
+                              updateSelected({
+                                skillIds: event.target.checked
+                                  ? [...selected.skillIds, skill.id]
+                                  : selected.skillIds.filter((id) => id !== skill.id),
+                              })
+                            }
+                          />
+                          {skill.name}
+                        </label>
+                      ))
+                    )}
+                  </fieldset>
+                  <fieldset className="workflow-fieldset">
+                    <legend>MCP</legend>
+                    {availableMcp.length === 0 ? (
+                      <small>
+                        {language === 'zh-CN' ? '尚未注册 MCP 服务器' : 'No MCP servers registered'}
+                      </small>
+                    ) : (
+                      availableMcp.map((server) => (
+                        <label key={server.id}>
+                          <input
+                            type="checkbox"
+                            checked={selected.mcpServerIds.includes(server.id)}
+                            onChange={(event) =>
+                              updateSelected({
+                                mcpServerIds: event.target.checked
+                                  ? [...selected.mcpServerIds, server.id]
+                                  : selected.mcpServerIds.filter((id) => id !== server.id),
+                              })
+                            }
+                          />
+                          {server.name}
+                        </label>
+                      ))
+                    )}
+                  </fieldset>
                 </>
+              )}
+              {selected.type === 'mcp_tool' && (
+                <>
+                  <label>
+                    MCP Server
+                    <select
+                      value={selected.serverId}
+                      onChange={(event) => updateSelected({ serverId: event.target.value })}
+                    >
+                      <option value="">
+                        {language === 'zh-CN' ? '选择服务器' : 'Select server'}
+                      </option>
+                      {availableMcp.map((server) => (
+                        <option key={server.id} value={server.id}>
+                          {server.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    {language === 'zh-CN' ? '工具名称' : 'Tool name'}
+                    <input
+                      value={selected.toolName}
+                      onChange={(event) => updateSelected({ toolName: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    {language === 'zh-CN' ? '参数（JSON）' : 'Arguments (JSON)'}
+                    <textarea
+                      value={JSON.stringify(selected.arguments, null, 2)}
+                      onChange={(event) => {
+                        try {
+                          updateSelected({
+                            arguments: JSON.parse(event.target.value) as Record<string, unknown>,
+                          });
+                        } catch {
+                          // Keep the last valid argument object.
+                        }
+                      }}
+                    />
+                  </label>
+                </>
+              )}
+              {selected.type === 'approval' && (
+                <>
+                  <label>
+                    {language === 'zh-CN' ? '风险等级' : 'Risk'}
+                    <select
+                      value={selected.risk}
+                      onChange={(event) =>
+                        updateSelected({ risk: event.target.value as 'low' | 'medium' | 'high' })
+                      }
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </label>
+                  <label>
+                    {language === 'zh-CN' ? '审批说明' : 'Approval instructions'}
+                    <textarea
+                      value={selected.instructions}
+                      onChange={(event) => updateSelected({ instructions: event.target.value })}
+                    />
+                  </label>
+                </>
+              )}
+              {selected.type === 'condition' && (
+                <label>
+                  {language === 'zh-CN' ? '布尔表达式' : 'Boolean expression'}
+                  <input
+                    value={selected.expression}
+                    onChange={(event) => updateSelected({ expression: event.target.value })}
+                  />
+                </label>
+              )}
+              {selected.type === 'join' && (
+                <label>
+                  {language === 'zh-CN' ? '汇合策略' : 'Join strategy'}
+                  <select
+                    value={selected.strategy}
+                    onChange={(event) =>
+                      updateSelected({ strategy: event.target.value as 'all' | 'any' })
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="any">Any</option>
+                  </select>
+                </label>
               )}
               <label>
                 {c.timeout}

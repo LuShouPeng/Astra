@@ -111,28 +111,29 @@ visual coverage; no Gemini CLI behavior may be implemented.
 
 ## Final Requirement Audit
 
-| Requirement area             | Direct implementation evidence                                                                                                                                                                                             | Audit result |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| Project cards                | Path, Git branch/state, last activity, Session count, active Agent count, and changed-file count have component, selector, and E2E assertions                                                                              | verified     |
-| Desktop shell geometry       | Tauri minimum width is 1200 px; title bar is 48 px; sidebar is 260 px; CSS contract test enforces all three values                                                                                                         | verified     |
-| Session status semantics     | Running uses blue semantic tokens and Completed uses green tokens in the tree, Command Center, and Session header                                                                                                          | verified     |
-| Read-only Git responsiveness | Summary, changed-file, and diff commands are async and dispatch blocking Git work through `spawn_blocking`; Rust contract test covers all three                                                                            | verified     |
-| Async feedback               | Project add, directory/file open, diff clipboard copy, persistence, review actions, settings, notification tests, demo controls, and removal expose pending/disabled state and recoverable feedback                        | verified     |
-| Failure recovery             | Failed project removal retains its confirmation; failed Request Changes retains typed feedback; tests cover both retry paths                                                                                               | verified     |
-| Module boundaries            | ESLint rejects cross-module deep imports; modules expose public entry points while `core` and `shared` remain common dependencies                                                                                          | verified     |
-| Review event interpretation  | The PRD data contract fixes seven Timeline variants. Request Changes therefore emits `user_message` and, when needed, `status`; review state is persisted on `FileChange` instead of adding an undocumented eighth variant | verified     |
-| Settings scope               | Theme, language, and notification settings are functional; startup and default-directory fields are truthful prototype representations or visibly marked `Coming soon`                                                     | verified     |
-| Prohibited capabilities      | No Agent CLI, Gemini runtime, key collection, upload, shell execution, Git mutation, or project-root escape is exposed                                                                                                     | verified     |
+| Requirement area             | Direct implementation evidence                                                                                                                                                                                              | Audit result |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| Project cards                | Path, Git branch/state, last activity, Session count, active Agent count, and changed-file count have component, selector, and E2E assertions                                                                               | verified     |
+| Desktop shell geometry       | Tauri minimum width is 1200 px; title bar is 48 px; sidebar is 260 px; CSS contract test enforces all three values                                                                                                          | verified     |
+| Session status semantics     | Running uses blue semantic tokens and Completed uses green tokens in the tree, Command Center, and Session header                                                                                                           | verified     |
+| Read-only Git responsiveness | Summary, changed-file, and diff commands are async and dispatch blocking Git work through `spawn_blocking`; Rust contract test covers all three                                                                             | verified     |
+| Async feedback               | Project add, directory/file open, diff clipboard copy, persistence, review actions, settings, notification tests, demo controls, and removal expose pending/disabled state and recoverable feedback                         | verified     |
+| Failure recovery             | Failed project removal retains its confirmation; failed Request Changes retains typed feedback; tests cover both retry paths                                                                                                | verified     |
+| Module boundaries            | ESLint rejects cross-module deep imports; modules expose public entry points while `core` and `shared` remain common dependencies                                                                                           | verified     |
+| Review event interpretation  | The PRD data contract fixes seven Timeline variants. Request Changes therefore emits `user_message` and, when needed, `status`; review state is persisted on `FileChange` instead of adding an undocumented eighth variant  | verified     |
+| Settings scope               | Theme, language, and notification settings are functional; startup and default-directory fields are truthful prototype representations or visibly marked `Coming soon`                                                      | verified     |
+| Runtime safety boundaries    | Claude/Codex execution, MCP calls, Skill installation, and managed Git mutation require scoped validation and approval; Gemini runtime, graph loops, automatic user-branch merge, and project-root escape remain prohibited | verified     |
 
 ## Release Evidence
 
-- Frontend unit/component suite: 143 tests passed across 42 files. Coverage was 90.99% statements,
-  83.63% branches, 92.20% functions, and 92.60% lines.
-- E2E suite: 26 tests passed across desktop projects at 1280x720 and 1440x900, including persistent
-  Simplified Chinese selection and browser-clock checks that each of the six primary page
-  transitions completes in under 300 ms.
-- Rust suite: 6 tests passed, covering path confinement, bounded read-only Git behavior, binary
-  fallback, repository isolation, path identity, and async Git command dispatch.
+- Frontend unit/component suite: 173 tests passed across 50 files. Coverage was 87.95% statements,
+  80.72% branches, 87.82% functions, and 89.27% lines.
+- E2E suite: 30 tests passed across desktop projects at 1280x720 and 1440x900, including workflow
+  generation, MCP registration, target-size overflow checks, persistent Simplified Chinese, and
+  browser-clock checks for primary page transitions.
+- Rust suite: 32 tests passed, covering orchestration validation and reconciliation, Provider
+  parsing, permissions, SQLite migration and recovery, MCP and Skill validation, managed Git
+  worktrees, path confinement, and bounded Git reads.
 - NSIS build produced a current-user installer; the portable EXE launch probe passed.
 - The backup MP4 passed full decode and montage review.
 - The eight-slide PPTX passed slide-by-slide visual review with no observed clipping or overlap.

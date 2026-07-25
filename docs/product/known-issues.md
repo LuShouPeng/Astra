@@ -6,10 +6,16 @@
 - The installer is current-user NSIS only. MSI and managed deployment packages are not included.
 - macOS and Linux packages have not been produced or verified.
 
-## Prototype Runtime
+## Local Orchestration Runtime
 
-- Claude and Codex are deterministic mocks; Gemini is display-only. Native CLI discovery,
-  execution, and Session recovery are intentionally absent.
+- Claude and Codex require separately installed, authenticated CLIs. Gemini remains display-only.
+- Natural-language planning falls back to a deterministic offline draft when no planning Provider
+  is available.
+- Conditions intentionally use a bounded grammar: boolean literals or `<node>.succeeded` /
+  `<node>.failed`. Arbitrary script expressions and graph loops are rejected.
+- MCP tools run through explicit workflow nodes and per-call approvals. Legacy SSE is unsupported.
+- Provider resume restarts an interrupted node in its preserved worktree; transparent continuation
+  of every Provider-specific conversation protocol is not guaranteed.
 - Dark, Light, and System themes and the English/Simplified Chinese language selection are
   functional and persist locally. Additional languages are not included. System-startup
   integration remains marked Coming soon.
@@ -21,8 +27,10 @@
 
 ## Data And Git
 
-- Demo Sessions and diffs are frozen fixtures. Local projects provide read-only Git information but
-  are not associated with real Agent Sessions in this prototype.
+- Simulation Sessions and diffs remain available as frozen fixtures when native Providers are not
+  used.
+- Final integration requires a clean user worktree and the same named branch that was active when
+  the workflow run started.
 - Diff output is intentionally bounded, and binary files show metadata instead of a preview.
 - Project removal clears registry metadata only and never deletes the directory.
 

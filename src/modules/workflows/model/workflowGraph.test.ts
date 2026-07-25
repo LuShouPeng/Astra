@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkflowDefinition } from '../../../core/contracts/workflows';
-import { readyNodeIds, validateWorkflow } from './workflowGraph';
+import { readyNodeIds, skippedNodeIds, validateWorkflow } from './workflowGraph';
 
 function workflow(overrides: Partial<WorkflowDefinition> = {}): WorkflowDefinition {
   return {
@@ -73,5 +73,26 @@ describe('workflow graph', () => {
 
     expect(readyNodeIds(definition, { plan: 'failed' })).toEqual([]);
     expect(readyNodeIds(definition, { plan: 'skipped' })).toEqual([]);
+  });
+
+  it('selects one condition branch and skips the other', () => {
+    const definition = workflow({
+      edges: [
+        { id: 'yes', source: 'plan', target: 'approve', outcome: 'true' },
+        { id: 'no', source: 'plan', target: 'other', outcome: 'false' },
+      ],
+      nodes: [
+        ...workflow().nodes,
+        {
+          ...workflow().nodes[1],
+          id: 'other',
+          name: 'Other branch',
+        },
+      ],
+    });
+    const statuses = { plan: 'succeeded' as const };
+    const outcomes = { plan: true };
+    expect(readyNodeIds(definition, statuses, outcomes)).toEqual(['approve']);
+    expect(skippedNodeIds(definition, statuses, outcomes)).toEqual(['other']);
   });
 });

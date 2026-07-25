@@ -82,14 +82,40 @@ export function validateWorkflow(definition: WorkflowDefinition): WorkflowIssue[
 export function readyNodeIds(
   definition: WorkflowDefinition,
   statuses: Readonly<Record<WorkflowNodeId, NodeRunStatus>>,
+  conditionOutcomes: Readonly<Record<WorkflowNodeId, boolean>> = {},
 ): WorkflowNodeId[] {
   return definition.nodes
     .filter((node) => statuses[node.id] === undefined || statuses[node.id] === 'pending')
     .filter((node) => {
-      const dependencies = definition.edges
-        .filter((edge) => edge.target === node.id)
-        .map((edge) => edge.source);
-      return dependencies.every((dependency) => statuses[dependency] === 'succeeded');
+      const incoming = definition.edges.filter((edge) => edge.target === node.id);
+      return incoming.every((edge) => {
+        if (edge.outcome === 'true' || edge.outcome === 'false') {
+          const outcome = conditionOutcomes[edge.source];
+          if (outcome === undefined || outcome !== (edge.outcome === 'true')) return false;
+        }
+        return statuses[edge.source] === 'succeeded';
+      });
+    })
+    .map((node) => node.id);
+}
+
+export function skippedNodeIds(
+  definition: WorkflowDefinition,
+  statuses: Readonly<Record<WorkflowNodeId, NodeRunStatus>>,
+  conditionOutcomes: Readonly<Record<WorkflowNodeId, boolean>>,
+): WorkflowNodeId[] {
+  return definition.nodes
+    .filter((node) => statuses[node.id] === undefined || statuses[node.id] === 'pending')
+    .filter((node) => {
+      const incoming = definition.edges.filter((edge) => edge.target === node.id);
+      return (
+        incoming.length > 0 &&
+        incoming.every((edge) => {
+          if (edge.outcome !== 'true' && edge.outcome !== 'false') return false;
+          const outcome = conditionOutcomes[edge.source];
+          return outcome !== undefined && outcome !== (edge.outcome === 'true');
+        })
+      );
     })
     .map((node) => node.id);
 }

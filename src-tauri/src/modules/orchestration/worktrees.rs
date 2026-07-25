@@ -14,6 +14,7 @@ pub struct RunWorktree {
     pub id: String,
     pub branch: String,
     pub path: PathBuf,
+    pub base_branch: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -23,6 +24,13 @@ pub struct NodeWorktree {
     pub run_id: String,
     pub branch: String,
     pub path: PathBuf,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntegrationEvidence {
+    pub diff_stat: String,
+    pub commits: Vec<String>,
 }
 
 pub struct WorktreeManager {
@@ -99,7 +107,35 @@ impl WorktreeManager {
         let branch = format!("astra/run-{run_id}");
         let path = self.cache.join(run_id).join("integration");
         if path.exists() {
-            return Err("The run worktree already exists.".into());
+            let metadata = self.cache.join(run_id).join("run.json");
+            if let Ok(json) = fs::read_to_string(metadata) {
+                if let Ok(run) = serde_json::from_str::<RunWorktree>(&json) {
+                    return Ok(run);
+                }
+            }
+            let base_branch = require_success(
+                git(
+                    &self.repository,
+                    [OsString::from("branch"), OsString::from("--show-current")],
+                )?,
+                "The user branch could not be resolved.",
+            )?;
+            return Ok(RunWorktree {
+                id: run_id.into(),
+                branch,
+                path,
+                base_branch,
+            });
+        }
+        let base_branch = require_success(
+            git(
+                &self.repository,
+                [OsString::from("branch"), OsString::from("--show-current")],
+            )?,
+            "The user branch could not be resolved.",
+        )?;
+        if base_branch.is_empty() {
+            return Err("Workflow runs require a named user branch.".into());
         }
         fs::create_dir_all(path.parent().expect("run parent"))
             .map_err(|_| "The run worktree directory could not be created.".to_string())?;
@@ -117,11 +153,19 @@ impl WorktreeManager {
             )?,
             "The integration worktree could not be created.",
         )?;
-        Ok(RunWorktree {
+        let run = RunWorktree {
             id: run_id.into(),
             branch,
             path,
-        })
+            base_branch,
+        };
+        fs::write(
+            self.cache.join(run_id).join("run.json"),
+            serde_json::to_vec(&run)
+                .map_err(|_| "Run metadata could not be serialized.".to_string())?,
+        )
+        .map_err(|_| "Run metadata could not be saved.".to_string())?;
+        Ok(run)
     }
 
     pub fn prepare_node(&self, run: &RunWorktree, node_id: &str) -> Result<NodeWorktree, String> {
@@ -130,6 +174,14 @@ impl WorktreeManager {
         }
         let branch = format!("astra/node-{}-{node_id}", run.id);
         let path = self.cache.join(&run.id).join(format!("node-{node_id}"));
+        if path.exists() {
+            return Ok(NodeWorktree {
+                id: node_id.into(),
+                run_id: run.id.clone(),
+                branch,
+                path,
+            });
+        }
         require_success(
             git(
                 &self.repository,
@@ -239,6 +291,19 @@ impl WorktreeManager {
         if !status.is_empty() {
             return Err("The user worktree must be clean before final integration.".into());
         }
+        let current_branch = require_success(
+            git(
+                &self.repository,
+                [OsString::from("branch"), OsString::from("--show-current")],
+            )?,
+            "The current user branch could not be resolved.",
+        )?;
+        if current_branch != run.base_branch {
+            return Err(format!(
+                "Return to the original branch '{}' before final integration.",
+                run.base_branch
+            ));
+        }
         let message = format!("astra: merge workflow run {}", run.id);
         require_success(
             git(
@@ -257,6 +322,79 @@ impl WorktreeManager {
             )?,
             "The final integration conflicts with the user branch.",
         )?;
+        Ok(())
+    }
+
+    pub fn integration_evidence(&self, run: &RunWorktree) -> Result<IntegrationEvidence, String> {
+        let diff_stat = require_success(
+            git(
+                &self.repository,
+                [
+                    OsString::from("diff"),
+                    OsString::from("--stat"),
+                    OsString::from(format!("HEAD..{}", run.branch)),
+                ],
+            )?,
+            "The integration diff could not be inspected.",
+        )?;
+        let commits = require_success(
+            git(
+                &self.repository,
+                [
+                    OsString::from("log"),
+                    OsString::from("--max-count=100"),
+                    OsString::from("--format=%h %s"),
+                    OsString::from(format!("HEAD..{}", run.branch)),
+                ],
+            )?,
+            "The integration commits could not be inspected.",
+        )?
+        .lines()
+        .map(ToOwned::to_owned)
+        .collect();
+        Ok(IntegrationEvidence { diff_stat, commits })
+    }
+
+    pub fn cleanup_run(&self, run_id: &str, approved: bool) -> Result<(), String> {
+        if !approved || !valid_id(run_id) {
+            return Err("Worktree cleanup requires explicit approval.".into());
+        }
+        let run_root = self.cache.join(run_id);
+        if !run_root.exists() {
+            return Ok(());
+        }
+        let mut paths = fs::read_dir(&run_root)
+            .map_err(|_| "The run worktrees could not be inspected.".to_string())?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect::<Vec<_>>();
+        paths.sort_by_key(|path| path.file_name() == Some(std::ffi::OsStr::new("integration")));
+        for path in paths {
+            if !path.starts_with(&run_root) {
+                return Err("The worktree cleanup path is invalid.".into());
+            }
+            require_success(
+                git(
+                    &self.repository,
+                    [
+                        OsString::from("worktree"),
+                        OsString::from("remove"),
+                        OsString::from("--force"),
+                        path.as_os_str().to_owned(),
+                    ],
+                )?,
+                "A run worktree could not be removed.",
+            )?;
+        }
+        if run_root.starts_with(&self.cache) && run_root.exists() {
+            fs::remove_dir_all(run_root)
+                .map_err(|_| "The run worktree cache could not be cleared.".to_string())?;
+        }
+        let _ = git(
+            &self.repository,
+            [OsString::from("worktree"), OsString::from("prune")],
+        );
         Ok(())
     }
 }
@@ -325,4 +463,42 @@ pub async fn orchestration_merge_run(
     })
     .await
     .map_err(|_| "The final integration task stopped unexpectedly.".to_string())?
+}
+
+#[tauri::command]
+pub async fn orchestration_get_run_worktree(
+    app: AppHandle,
+    repository: String,
+    run_id: String,
+) -> Result<RunWorktree, String> {
+    tauri::async_runtime::spawn_blocking(move || manager(&app, &repository)?.prepare_run(&run_id))
+        .await
+        .map_err(|_| "The worktree recovery task stopped unexpectedly.".to_string())?
+}
+
+#[tauri::command]
+pub async fn orchestration_get_integration_evidence(
+    app: AppHandle,
+    repository: String,
+    run: RunWorktree,
+) -> Result<IntegrationEvidence, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        manager(&app, &repository)?.integration_evidence(&run)
+    })
+    .await
+    .map_err(|_| "The integration evidence task stopped unexpectedly.".to_string())?
+}
+
+#[tauri::command]
+pub async fn orchestration_cleanup_run_worktrees(
+    app: AppHandle,
+    repository: String,
+    run_id: String,
+    approved: bool,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        manager(&app, &repository)?.cleanup_run(&run_id, approved)
+    })
+    .await
+    .map_err(|_| "The worktree cleanup task stopped unexpectedly.".to_string())?
 }

@@ -134,3 +134,67 @@ pub fn parse_provider_line(provider: AgentProvider, line: &str) -> ProviderEvent
         text: line.into(),
     }
 }
+
+fn find_workflow(value: &Value) -> Option<Value> {
+    if value.get("nodes").is_some_and(Value::is_array)
+        && value.get("edges").is_some_and(Value::is_array)
+    {
+        return Some(value.clone());
+    }
+    match value {
+        Value::Object(object) => object.values().find_map(find_workflow),
+        Value::Array(values) => values.iter().find_map(find_workflow),
+        Value::String(text) => extract_workflow_json(text).ok(),
+        _ => None,
+    }
+}
+
+pub fn extract_workflow_json(output: &str) -> Result<Value, String> {
+    for line in output.lines() {
+        if let Ok(value) = serde_json::from_str::<Value>(line) {
+            if let Some(workflow) = find_workflow(&value) {
+                return Ok(workflow);
+            }
+        }
+    }
+    let bytes = output.as_bytes();
+    for start in bytes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, byte)| (*byte == b'{').then_some(index))
+    {
+        let mut depth = 0_i32;
+        let mut quoted = false;
+        let mut escaped = false;
+        for end in start..bytes.len() {
+            let byte = bytes[end];
+            if quoted {
+                if escaped {
+                    escaped = false;
+                } else if byte == b'\\' {
+                    escaped = true;
+                } else if byte == b'"' {
+                    quoted = false;
+                }
+                continue;
+            }
+            match byte {
+                b'"' => quoted = true,
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        if let Ok(value) = serde_json::from_slice::<Value>(&bytes[start..=end]) {
+                            if let Some(workflow) = find_workflow(&value) {
+                                return Ok(workflow);
+                            }
+                        }
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Err("The planning Provider did not return a workflow JSON object.".into())
+}

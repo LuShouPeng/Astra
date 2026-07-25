@@ -4,7 +4,8 @@ use std::{
 };
 
 use super::extensions::{
-    install_local_skill, validate_git_source, validate_mcp_config, McpServerInput,
+    install_local_skill, validate_git_source, validate_mcp_config, validate_mcp_tool_call,
+    McpServerInput,
 };
 
 fn temp(label: &str) -> std::path::PathBuf {
@@ -26,7 +27,8 @@ fn validates_stdio_and_streamable_http_without_accepting_legacy_sse() {
         command: None,
         args: vec![],
         url: Some("https://mcp.exa.ai/mcp".into()),
-        secret_ref: Some("astra/exa".into())
+        secret_ref: Some("astra/exa".into()),
+        secret_header: Some("x-api-key".into()),
     })
     .is_ok());
     assert!(validate_mcp_config(&McpServerInput {
@@ -36,7 +38,8 @@ fn validates_stdio_and_streamable_http_without_accepting_legacy_sse() {
         command: None,
         args: vec![],
         url: Some("https://example.test/sse".into()),
-        secret_ref: None
+        secret_ref: None,
+        secret_header: None,
     })
     .is_err());
 }
@@ -75,4 +78,14 @@ fn validates_https_git_sources_without_embedded_credentials() {
         Some("--upload-pack=bad")
     )
     .is_err());
+}
+
+#[test]
+fn validates_bounded_mcp_tool_calls() {
+    assert!(validate_mcp_tool_call("search", &serde_json::json!({"q": "astra"})).is_ok());
+    assert!(validate_mcp_tool_call("../search", &serde_json::json!({})).is_err());
+    assert!(validate_mcp_tool_call("search", &serde_json::json!(["not", "an", "object"])).is_err());
+    assert!(
+        validate_mcp_tool_call("search", &serde_json::json!({"q": "x".repeat(70_000)})).is_err()
+    );
 }

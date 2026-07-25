@@ -134,7 +134,7 @@ fn approval_and_cancellation_update_run_nodes_and_audit_events() {
     );
     assert_eq!(
         store.list_node_runs("run-decision").unwrap()[0].status,
-        "ready"
+        "pending"
     );
     store.cancel_run("run-decision").unwrap();
     assert_eq!(
@@ -146,4 +146,112 @@ fn approval_and_cancellation_update_run_nodes_and_audit_events() {
     assert_eq!(store.list_mcp_configs().unwrap()[0].id, "exa");
     store.delete_mcp_config("exa").unwrap();
     assert!(store.list_mcp_configs().unwrap().is_empty());
+}
+
+#[test]
+fn reconstructs_a_run_projection_with_runtime_evidence() {
+    let store = OrchestrationStore::in_memory().unwrap();
+    store
+        .save_run(&WorkflowRunRecord {
+            id: "run-projection".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_version: 2,
+            project_id: "project-1".into(),
+            status: "running".into(),
+            integration_branch: Some("astra/run-projection".into()),
+        })
+        .unwrap();
+    store
+        .save_node_run(&NodeRunRecord {
+            id: "run-projection-agent".into(),
+            run_id: "run-projection".into(),
+            node_id: "agent".into(),
+            status: "succeeded".into(),
+            attempt: 2,
+            provider: Some("codex".into()),
+            worktree_path: Some("C:/worktrees/agent".into()),
+        })
+        .unwrap();
+    store
+        .update_node_evidence(
+            "run-projection",
+            "agent",
+            Some("thread-1"),
+            Some(r#"{"commit":"abc123"}"#),
+            None,
+        )
+        .unwrap();
+    store
+        .append_event(
+            "run-projection",
+            r#"{"type":"node_output","message":"tests passed"}"#,
+        )
+        .unwrap();
+
+    let projection = store.get_run_projection("run-projection").unwrap().unwrap();
+    assert_eq!(projection.run.id, "run-projection");
+    assert_eq!(
+        projection.nodes[0].external_session_id.as_deref(),
+        Some("thread-1")
+    );
+    assert_eq!(
+        projection.nodes[0].output_json.as_deref(),
+        Some(r#"{"commit":"abc123"}"#)
+    );
+    assert_eq!(projection.events.len(), 1);
+}
+
+#[test]
+fn preserves_skill_versions_referenced_by_historical_runs() {
+    let store = OrchestrationStore::in_memory().unwrap();
+    store
+        .save_run(&WorkflowRunRecord {
+            id: "run-skill".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_version: 1,
+            project_id: "project-1".into(),
+            status: "queued".into(),
+            integration_branch: None,
+        })
+        .unwrap();
+    store
+        .save_skill_package(
+            "review-skill",
+            "1.0.0",
+            "abc123",
+            r#"{"name":"Review Skill"}"#,
+        )
+        .unwrap();
+    store
+        .snapshot_skill_refs("run-skill", &["review-skill".into()])
+        .unwrap();
+    store.uninstall_skill("review-skill", "abc123").unwrap();
+
+    assert_eq!(store.list_skill_packages(true).unwrap().len(), 1);
+    assert_eq!(store.list_run_skill_refs("run-skill").unwrap().len(), 1);
+}
+
+#[test]
+fn backs_up_a_legacy_database_before_transactional_migration() {
+    let path = std::env::temp_dir().join(format!(
+        "astra-orchestration-v1-{}.sqlite3",
+        std::process::id()
+    ));
+    let backup = path.with_extension("sqlite3.v1.backup");
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(&backup);
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection.pragma_update(None, "user_version", 1).unwrap();
+    connection
+        .execute_batch("CREATE TABLE legacy (id TEXT);")
+        .unwrap();
+    drop(connection);
+
+    assert_eq!(
+        OrchestrationStore::backup_legacy_database(&path).unwrap(),
+        Some(backup.clone())
+    );
+    assert!(backup.is_file());
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_file(backup);
 }

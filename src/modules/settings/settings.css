@@ -95,6 +95,49 @@
 .settings-row select:disabled {
   opacity: 0.7;
 }
+.settings-provider-heading,
+.settings-provider-row {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.settings-provider-heading > div,
+.settings-provider-row > span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.settings-provider-heading small,
+.settings-provider-row small {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+.settings-provider-input {
+  display: grid;
+  width: min(360px, 52%);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+}
+.settings-provider-input svg {
+  color: var(--color-accent-status);
+}
+.settings-provider-input input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
 .coming-soon-badge,
 .settings-value {
   flex: 0 0 auto;
@@ -222,6 +265,16 @@
   }
   .settings-row select {
     min-width: 112px;
+  }
+  .settings-provider-heading,
+  .settings-provider-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .settings-provider-heading .button,
+  .settings-provider-input {
+    width: 100%;
   }
   .settings-about dl > div {
     grid-template-columns: 1fr;

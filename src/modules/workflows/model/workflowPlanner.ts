@@ -1,4 +1,5 @@
 import type { WorkflowDefinition, WorkflowNode } from '../../../core/contracts/workflows';
+import { validateWorkflow } from './workflowGraph';
 
 function id(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -55,7 +56,7 @@ export function generateWorkflowDraft(projectId: string, goal: string): Workflow
   const condition: WorkflowNode = {
     ...baseNode('condition', 'Tests pass?', 390, 20),
     type: 'condition',
-    expression: 'tests.failed === 0',
+    expression: 'true',
   };
   const repair: WorkflowNode = {
     ...baseNode('agent', 'Diagnose failure', 390, 260),
@@ -79,4 +80,62 @@ export function generateWorkflowDraft(projectId: string, goal: string): Workflow
     { id: id('edge'), source: approval.id, target: complete.id },
   ];
   return draft;
+}
+
+export function finalizePlannedWorkflow(projectId: string, value: unknown): WorkflowDefinition {
+  if (!value || typeof value !== 'object') throw new Error('Planning Provider output is invalid.');
+  const planned = value as Partial<WorkflowDefinition>;
+  if (
+    typeof planned.name !== 'string' ||
+    !planned.name.trim() ||
+    !Array.isArray(planned.nodes) ||
+    planned.nodes.length === 0 ||
+    !Array.isArray(planned.edges)
+  ) {
+    throw new Error('Planning Provider output is invalid.');
+  }
+  const now = new Date().toISOString();
+  const workflow: WorkflowDefinition = {
+    ...planned,
+    id: id('workflow'),
+    name: planned.name.trim().slice(0, 120),
+    version: 1,
+    projectId,
+    createdAt: now,
+    updatedAt: now,
+    settings: {
+      maxConcurrency: Math.min(4, Math.max(1, planned.settings?.maxConcurrency ?? 2)),
+      defaultTimeoutSeconds: Math.max(1, planned.settings?.defaultTimeoutSeconds ?? 1800),
+      defaultRetries: Math.min(3, Math.max(0, planned.settings?.defaultRetries ?? 1)),
+    },
+    nodes: planned.nodes,
+    edges: planned.edges,
+  };
+  if (validateWorkflow(workflow).length > 0) {
+    throw new Error('Planning Provider returned an invalid DAG.');
+  }
+  return workflow;
+}
+
+export function instantiateWorkflowTemplate(
+  template: WorkflowDefinition,
+  projectId: string,
+): WorkflowDefinition {
+  const nodeIds = new Map(template.nodes.map((node) => [node.id, id(node.type)]));
+  const now = new Date().toISOString();
+  return {
+    ...structuredClone(template),
+    id: id('workflow'),
+    projectId,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+    nodes: template.nodes.map((node) => ({ ...structuredClone(node), id: nodeIds.get(node.id)! })),
+    edges: template.edges.map((edge) => ({
+      ...edge,
+      id: id('edge'),
+      source: nodeIds.get(edge.source)!,
+      target: nodeIds.get(edge.target)!,
+    })),
+  };
 }

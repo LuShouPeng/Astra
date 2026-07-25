@@ -1,16 +1,18 @@
 # Astra Nexus
 
-Astra Nexus is a local-first AI Coding Workbench prototype built with Tauri 2, React, TypeScript,
-and Rust. It brings projects, deterministic Agent Sessions, attention items, notifications,
-read-only Git inspection, and review decisions into one desktop control plane.
+Astra Nexus is a local-first AI Coding Workbench built with Tauri 2, React, TypeScript, and Rust.
+It brings projects, Agent workflows, attention items, notifications, managed Git integration, and
+review decisions into one desktop control plane.
 
 ## Prototype Boundary
 
-- Claude and Codex use deterministic local mocks. No Agent CLI is launched.
+- Claude and Codex can run through separately installed, authenticated CLIs; deterministic mocks
+  remain available for offline use and regression tests.
 - Gemini is display-only and has no runtime adapter.
-- Git operations are read-only. Review actions update prototype metadata only.
-- Project content is not uploaded, API keys are not collected, and file access is confined to a
-  registered project root.
+- Agent nodes use isolated managed Git worktrees. Final integration into the original user branch
+  requires explicit approval and a clean worktree.
+- MCP credentials use Windows Credential Manager. Astra does not collect Claude or Codex API keys,
+  and file access is confined to the registered project and managed application directories.
 
 ## Included Workflows
 
@@ -26,6 +28,10 @@ read-only Git inspection, and review decisions into one desktop control plane.
 - Three-step demo playback with pause, single-step, reset, and `0.5x` / `1x` / `2x` speeds.
 - Persistent English and Simplified Chinese interface language, including localized frozen demo
   content while preserving user-authored project and Session text.
+- Editable DAG workflows with Agent, MCP tool, approval, condition, and join nodes, plus natural
+  language planning and resumable local run monitoring.
+- MCP stdio/Streamable HTTP registration and a workflow-scoped Skill catalog with Git/local
+  installation, content-addressed caching, uninstall, and explicit Provider export.
 
 ## Requirements
 

@@ -1,4 +1,5 @@
-import { BellRing, Info, MonitorCog, Play } from 'lucide-react';
+import { BellRing, CheckCircle2, Info, MonitorCog, Play, Stethoscope } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { AppNotification, NotificationSettings } from '../../../core/contracts/notifications';
@@ -12,6 +13,19 @@ import {
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import { DemoControls } from '../../demo';
 import type { DesktopNotificationService } from '../../notifications';
+import {
+  loadProviderPreferences,
+  saveProviderPreferences,
+  type ProviderPreferences,
+} from '../../workflows/model/providerPreferences';
+
+interface ProviderStatus {
+  provider: 'claude' | 'codex';
+  available: boolean;
+  executablePath?: string;
+  version?: string;
+  reason?: string;
+}
 
 type SettingsTab = 'general' | 'notifications' | 'demo' | 'about';
 
@@ -32,6 +46,11 @@ export function SettingsPage({
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sendingTest, setSendingTest] = useState(false);
+  const [providerPaths, setProviderPaths] = useState<ProviderPreferences>(() =>
+    loadProviderPreferences(),
+  );
+  const [providerStatuses, setProviderStatuses] = useState<ProviderStatus[]>([]);
+  const [diagnosing, setDiagnosing] = useState(false);
   const tabs = [
     { id: 'general' as const, label: t('settings.tabs.general') },
     { id: 'notifications' as const, label: t('settings.tabs.notifications') },
@@ -83,6 +102,28 @@ export function SettingsPage({
       setError(t('settings.notificationError'));
     } finally {
       setSendingTest(false);
+    }
+  }
+
+  async function diagnoseProviders() {
+    saveProviderPreferences(providerPaths);
+    setDiagnosing(true);
+    setError(null);
+    try {
+      const statuses =
+        '__TAURI_INTERNALS__' in window
+          ? await invoke<ProviderStatus[]>('orchestration_discover_providers', {
+              input: loadProviderPreferences(),
+            })
+          : [
+              { provider: 'claude' as const, available: true, version: 'Simulation mode' },
+              { provider: 'codex' as const, available: true, version: 'Simulation mode' },
+            ];
+      setProviderStatuses(statuses);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setDiagnosing(false);
     }
   }
 
@@ -138,6 +179,65 @@ export function SettingsPage({
                 <option value="light">{t('settings.theme.light')}</option>
               </select>
             </div>
+            <div className="settings-provider-heading">
+              <div>
+                <strong>{language === 'zh-CN' ? 'Agent Provider' : 'Agent providers'}</strong>
+                <small>
+                  {language === 'zh-CN'
+                    ? '可选的手动路径优先于 PATH 自动探测。认证继续使用 CLI 现有登录状态。'
+                    : 'Optional manual paths override PATH discovery. Authentication continues to use the CLI login state.'}
+                </small>
+              </div>
+              <button
+                className="button button--secondary"
+                disabled={diagnosing}
+                onClick={() => void diagnoseProviders()}
+              >
+                <Stethoscope size={15} />
+                {diagnosing
+                  ? language === 'zh-CN'
+                    ? '诊断中'
+                    : 'Checking'
+                  : language === 'zh-CN'
+                    ? '运行诊断'
+                    : 'Run diagnostics'}
+              </button>
+            </div>
+            {(['claude', 'codex'] as const).map((provider) => {
+              const field = `${provider}Path` as const;
+              const status = providerStatuses.find((item) => item.provider === provider);
+              return (
+                <label className="settings-provider-row" key={provider}>
+                  <span>
+                    <strong>{provider === 'claude' ? 'Claude CLI' : 'Codex CLI'}</strong>
+                    <small>
+                      {status
+                        ? status.available
+                          ? status.version || status.executablePath
+                          : status.reason
+                        : language === 'zh-CN'
+                          ? '留空以自动探测'
+                          : 'Leave blank for automatic discovery'}
+                    </small>
+                  </span>
+                  <span className="settings-provider-input">
+                    {status?.available && <CheckCircle2 size={16} aria-hidden="true" />}
+                    <input
+                      aria-label={`${provider} executable path`}
+                      value={providerPaths[field] ?? ''}
+                      placeholder={
+                        provider === 'claude' ? 'C:\\...\\claude.exe' : 'C:\\...\\codex.exe'
+                      }
+                      onChange={(event) => {
+                        const next = { ...providerPaths, [field]: event.target.value };
+                        setProviderPaths(next);
+                        saveProviderPreferences(next);
+                      }}
+                    />
+                  </span>
+                </label>
+              );
+            })}
             <div className="settings-row">
               <div>
                 <strong>{t('settings.language.label')}</strong>

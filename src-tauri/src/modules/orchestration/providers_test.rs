@@ -1,4 +1,6 @@
-use super::providers::{build_launch_spec, parse_provider_line, AgentProvider, ProviderEvent};
+use super::providers::{
+    build_launch_spec, extract_workflow_json, parse_provider_line, AgentProvider, ProviderEvent,
+};
 use std::path::Path;
 
 #[test]
@@ -50,4 +52,12 @@ fn parses_provider_jsonl_and_preserves_unknown_lines_as_output() {
             text: "plain output".into()
         }
     );
+}
+
+#[test]
+fn extracts_a_schema_shaped_workflow_from_provider_envelopes() {
+    let output = r#"{"type":"result","result":"```json\n{\"name\":\"Plan\",\"nodes\":[],\"edges\":[]}\n```"}"#;
+    let value = extract_workflow_json(output).expect("workflow json");
+    assert_eq!(value["name"], "Plan");
+    assert!(extract_workflow_json(r#"{"message":"no graph"}"#).is_err());
 }

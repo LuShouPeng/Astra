@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createWorkflowDraft, generateWorkflowDraft } from './workflowPlanner';
+import {
+  createWorkflowDraft,
+  instantiateWorkflowTemplate,
+  finalizePlannedWorkflow,
+  generateWorkflowDraft,
+} from './workflowPlanner';
 
 describe('workflow planner', () => {
   it('creates an editable valid default DAG', () => {
@@ -13,5 +18,41 @@ describe('workflow planner', () => {
     expect(draft.description).toContain('Implement authentication');
     expect(draft.nodes.some((node) => node.type === 'condition')).toBe(true);
     expect(draft.nodes.every((node) => node.position.x >= 0)).toBe(true);
+  });
+});
+
+describe('planning Provider output', () => {
+  it('adds trusted project metadata and accepts a valid editable DAG', () => {
+    const workflow = finalizePlannedWorkflow('project-1', {
+      name: 'Planned',
+      nodes: [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          name: 'Implement',
+          position: { x: 80, y: 120 },
+          provider: 'auto',
+          prompt: 'Implement it',
+          skillIds: [],
+          mcpServerIds: [],
+        },
+      ],
+      edges: [],
+    });
+    expect(workflow.projectId).toBe('project-1');
+    expect(workflow.id).toMatch(/^workflow-/);
+  });
+
+  it('rejects malformed Provider output', () => {
+    expect(() => finalizePlannedWorkflow('project-1', { nodes: [], edges: [] })).toThrow();
+  });
+
+  it('instantiates templates with fresh graph identifiers', () => {
+    const template = createWorkflowDraft('template-project', 'Template');
+    const instance = instantiateWorkflowTemplate(template, 'project-2');
+    expect(instance.projectId).toBe('project-2');
+    expect(instance.id).not.toBe(template.id);
+    expect(instance.nodes[0]?.id).not.toBe(template.nodes[0]?.id);
+    expect(instance.edges[0]?.source).toBe(instance.nodes[0]?.id);
   });
 });

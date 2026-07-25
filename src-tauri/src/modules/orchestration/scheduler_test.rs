@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use super::scheduler::{
-    next_nodes, retry_decision, validate_definition, Edge, JoinStrategy, Node, NodeKind,
-    NodeStatus, RetryDecision, Workflow,
+    next_nodes, reconcile, retry_decision, validate_definition, Edge, JoinStrategy, Node, NodeKind,
+    NodeStatus, RetryDecision, RunDisposition, Workflow,
 };
 
 fn workflow(nodes: Vec<Node>, edges: Vec<Edge>) -> Workflow {
@@ -87,4 +87,60 @@ fn honors_concurrency_and_bounded_retries() {
     assert_eq!(retry_decision(1, 1), RetryDecision::Retry { attempt: 2 });
     assert_eq!(retry_decision(2, 1), RetryDecision::Fail);
     assert_eq!(retry_decision(4, 99), RetryDecision::Fail);
+}
+
+#[test]
+fn reconciliation_skips_unselected_condition_branches_and_completes() {
+    let graph = workflow(
+        vec![
+            node("gate", NodeKind::Condition),
+            node("yes", NodeKind::Agent),
+            node("no", NodeKind::Agent),
+            node("join", NodeKind::Join(JoinStrategy::All)),
+        ],
+        vec![
+            edge("gate", "yes", Some(true)),
+            edge("gate", "no", Some(false)),
+            edge("yes", "join", None),
+            edge("no", "join", None),
+        ],
+    );
+    let statuses = HashMap::from([
+        ("gate".into(), NodeStatus::Succeeded),
+        ("yes".into(), NodeStatus::Succeeded),
+        ("no".into(), NodeStatus::Pending),
+        ("join".into(), NodeStatus::Pending),
+    ]);
+    let outcomes = HashMap::from([("gate".into(), true)]);
+
+    let first = reconcile(&graph, &statuses, &outcomes);
+    assert_eq!(first.skipped, vec!["no"]);
+    assert_eq!(first.ready, vec!["join"]);
+    assert_eq!(first.disposition, RunDisposition::Running);
+
+    let terminal = HashMap::from([
+        ("gate".into(), NodeStatus::Succeeded),
+        ("yes".into(), NodeStatus::Succeeded),
+        ("no".into(), NodeStatus::Skipped),
+        ("join".into(), NodeStatus::Succeeded),
+    ]);
+    assert_eq!(
+        reconcile(&graph, &terminal, &outcomes).disposition,
+        RunDisposition::Completed
+    );
+}
+
+#[test]
+fn reconciliation_reports_waiting_and_failed_runs() {
+    let graph = workflow(vec![node("approval", NodeKind::Approval)], vec![]);
+    let waiting = HashMap::from([("approval".into(), NodeStatus::WaitingApproval)]);
+    assert_eq!(
+        reconcile(&graph, &waiting, &HashMap::new()).disposition,
+        RunDisposition::Waiting
+    );
+    let failed = HashMap::from([("approval".into(), NodeStatus::Failed)]);
+    assert_eq!(
+        reconcile(&graph, &failed, &HashMap::new()).disposition,
+        RunDisposition::Failed
+    );
 }

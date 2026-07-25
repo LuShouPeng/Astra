@@ -1,6 +1,7 @@
 node_modules
 dist
 coverage
+.claude
 src-tauri/target
 src-tauri/gen
 pnpm-lock.yaml

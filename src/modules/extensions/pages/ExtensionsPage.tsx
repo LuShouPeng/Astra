@@ -7,6 +7,7 @@ import {
   Search,
   Server,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -49,9 +50,11 @@ interface RuntimeMcpConfig {
   args: string[];
   url?: string;
   secretRef?: string;
+  secretHeader?: string;
 }
 
 function runtimeInput(server: McpServerConfig): RuntimeMcpConfig {
+  const credential = Object.entries(server.secretRefs)[0];
   return {
     id: server.id,
     name: server.name,
@@ -59,7 +62,20 @@ function runtimeInput(server: McpServerConfig): RuntimeMcpConfig {
     command: server.command,
     args: server.args ?? [],
     url: server.url,
-    secretRef: server.secretRefs.authorization,
+    secretRef: credential?.[1],
+    secretHeader: credential?.[0],
+  };
+}
+function runtimeSkillInput(skill: SkillPackage) {
+  return {
+    id: skill.id,
+    name: skill.name,
+    version: skill.version,
+    description: skill.description,
+    source: skill.source,
+    sourceUrl: skill.sourceUrl,
+    sourceRevision: skill.sourceRevision,
+    contentHash: skill.contentHash,
   };
 }
 const copy = {
@@ -75,6 +91,7 @@ const copy = {
     command: 'Command',
     args: 'Arguments',
     credential: 'Credential reference',
+    credentialHeader: 'Credential header',
     save: 'Save server',
     cancel: 'Cancel',
     test: 'Test connection',
@@ -87,6 +104,11 @@ const copy = {
     search: 'Search extensions',
     empty: 'No MCP servers registered',
     legacy: 'Legacy SSE is not supported. Use Streamable HTTP.',
+    installedSkills: 'Installed Skills',
+    export: 'Export to Provider',
+    exportTarget: 'Provider Skills directory',
+    overwrite: 'Replace an existing package',
+    exportConfirm: 'Confirm export',
   },
   'zh-CN': {
     title: '扩展',
@@ -100,6 +122,7 @@ const copy = {
     command: '命令',
     args: '参数',
     credential: '凭据引用',
+    credentialHeader: '凭据 Header',
     save: '保存服务器',
     cancel: '取消',
     test: '测试连接',
@@ -112,6 +135,11 @@ const copy = {
     search: '搜索扩展',
     empty: '尚未注册 MCP 服务器',
     legacy: '不支持旧版 SSE，请使用 Streamable HTTP。',
+    installedSkills: '已安装 Skills',
+    export: '导出到 Provider',
+    exportTarget: 'Provider Skills 目录',
+    overwrite: '覆盖已有包',
+    exportConfirm: '确认导出',
   },
 } as const;
 
@@ -129,6 +157,9 @@ export function ExtensionsPage() {
   const [manualSource, setManualSource] = useState('');
   const [revision, setRevision] = useState('');
   const [installing, setInstalling] = useState(false);
+  const [exporting, setExporting] = useState<SkillPackage>();
+  const [exportTarget, setExportTarget] = useState('');
+  const [overwrite, setOverwrite] = useState(false);
   const [form, setForm] = useState({
     name: '',
     transport: 'streamable_http' as 'stdio' | 'streamable_http',
@@ -136,6 +167,7 @@ export function ExtensionsPage() {
     command: '',
     args: '',
     credential: '',
+    credentialHeader: 'authorization',
     secret: '',
   });
   const installed = useMemo(() => new Set(skills.map((skill) => skill.id)), [skills]);
@@ -151,13 +183,26 @@ export function ExtensionsPage() {
             command: item.command,
             args: item.args,
             url: item.url,
-            secretRefs: item.secretRef ? { authorization: item.secretRef } : {},
+            secretRefs: item.secretRef
+              ? { [item.secretHeader || 'authorization']: item.secretRef }
+              : {},
             enabled: true,
             source: 'manual',
           })),
         );
       })
       .catch(() => setError('MCP registry could not be loaded.'));
+    void invoke<ReturnType<typeof runtimeSkillInput>[]>('orchestration_list_skills')
+      .then((items) => {
+        const next = items.map((item): SkillPackage => ({
+          ...item,
+          installPath: `astra-cache/${item.contentHash}`,
+          installedAt: new Date().toISOString(),
+        }));
+        setSkills(next);
+        localStorage.setItem(SKILL_KEY, JSON.stringify(next));
+      })
+      .catch(() => setError('Skill registry could not be loaded.'));
   }, []);
   async function saveServer() {
     if (
@@ -172,7 +217,9 @@ export function ExtensionsPage() {
       url: form.transport === 'streamable_http' ? form.url : undefined,
       command: form.transport === 'stdio' ? form.command : undefined,
       args: form.transport === 'stdio' ? form.args.split(/\s+/).filter(Boolean) : undefined,
-      secretRefs: form.credential ? { authorization: form.credential } : {},
+      secretRefs: form.credential
+        ? { [form.credentialHeader.trim() || 'authorization']: form.credential }
+        : {},
       enabled: true,
       source: 'manual',
     };
@@ -216,7 +263,7 @@ export function ExtensionsPage() {
         '__TAURI_INTERNALS__' in window
           ? await invoke<{ contentHash: string; installPath: string }>(
               'orchestration_install_git_skill',
-              { sourceUrl: item.sourceUrl, revision: null },
+              { sourceUrl: item.sourceUrl, revision: null, approved: true },
             )
           : {
               contentHash: `sha256:${item.id.padEnd(64, '0').slice(0, 64)}`,
@@ -234,6 +281,9 @@ export function ExtensionsPage() {
         installedAt: new Date().toISOString(),
       };
       const next = [pkg, ...skills.filter((skill) => skill.id !== pkg.id)];
+      if ('__TAURI_INTERNALS__' in window) {
+        await invoke('orchestration_register_skill', { input: runtimeSkillInput(pkg) });
+      }
       setSkills(next);
       localStorage.setItem(SKILL_KEY, JSON.stringify(next));
     } catch (reason) {
@@ -253,8 +303,12 @@ export function ExtensionsPage() {
           ? await invoke<{ contentHash: string; installPath: string }>(
               isGit ? 'orchestration_install_git_skill' : 'orchestration_install_local_skill',
               isGit
-                ? { sourceUrl: manualSource.trim(), revision: revision.trim() || null }
-                : { sourcePath: manualSource.trim() },
+                ? {
+                    sourceUrl: manualSource.trim(),
+                    revision: revision.trim() || null,
+                    approved: true,
+                  }
+                : { sourcePath: manualSource.trim(), approved: true },
             )
           : {
               contentHash: `sha256:${crypto.randomUUID().replaceAll('-', '').padEnd(64, '0').slice(0, 64)}`,
@@ -279,10 +333,49 @@ export function ExtensionsPage() {
         installedAt: new Date().toISOString(),
       };
       const next = [pkg, ...skills];
+      if ('__TAURI_INTERNALS__' in window) {
+        await invoke('orchestration_register_skill', { input: runtimeSkillInput(pkg) });
+      }
       setSkills(next);
       localStorage.setItem(SKILL_KEY, JSON.stringify(next));
       setManualSource('');
       setRevision('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setInstalling(false);
+    }
+  }
+  async function uninstallSkill(skill: SkillPackage) {
+    if ('__TAURI_INTERNALS__' in window) {
+      await invoke('orchestration_uninstall_skill', {
+        id: skill.id,
+        contentHash: skill.contentHash,
+      });
+    }
+    const next = skills.filter(
+      (item) => item.id !== skill.id || item.contentHash !== skill.contentHash,
+    );
+    setSkills(next);
+    localStorage.setItem(SKILL_KEY, JSON.stringify(next));
+  }
+  async function exportSkill() {
+    if (!exporting || !exportTarget.trim()) return;
+    setInstalling(true);
+    setError('');
+    try {
+      if ('__TAURI_INTERNALS__' in window) {
+        await invoke('orchestration_export_skill', {
+          id: exporting.id,
+          contentHash: exporting.contentHash,
+          targetDirectory: exportTarget.trim(),
+          overwrite,
+          approved: true,
+        });
+      }
+      setExporting(undefined);
+      setExportTarget('');
+      setOverwrite(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -415,6 +508,38 @@ export function ExtensionsPage() {
               {installing ? 'Installing...' : c.install}
             </button>
           </form>
+          {skills.length > 0 && (
+            <>
+              <h2 className="extension-heading">{c.installedSkills}</h2>
+              <div className="extension-list skill-installed-list">
+                {skills.map((skill) => (
+                  <article key={`${skill.id}-${skill.contentHash}`}>
+                    <span className="extension-icon">
+                      <Blocks size={18} />
+                    </span>
+                    <div>
+                      <strong>{skill.name}</strong>
+                      <small>
+                        {skill.version} · {skill.contentHash.slice(0, 12)}
+                      </small>
+                    </div>
+                    <code>{skill.source}</code>
+                    <button className="button button--compact" onClick={() => setExporting(skill)}>
+                      <Upload size={14} />
+                      {c.export}
+                    </button>
+                    <button
+                      className="icon-button"
+                      aria-label={`${c.remove} ${skill.name}`}
+                      onClick={() => void uninstallSkill(skill)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
           <h2 className="extension-heading">{c.catalog}</h2>
           <div className="skill-catalog">
             {filtered.map((item) => (
@@ -511,6 +636,14 @@ export function ExtensionsPage() {
               </>
             )}
             <label>
+              {c.credentialHeader}
+              <input
+                value={form.credentialHeader}
+                onChange={(e) => setForm({ ...form, credentialHeader: e.target.value })}
+                placeholder="authorization or x-api-key"
+              />
+            </label>
+            <label>
               {c.credential}
               <input
                 value={form.credential}
@@ -536,6 +669,62 @@ export function ExtensionsPage() {
                 {c.cancel}
               </button>
               <button className="button button--primary">{c.save}</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {exporting && (
+        <div className="dialog-backdrop" role="presentation">
+          <form
+            className="extension-dialog"
+            aria-label={c.export}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void exportSkill();
+            }}
+          >
+            <button
+              type="button"
+              className="icon-button extension-dialog__close"
+              aria-label={c.cancel}
+              onClick={() => setExporting(undefined)}
+            >
+              <X size={16} />
+            </button>
+            <h2>{c.export}</h2>
+            <p>
+              {exporting.name} · {exporting.version}
+            </p>
+            <label>
+              {c.exportTarget}
+              <input
+                value={exportTarget}
+                onChange={(event) => setExportTarget(event.target.value)}
+                placeholder="C:\\Users\\you\\.provider\\skills"
+              />
+            </label>
+            <label className="extension-checkbox">
+              <input
+                type="checkbox"
+                checked={overwrite}
+                onChange={(event) => setOverwrite(event.target.checked)}
+              />
+              {c.overwrite}
+            </label>
+            <div>
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setExporting(undefined)}
+              >
+                {c.cancel}
+              </button>
+              <button
+                className="button button--primary"
+                disabled={!exportTarget.trim() || installing}
+              >
+                {c.exportConfirm}
+              </button>
             </div>
           </form>
         </div>

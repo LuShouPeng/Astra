@@ -3,10 +3,14 @@ use std::{path::Path, sync::Mutex};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+use super::scheduler::{retry_decision, RetryDecision};
+
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("Orchestration data could not be accessed.")]
     Database(#[from] rusqlite::Error),
+    #[error("Orchestration migration backup could not be created.")]
+    Io(#[from] std::io::Error),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -16,6 +20,14 @@ pub struct WorkflowRecord {
     pub version: i64,
     pub name: String,
     pub project_id: String,
+    pub definition_json: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowTemplateRecord {
+    pub id: String,
+    pub name: String,
     pub definition_json: String,
 }
 
@@ -61,11 +73,79 @@ pub struct McpConfigRecord {
     pub config_json: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeRunProjection {
+    #[serde(flatten)]
+    pub node: NodeRunRecord,
+    pub external_session_id: Option<String>,
+    pub output_json: Option<String>,
+    pub error: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunEventRecord {
+    pub sequence: i64,
+    pub event_json: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunProjection {
+    pub run: WorkflowRunRecord,
+    pub nodes: Vec<NodeRunProjection>,
+    pub approvals: Vec<ApprovalRecord>,
+    pub events: Vec<RunEventRecord>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactRecord {
+    pub id: String,
+    pub run_id: String,
+    pub node_run_id: Option<String>,
+    pub kind: String,
+    pub path: String,
+    pub content_hash: String,
+    pub byte_length: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillPackageRecord {
+    pub id: String,
+    pub version: String,
+    pub content_hash: String,
+    pub package_json: String,
+    pub uninstalled: bool,
+}
+
 pub struct OrchestrationStore {
     connection: Mutex<Connection>,
 }
 
 impl OrchestrationStore {
+    pub fn backup_legacy_database(path: &Path) -> Result<Option<std::path::PathBuf>, StoreError> {
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let connection = Connection::open(path)?;
+        let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        drop(connection);
+        if version >= 2 {
+            return Ok(None);
+        }
+        let backup = path.with_extension("sqlite3.v1.backup");
+        if !backup.exists() {
+            std::fs::copy(path, &backup)?;
+        }
+        Ok(Some(backup))
+    }
+
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let connection = Connection::open(path)?;
         Self::from_connection(connection)
@@ -98,6 +178,15 @@ impl OrchestrationStore {
                 project_id TEXT NOT NULL,
                 status TEXT NOT NULL,
                 integration_branch TEXT,
+                started_at TEXT,
+                completed_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS workflow_templates (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                definition_json TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -109,6 +198,11 @@ impl OrchestrationStore {
                 attempt INTEGER NOT NULL,
                 provider TEXT,
                 worktree_path TEXT,
+                external_session_id TEXT,
+                output_json TEXT,
+                error TEXT,
+                started_at TEXT,
+                completed_at TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -139,16 +233,62 @@ impl OrchestrationStore {
                 version TEXT NOT NULL,
                 content_hash TEXT NOT NULL,
                 package_json TEXT NOT NULL,
+                uninstalled_at TEXT,
                 installed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id, version, content_hash)
             );
-            PRAGMA user_version = 1;
+            CREATE TABLE IF NOT EXISTS run_artifacts (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+                node_run_id TEXT REFERENCES node_runs(id) ON DELETE SET NULL,
+                kind TEXT NOT NULL,
+                path TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                byte_length INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS workflow_run_skills (
+                run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+                skill_id TEXT NOT NULL,
+                version TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                PRIMARY KEY (run_id, skill_id, version, content_hash),
+                FOREIGN KEY (skill_id, version, content_hash)
+                    REFERENCES skill_packages(id, version, content_hash)
+            );
             ",
         )?;
+        Self::ensure_column(&transaction, "workflow_runs", "started_at", "TEXT")?;
+        Self::ensure_column(&transaction, "workflow_runs", "completed_at", "TEXT")?;
+        Self::ensure_column(&transaction, "node_runs", "external_session_id", "TEXT")?;
+        Self::ensure_column(&transaction, "node_runs", "output_json", "TEXT")?;
+        Self::ensure_column(&transaction, "node_runs", "error", "TEXT")?;
+        Self::ensure_column(&transaction, "node_runs", "started_at", "TEXT")?;
+        Self::ensure_column(&transaction, "node_runs", "completed_at", "TEXT")?;
+        Self::ensure_column(&transaction, "skill_packages", "uninstalled_at", "TEXT")?;
+        transaction.pragma_update(None, "user_version", 2)?;
         transaction.commit()?;
         Ok(Self {
             connection: Mutex::new(connection),
         })
+    }
+
+    fn ensure_column(
+        connection: &Connection,
+        table: &str,
+        column: &str,
+        data_type: &str,
+    ) -> Result<(), StoreError> {
+        let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if !columns.iter().any(|name| name == column) {
+            connection.execute_batch(&format!(
+                "ALTER TABLE {table} ADD COLUMN {column} {data_type}"
+            ))?;
+        }
+        Ok(())
     }
 
     fn connection(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -195,6 +335,62 @@ impl OrchestrationStore {
                     name: row.get(2)?,
                     project_id: row.get(3)?,
                     definition_json: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(records)
+    }
+
+    pub fn get_workflow(
+        &self,
+        id: &str,
+        version: i64,
+    ) -> Result<Option<WorkflowRecord>, StoreError> {
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT id, version, name, project_id, definition_json
+                 FROM workflows WHERE id = ?1 AND version = ?2",
+                params![id, version],
+                |row| {
+                    Ok(WorkflowRecord {
+                        id: row.get(0)?,
+                        version: row.get(1)?,
+                        name: row.get(2)?,
+                        project_id: row.get(3)?,
+                        definition_json: row.get(4)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn save_template(
+        &self,
+        id: &str,
+        name: &str,
+        definition_json: &str,
+    ) -> Result<(), StoreError> {
+        self.connection().execute(
+            "INSERT INTO workflow_templates (id, name, definition_json) VALUES (?1, ?2, ?3)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name,
+               definition_json = excluded.definition_json, updated_at = CURRENT_TIMESTAMP",
+            params![id, name, definition_json],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_templates(&self) -> Result<Vec<WorkflowTemplateRecord>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT id, name, definition_json FROM workflow_templates ORDER BY name COLLATE NOCASE",
+        )?;
+        let records = statement
+            .query_map([], |row| {
+                Ok(WorkflowTemplateRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    definition_json: row.get(2)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -352,7 +548,7 @@ impl OrchestrationStore {
         transaction.execute(
             "UPDATE node_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP
              WHERE id = (SELECT id FROM node_runs WHERE run_id = ?1 ORDER BY created_at, id LIMIT 1)",
-            params![run_id, if approved { "ready" } else { "cancelled" }],
+            params![run_id, if approved { "pending" } else { "cancelled" }],
         )?;
         transaction.execute(
             "UPDATE workflow_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
@@ -373,12 +569,78 @@ impl OrchestrationStore {
         Ok(())
     }
 
+    pub fn decide_approval(&self, approval_id: &str, approved: bool) -> Result<(), StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        let target = transaction
+            .query_row(
+                "SELECT run_id, node_run_id FROM approvals WHERE id = ?1 AND status = 'pending'",
+                [approval_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        let Some((run_id, node_run_id)) = target else {
+            return Ok(());
+        };
+        transaction.execute(
+            "UPDATE approvals SET status = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            params![approval_id, if approved { "approved" } else { "rejected" }],
+        )?;
+        transaction.execute(
+            "UPDATE node_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            params![node_run_id, if approved { "pending" } else { "cancelled" }],
+        )?;
+        let event = serde_json::json!({
+            "type": "approval_decided",
+            "approvalId": approval_id,
+            "decision": if approved { "approved" } else { "rejected" }
+        });
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![run_id, event.to_string()],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn set_run_status(&self, run_id: &str, status: &str) -> Result<(), StoreError> {
+        self.connection().execute(
+            "UPDATE workflow_runs SET status = ?2,
+             started_at = CASE WHEN ?2 = 'running' THEN COALESCE(started_at, CURRENT_TIMESTAMP) ELSE started_at END,
+             completed_at = CASE WHEN ?2 IN ('completed','failed','cancelled') THEN CURRENT_TIMESTAMP ELSE completed_at END,
+             updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            params![run_id, status],
+        )?;
+        Ok(())
+    }
+
     pub fn cancel_run(&self, run_id: &str) -> Result<(), StoreError> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
         transaction.execute("UPDATE node_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND status IN ('pending','ready','running','waiting_approval')", [run_id])?;
         transaction.execute("UPDATE workflow_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?1", [run_id])?;
         transaction.execute("INSERT INTO run_events (run_id, event_json) VALUES (?1, '{\"type\":\"run_cancelled\"}')", [run_id])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn resume_run(&self, run_id: &str) -> Result<(), StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "UPDATE node_runs SET status = 'pending', completed_at = NULL,
+             updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND status = 'interrupted'",
+            [run_id],
+        )?;
+        transaction.execute(
+            "UPDATE workflow_runs SET status = 'queued', completed_at = NULL,
+             updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND status = 'interrupted'",
+            [run_id],
+        )?;
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, '{\"type\":\"run_resumed\"}')",
+            [run_id],
+        )?;
         transaction.commit()?;
         Ok(())
     }
@@ -391,10 +653,147 @@ impl OrchestrationStore {
         worktree_path: Option<&str>,
     ) -> Result<(), StoreError> {
         self.connection().execute(
-            "UPDATE node_runs SET status = ?3, worktree_path = COALESCE(?4, worktree_path), updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND node_id = ?2",
+            "UPDATE node_runs SET status = ?3, worktree_path = COALESCE(?4, worktree_path),
+             started_at = CASE WHEN ?3 = 'running' THEN COALESCE(started_at, CURRENT_TIMESTAMP) ELSE started_at END,
+             completed_at = CASE WHEN ?3 IN ('succeeded','failed','skipped','cancelled') THEN CURRENT_TIMESTAMP ELSE completed_at END,
+             updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND node_id = ?2",
             params![run_id, node_id, status, worktree_path],
         )?;
         Ok(())
+    }
+
+    pub fn update_node_evidence(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        external_session_id: Option<&str>,
+        output_json: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.connection().execute(
+            "UPDATE node_runs SET external_session_id = COALESCE(?3, external_session_id),
+             output_json = COALESCE(?4, output_json), error = ?5, updated_at = CURRENT_TIMESTAMP
+             WHERE run_id = ?1 AND node_id = ?2",
+            params![run_id, node_id, external_session_id, output_json, error],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_run_projection(&self, id: &str) -> Result<Option<RunProjection>, StoreError> {
+        let Some(run) = self.get_run(id)? else {
+            return Ok(None);
+        };
+        let connection = self.connection();
+        let mut node_statement = connection.prepare(
+            "SELECT id, run_id, node_id, status, attempt, provider, worktree_path,
+                    external_session_id, output_json, error, started_at, completed_at
+             FROM node_runs WHERE run_id = ?1 ORDER BY created_at, id",
+        )?;
+        let nodes = node_statement
+            .query_map([id], |row| {
+                Ok(NodeRunProjection {
+                    node: NodeRunRecord {
+                        id: row.get(0)?,
+                        run_id: row.get(1)?,
+                        node_id: row.get(2)?,
+                        status: row.get(3)?,
+                        attempt: row.get(4)?,
+                        provider: row.get(5)?,
+                        worktree_path: row.get(6)?,
+                    },
+                    external_session_id: row.get(7)?,
+                    output_json: row.get(8)?,
+                    error: row.get(9)?,
+                    started_at: row.get(10)?,
+                    completed_at: row.get(11)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut event_statement = connection.prepare(
+            "SELECT sequence, event_json, created_at FROM run_events WHERE run_id = ?1 ORDER BY sequence",
+        )?;
+        let events = event_statement
+            .query_map([id], |row| {
+                Ok(RunEventRecord {
+                    sequence: row.get(0)?,
+                    event_json: row.get(1)?,
+                    created_at: row.get(2)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(event_statement);
+        drop(node_statement);
+        drop(connection);
+        Ok(Some(RunProjection {
+            run,
+            nodes,
+            approvals: self.list_approvals(id)?,
+            events,
+        }))
+    }
+
+    pub fn save_artifact(&self, artifact: &ArtifactRecord) -> Result<(), StoreError> {
+        self.connection().execute(
+            "INSERT INTO run_artifacts
+               (id, run_id, node_run_id, kind, path, content_hash, byte_length)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET path = excluded.path,
+               content_hash = excluded.content_hash, byte_length = excluded.byte_length",
+            params![
+                artifact.id,
+                artifact.run_id,
+                artifact.node_run_id,
+                artifact.kind,
+                artifact.path,
+                artifact.content_hash,
+                artifact.byte_length
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn retry_node(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        max_retries: u8,
+    ) -> Result<bool, StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        let attempt = transaction
+            .query_row(
+                "SELECT attempt FROM node_runs WHERE run_id = ?1 AND node_id = ?2",
+                params![run_id, node_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        let Some(attempt) = attempt else {
+            return Ok(false);
+        };
+        let decision = retry_decision(attempt.clamp(0, u8::MAX as i64) as u8, max_retries);
+        let retry = matches!(decision, RetryDecision::Retry { .. });
+        if let RetryDecision::Retry {
+            attempt: next_attempt,
+        } = decision
+        {
+            transaction.execute(
+                "UPDATE node_runs SET status = 'pending', attempt = ?3,
+                 error = NULL, completed_at = NULL, updated_at = CURRENT_TIMESTAMP
+                 WHERE run_id = ?1 AND node_id = ?2",
+                params![run_id, node_id, next_attempt],
+            )?;
+            let event = serde_json::json!({
+                "type": "node_retry_scheduled",
+                "nodeId": node_id,
+                "attempt": next_attempt
+            });
+            transaction.execute(
+                "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+                params![run_id, event.to_string()],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(retry)
     }
 
     pub fn save_mcp_config(&self, id: &str, config_json: &str) -> Result<(), StoreError> {
@@ -415,6 +814,113 @@ impl OrchestrationStore {
                 Ok(McpConfigRecord {
                     id: row.get(0)?,
                     config_json: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(records)
+    }
+
+    pub fn get_mcp_config(&self, id: &str) -> Result<Option<McpConfigRecord>, StoreError> {
+        Ok(self
+            .connection()
+            .query_row(
+                "SELECT id, config_json FROM mcp_servers WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok(McpConfigRecord {
+                        id: row.get(0)?,
+                        config_json: row.get(1)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn save_skill_package(
+        &self,
+        id: &str,
+        version: &str,
+        content_hash: &str,
+        package_json: &str,
+    ) -> Result<(), StoreError> {
+        self.connection().execute(
+            "INSERT INTO skill_packages (id, version, content_hash, package_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id, version, content_hash) DO UPDATE SET
+               package_json = excluded.package_json, uninstalled_at = NULL",
+            params![id, version, content_hash, package_json],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_skill_packages(
+        &self,
+        include_uninstalled: bool,
+    ) -> Result<Vec<SkillPackageRecord>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT id, version, content_hash, package_json, uninstalled_at IS NOT NULL
+             FROM skill_packages WHERE ?1 OR uninstalled_at IS NULL
+             ORDER BY installed_at DESC, id",
+        )?;
+        let records = statement
+            .query_map([include_uninstalled], |row| {
+                Ok(SkillPackageRecord {
+                    id: row.get(0)?,
+                    version: row.get(1)?,
+                    content_hash: row.get(2)?,
+                    package_json: row.get(3)?,
+                    uninstalled: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(records)
+    }
+
+    pub fn uninstall_skill(&self, id: &str, content_hash: &str) -> Result<(), StoreError> {
+        self.connection().execute(
+            "UPDATE skill_packages SET uninstalled_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND content_hash = ?2",
+            params![id, content_hash],
+        )?;
+        Ok(())
+    }
+
+    pub fn snapshot_skill_refs(
+        &self,
+        run_id: &str,
+        skill_ids: &[String],
+    ) -> Result<(), StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        for skill_id in skill_ids {
+            transaction.execute(
+                "INSERT OR IGNORE INTO workflow_run_skills (run_id, skill_id, version, content_hash)
+                 SELECT ?1, id, version, content_hash FROM skill_packages
+                 WHERE id = ?2 AND uninstalled_at IS NULL ORDER BY installed_at DESC LIMIT 1",
+                params![run_id, skill_id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn list_run_skill_refs(&self, run_id: &str) -> Result<Vec<SkillPackageRecord>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT p.id, p.version, p.content_hash, p.package_json, p.uninstalled_at IS NOT NULL
+             FROM workflow_run_skills r JOIN skill_packages p
+               ON p.id = r.skill_id AND p.version = r.version AND p.content_hash = r.content_hash
+             WHERE r.run_id = ?1 ORDER BY p.id",
+        )?;
+        let records = statement
+            .query_map([run_id], |row| {
+                Ok(SkillPackageRecord {
+                    id: row.get(0)?,
+                    version: row.get(1)?,
+                    content_hash: row.get(2)?,
+                    package_json: row.get(3)?,
+                    uninstalled: row.get(4)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

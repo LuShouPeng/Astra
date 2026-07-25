@@ -33,23 +33,29 @@ Status values: `verified`, `excluded`, and `resolved-conflict`.
 | Automatic Agent status changes                      | Three-step deterministic playback with speed control                   | verified |
 | Notification rules                                  | Persisted Waiting, Completed, and Failed settings                      | verified |
 
+## Orchestration Additions
+
+| Added capability             | Enforcement evidence                                                | Status   |
+| ---------------------------- | ------------------------------------------------------------------- | -------- |
+| Claude and Codex CLI control | Structured process adapters, discovery, timeout, cancellation, logs | verified |
+| Interrupted run recovery     | SQLite v2 recovery projection and preserved managed worktrees       | verified |
+| Git worktree automation      | Per-run integration branch, per-node worktree, approved final merge | verified |
+| Multi-Agent workflow runtime | Validated DAG scheduler with conditions, joins, retries, approvals  | verified |
+| MCP and Skill platform       | stdio/HTTP MCP nodes, credential vault, validated Skill cache       | verified |
+| Node-drag workflow editing   | XYFlow canvas, inspector, validation, undo/redo, auto-layout        | verified |
+
 ## Explicit Exclusions
 
-| Excluded capability                       | Enforcement evidence                                           | Status   |
-| ----------------------------------------- | -------------------------------------------------------------- | -------- |
-| Real Claude, Codex, or Gemini CLI control | No process/CLI adapter exists; providers are mock/display-only | excluded |
-| Native CLI Session recovery               | No recovery interface or command exists                        | excluded |
-| PTY terminal                              | No PTY dependency or native command exists                     | excluded |
-| Git worktree automation                   | No worktree command exists                                     | excluded |
-| Multi-Agent workflow runtime              | No workflow executor exists                                    | excluded |
-| MCP server integration                    | No product runtime integration exists                          | excluded |
-| Skill marketplace                         | No product runtime integration exists                          | excluded |
-| Node-drag workflow                        | No workflow surface exists                                     | excluded |
-| Automatic Commit or Merge                 | Native Git surface is read-only                                | excluded |
-| Cloud account or sync                     | No network/account dependency exists                           | excluded |
-| Team collaboration                        | No remote collaboration model exists                           | excluded |
-| Real token/cost accounting                | No provider runtime or billing model exists                    | excluded |
-| Full editor, plugins, remote Agent host   | System-open is used instead; no such runtime exists            | excluded |
+| Excluded capability                 | Enforcement evidence                                                | Status   |
+| ----------------------------------- | ------------------------------------------------------------------- | -------- |
+| Gemini CLI runtime                  | Gemini remains display-only                                         | excluded |
+| PTY terminal                        | Provider execution uses structured non-interactive protocols        | excluded |
+| Arbitrary graph loops               | DAG validation rejects cycles                                       | excluded |
+| Automatic user-branch merge         | Final integration always requires a separate explicit approval      | excluded |
+| Cloud account or sync               | No Astra cloud account or synchronization service exists            | excluded |
+| Team collaboration                  | No remote collaboration model exists                                | excluded |
+| Unattended schedule or Git triggers | Runs start through an explicit local user action                    | excluded |
+| Full editor or remote Agent host    | System-open is used instead; execution remains on the local machine | excluded |
 
 Gemini remains visible in frozen data because the PRD requires three provider identities. Its
 capability is `displayOnly: true`; all Session mutation controls are disabled for Gemini.

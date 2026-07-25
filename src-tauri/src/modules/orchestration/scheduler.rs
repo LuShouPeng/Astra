@@ -56,6 +56,22 @@ pub enum RetryDecision {
     Fail,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RunDisposition {
+    Running,
+    Waiting,
+    Completed,
+    Failed,
+    Interrupted,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Reconciliation {
+    pub ready: Vec<String>,
+    pub skipped: Vec<String>,
+    pub disposition: RunDisposition,
+}
+
 pub fn validate_definition(workflow: &Workflow) -> Result<(), String> {
     if workflow.nodes.is_empty() {
         return Err("Workflow must contain at least one node.".into());
@@ -182,5 +198,66 @@ pub fn retry_decision(attempt: u8, configured_retries: u8) -> RetryDecision {
         }
     } else {
         RetryDecision::Fail
+    }
+}
+
+pub fn reconcile(
+    workflow: &Workflow,
+    statuses: &HashMap<String, NodeStatus>,
+    condition_outcomes: &HashMap<String, bool>,
+) -> Reconciliation {
+    let skipped = workflow
+        .nodes
+        .iter()
+        .filter(|node| matches!(statuses.get(&node.id), None | Some(NodeStatus::Pending)))
+        .filter(|node| {
+            let incoming = workflow
+                .edges
+                .iter()
+                .filter(|edge| edge.target == node.id)
+                .collect::<Vec<_>>();
+            !incoming.is_empty()
+                && incoming.iter().all(|edge| {
+                    edge.outcome.is_some()
+                        && condition_outcomes.contains_key(&edge.source)
+                        && !edge_is_selected(edge, condition_outcomes)
+                })
+        })
+        .map(|node| node.id.clone())
+        .collect::<Vec<_>>();
+    let mut effective = statuses.clone();
+    for node_id in &skipped {
+        effective.insert(node_id.clone(), NodeStatus::Skipped);
+    }
+    let ready = next_nodes(workflow, &effective, condition_outcomes);
+    let disposition = if effective
+        .values()
+        .any(|status| *status == NodeStatus::Failed)
+    {
+        RunDisposition::Failed
+    } else if effective
+        .values()
+        .any(|status| *status == NodeStatus::Interrupted)
+    {
+        RunDisposition::Interrupted
+    } else if effective
+        .values()
+        .any(|status| *status == NodeStatus::WaitingApproval)
+    {
+        RunDisposition::Waiting
+    } else if workflow.nodes.iter().all(|node| {
+        matches!(
+            effective.get(&node.id),
+            Some(NodeStatus::Succeeded | NodeStatus::Skipped | NodeStatus::Cancelled)
+        )
+    }) {
+        RunDisposition::Completed
+    } else {
+        RunDisposition::Running
+    };
+    Reconciliation {
+        ready,
+        skipped,
+        disposition,
     }
 }
