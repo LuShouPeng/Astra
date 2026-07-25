@@ -31,3 +31,46 @@ export interface FileDiffReadModel {
   binary: boolean;
   truncated: boolean;
 }
+
+// Git Write Operations
+export interface GitCommitRequest {
+  message: string;
+  authorName?: string;
+  authorEmail?: string;
+  filePaths?: string[]; // If undefined, commit all changes
+}
+
+export interface GitCommitResult {
+  commitId: string;
+  branch: string;
+}
+
+export interface GitCheckoutRequest {
+  branchName: string;
+  createNew: boolean;
+}
+
+export interface GitMergeRequest {
+  branchName: string;
+}
+
+export interface GitMergeResult {
+  success: boolean;
+  conflicts: string[];
+}
+
+export interface GitResetRequest {
+  commitId?: string; // If undefined, reset to HEAD
+  resetType: 'soft' | 'mixed' | 'hard';
+}
+
+export interface GitWorktreeCreateRequest {
+  name: string;
+  branchName?: string;
+}
+
+export interface GitWorktreeInfo {
+  name: string;
+  path: string;
+  branch?: string;
+}

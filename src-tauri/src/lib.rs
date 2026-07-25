@@ -67,7 +67,14 @@ pub fn run() {
             modules::project::project_git_changes,
             modules::project::project_file_diff,
             modules::project::system_open_directory,
-            modules::project::system_open_file
+            modules::project::system_open_file,
+            modules::project::git_commit,
+            modules::project::git_checkout,
+            modules::project::git_merge,
+            modules::project::git_reset,
+            modules::project::git_worktree_list,
+            modules::project::git_worktree_create,
+            modules::project::git_worktree_remove
         ])
         .run(tauri::generate_context!())
         .expect("error while running Astra Nexus");

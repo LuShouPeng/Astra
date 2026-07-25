@@ -1,5 +1,8 @@
-use git2::{Delta, DiffFormat, DiffOptions, Patch, Repository, StatusOptions};
-use serde::Serialize;
+use git2::{
+    BranchType, Delta, DiffFormat, DiffOptions, IndexAddOption, Oid, Patch, Repository,
+    ResetType, Signature, StatusOptions,
+};
+use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use tauri_plugin_opener::OpenerExt;
@@ -388,6 +391,635 @@ pub fn system_open_file(
                 "The selected file could not be opened with the system application.",
             )
         })
+}
+
+// ============================================================================
+// Git Write Operations
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitRequest {
+    message: String,
+    author_name: Option<String>,
+    author_email: Option<String>,
+    file_paths: Option<Vec<String>>, // If None, commit all changes
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitResult {
+    commit_id: String,
+    branch: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCheckoutRequest {
+    branch_name: String,
+    create_new: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitMergeRequest {
+    branch_name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitMergeResult {
+    success: bool,
+    conflicts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitResetRequest {
+    commit_id: Option<String>, // If None, reset to HEAD
+    reset_type: String,        // "soft", "mixed", "hard"
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitWorktreeCreateRequest {
+    name: String,
+    branch_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitWorktreeInfo {
+    name: String,
+    path: String,
+    branch: Option<String>,
+}
+
+fn get_signature<'a>(
+    repository: &'a Repository,
+    author_name: Option<&'a str>,
+    author_email: Option<&'a str>,
+) -> Result<Signature<'a>, ProjectError> {
+    if let (Some(name), Some(email)) = (author_name, author_email) {
+        return Signature::now(name, email).map_err(|_| {
+            ProjectError::new("INVALID_SIGNATURE", "Invalid author name or email provided.")
+        });
+    }
+
+    repository.signature().map_err(|_| {
+        ProjectError::new(
+            "GIT_CONFIG_ERROR",
+            "Git user name or email not configured. Please configure git user.name and user.email.",
+        )
+    })
+}
+
+fn git_commit_impl(root: &Path, request: GitCommitRequest) -> Result<GitCommitResult, ProjectError> {
+    let repository = open_repository(root)?;
+    let mut index = repository.index().map_err(|_| {
+        ProjectError::new("GIT_UNAVAILABLE", "Could not access git index.")
+    })?;
+
+    // Stage files
+    if let Some(file_paths) = &request.file_paths {
+        // Stage specific files
+        for path in file_paths {
+            let relative = Path::new(path);
+            validate_relative_path(root, path)?;
+            index.add_path(relative).map_err(|_| {
+                ProjectError::new(
+                    "GIT_ADD_FAILED",
+                    format!("Could not stage file: {}", path),
+                )
+            })?;
+        }
+    } else {
+        // Stage all changes (similar to git add -A)
+        index
+            .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
+            .map_err(|_| {
+                ProjectError::new("GIT_ADD_FAILED", "Could not stage changes.")
+            })?;
+        index.update_all(["*"].iter(), None).map_err(|_| {
+            ProjectError::new("GIT_ADD_FAILED", "Could not update staged changes.")
+        })?;
+    }
+
+    index.write().map_err(|_| {
+        ProjectError::new("GIT_ADD_FAILED", "Could not write git index.")
+    })?;
+
+    let tree_id = index.write_tree().map_err(|_| {
+        ProjectError::new("GIT_COMMIT_FAILED", "Could not create tree from index.")
+    })?;
+
+    let tree = repository.find_tree(tree_id).map_err(|_| {
+        ProjectError::new("GIT_COMMIT_FAILED", "Could not find tree object.")
+    })?;
+
+    let signature = get_signature(
+        &repository,
+        request.author_name.as_deref(),
+        request.author_email.as_deref(),
+    )?;
+
+    let head = repository.head().map_err(|_| {
+        ProjectError::new("GIT_COMMIT_FAILED", "Could not get HEAD reference.")
+    })?;
+
+    let parent_commit = head.peel_to_commit().map_err(|_| {
+        ProjectError::new("GIT_COMMIT_FAILED", "Could not find parent commit.")
+    })?;
+
+    let commit_id = repository
+        .commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            &request.message,
+            &tree,
+            &[&parent_commit],
+        )
+        .map_err(|_| {
+            ProjectError::new("GIT_COMMIT_FAILED", "Could not create commit.")
+        })?;
+
+    let branch = head
+        .shorthand()
+        .ok_or_else(|| ProjectError::new("GIT_COMMIT_FAILED", "Could not determine branch name."))?
+        .to_string();
+
+    Ok(GitCommitResult {
+        commit_id: commit_id.to_string(),
+        branch,
+    })
+}
+
+fn git_checkout_impl(root: &Path, request: GitCheckoutRequest) -> Result<(), ProjectError> {
+    let repository = open_repository(root)?;
+
+    if request.create_new {
+        // Create new branch
+        let head = repository.head().map_err(|_| {
+            ProjectError::new("GIT_CHECKOUT_FAILED", "Could not get HEAD reference.")
+        })?;
+
+        let target_commit = head.peel_to_commit().map_err(|_| {
+            ProjectError::new("GIT_CHECKOUT_FAILED", "Could not find target commit.")
+        })?;
+
+        repository
+            .branch(&request.branch_name, &target_commit, false)
+            .map_err(|_| {
+                ProjectError::new(
+                    "GIT_CHECKOUT_FAILED",
+                    format!("Could not create branch: {}", request.branch_name),
+                )
+            })?;
+    }
+
+    // Checkout the branch
+    let (object, reference) = repository
+        .revparse_ext(&request.branch_name)
+        .map_err(|_| {
+            ProjectError::new(
+                "GIT_CHECKOUT_FAILED",
+                format!("Could not find branch: {}", request.branch_name),
+            )
+        })?;
+
+    repository
+        .checkout_tree(&object, None)
+        .map_err(|_| ProjectError::new("GIT_CHECKOUT_FAILED", "Could not checkout tree."))?;
+
+    if let Some(reference) = reference {
+        repository
+            .set_head(reference.name().ok_or_else(|| {
+                ProjectError::new("GIT_CHECKOUT_FAILED", "Invalid reference name.")
+            })?)
+            .map_err(|_| {
+                ProjectError::new("GIT_CHECKOUT_FAILED", "Could not set HEAD reference.")
+            })?;
+    } else {
+        repository
+            .set_head_detached(object.id())
+            .map_err(|_| ProjectError::new("GIT_CHECKOUT_FAILED", "Could not detach HEAD."))?;
+    }
+
+    Ok(())
+}
+
+fn git_merge_impl(root: &Path, request: GitMergeRequest) -> Result<GitMergeResult, ProjectError> {
+    let repository = open_repository(root)?;
+
+    // Find the branch to merge
+    let branch = repository
+        .find_branch(&request.branch_name, BranchType::Local)
+        .map_err(|_| {
+            ProjectError::new(
+                "GIT_MERGE_FAILED",
+                format!("Could not find branch: {}", request.branch_name),
+            )
+        })?;
+
+    let branch_commit = branch.get().peel_to_commit().map_err(|_| {
+        ProjectError::new("GIT_MERGE_FAILED", "Could not find branch commit.")
+    })?;
+
+    let head = repository.head().map_err(|_| {
+        ProjectError::new("GIT_MERGE_FAILED", "Could not get HEAD reference.")
+    })?;
+
+    let head_commit = head.peel_to_commit().map_err(|_| {
+        ProjectError::new("GIT_MERGE_FAILED", "Could not find HEAD commit.")
+    })?;
+
+    let annotated_commit = repository
+        .find_annotated_commit(branch_commit.id())
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not resolve branch commit."))?;
+
+    // Perform the merge analysis
+    let analysis = repository
+        .merge_analysis(&[&annotated_commit])
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not analyze merge."))?;
+
+    if analysis.0.is_up_to_date() {
+        return Ok(GitMergeResult {
+            success: true,
+            conflicts: vec![],
+        });
+    }
+
+    if analysis.0.is_fast_forward() {
+        // Fast-forward merge
+        let refname = head.name().ok_or_else(|| {
+            ProjectError::new("GIT_MERGE_FAILED", "Could not get HEAD reference name.")
+        })?;
+
+        repository
+            .reference(
+                refname,
+                branch_commit.id(),
+                true,
+                &format!("merge {}: Fast-forward", request.branch_name),
+            )
+            .map_err(|_| {
+                ProjectError::new("GIT_MERGE_FAILED", "Could not update HEAD reference.")
+            })?;
+
+        repository
+            .checkout_head(Some(git2::build::CheckoutBuilder::default().force()))
+            .map_err(|_| {
+                ProjectError::new("GIT_MERGE_FAILED", "Could not checkout HEAD after merge.")
+            })?;
+
+        return Ok(GitMergeResult {
+            success: true,
+            conflicts: vec![],
+        });
+    }
+
+    // Normal merge
+    let mut index = repository.index().map_err(|_| {
+        ProjectError::new("GIT_MERGE_FAILED", "Could not access git index.")
+    })?;
+
+    repository
+        .merge_commits(&head_commit, &branch_commit, None)
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not merge commits."))?;
+
+    // Check for conflicts
+    if index.has_conflicts() {
+        let conflicts = index
+            .conflicts()
+            .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not read conflicts."))?
+            .filter_map(|conflict| conflict.ok())
+            .filter_map(|conflict| {
+                conflict
+                    .our
+                    .and_then(|entry| String::from_utf8(entry.path.clone()).ok())
+            })
+            .collect();
+
+        return Ok(GitMergeResult {
+            success: false,
+            conflicts,
+        });
+    }
+
+    // Complete the merge with a commit
+    let tree_id = index.write_tree().map_err(|_| {
+        ProjectError::new("GIT_MERGE_FAILED", "Could not write tree after merge.")
+    })?;
+
+    let tree = repository.find_tree(tree_id).map_err(|_| {
+        ProjectError::new("GIT_MERGE_FAILED", "Could not find tree after merge.")
+    })?;
+
+    let signature = repository.signature().map_err(|_| {
+        ProjectError::new(
+            "GIT_CONFIG_ERROR",
+            "Git user not configured for merge commit.",
+        )
+    })?;
+
+    repository
+        .commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            &format!("Merge branch '{}'", request.branch_name),
+            &tree,
+            &[&head_commit, &branch_commit],
+        )
+        .map_err(|_| ProjectError::new("GIT_MERGE_FAILED", "Could not create merge commit."))?;
+
+    Ok(GitMergeResult {
+        success: true,
+        conflicts: vec![],
+    })
+}
+
+fn git_reset_impl(root: &Path, request: GitResetRequest) -> Result<(), ProjectError> {
+    let repository = open_repository(root)?;
+
+    let reset_type = match request.reset_type.as_str() {
+        "soft" => ResetType::Soft,
+        "mixed" => ResetType::Mixed,
+        "hard" => ResetType::Hard,
+        _ => {
+            return Err(ProjectError::new(
+                "INVALID_RESET_TYPE",
+                "Reset type must be 'soft', 'mixed', or 'hard'.",
+            ))
+        }
+    };
+
+    let target_oid = if let Some(commit_id) = request.commit_id {
+        Oid::from_str(&commit_id).map_err(|_| {
+            ProjectError::new("INVALID_COMMIT_ID", "Invalid commit ID provided.")
+        })?
+    } else {
+        repository
+            .head()
+            .map_err(|_| ProjectError::new("GIT_RESET_FAILED", "Could not get HEAD reference."))?
+            .target()
+            .ok_or_else(|| ProjectError::new("GIT_RESET_FAILED", "Could not get HEAD target."))?
+    };
+
+    let target_commit = repository.find_commit(target_oid).map_err(|_| {
+        ProjectError::new("GIT_RESET_FAILED", "Could not find target commit.")
+    })?;
+
+    repository
+        .reset(target_commit.as_object(), reset_type, None)
+        .map_err(|_| ProjectError::new("GIT_RESET_FAILED", "Could not perform reset."))?;
+
+    Ok(())
+}
+
+fn git_worktree_list_impl(root: &Path) -> Result<Vec<GitWorktreeInfo>, ProjectError> {
+    let repository = open_repository(root)?;
+
+    let worktrees = repository.worktrees().map_err(|_| {
+        ProjectError::new("GIT_WORKTREE_FAILED", "Could not list worktrees.")
+    })?;
+
+    let mut result = Vec::new();
+    for name in worktrees.iter().flatten() {
+        if let Ok(worktree) = repository.find_worktree(name) {
+            let path = worktree
+                .path()
+                .to_string_lossy()
+                .to_string();
+
+            // Try to get the branch name for this worktree
+            let branch = if let Ok(wt_repo) = Repository::open(worktree.path()) {
+                wt_repo
+                    .head()
+                    .ok()
+                    .and_then(|head| head.shorthand().map(str::to_owned))
+            } else {
+                None
+            };
+
+            result.push(GitWorktreeInfo {
+                name: name.to_string(),
+                path,
+                branch,
+            });
+        }
+    }
+
+    Ok(result)
+}
+
+fn git_worktree_create_impl(
+    root: &Path,
+    request: GitWorktreeCreateRequest,
+) -> Result<GitWorktreeInfo, ProjectError> {
+    let repository = open_repository(root)?;
+
+    // Create worktree path
+    let worktree_path = root.join(".worktrees").join(&request.name);
+    if worktree_path.exists() {
+        return Err(ProjectError::new(
+            "GIT_WORKTREE_FAILED",
+            "Worktree with this name already exists.",
+        ));
+    }
+
+    std::fs::create_dir_all(&worktree_path).map_err(|_| {
+        ProjectError::new("GIT_WORKTREE_FAILED", "Could not create worktree directory.")
+    })?;
+
+    let branch_name = request
+        .branch_name
+        .clone()
+        .unwrap_or_else(|| request.name.clone());
+
+    // Resolve the branch reference to attach the worktree to, if it exists.
+    let branch_ref = repository
+        .find_reference(&format!("refs/heads/{}", branch_name))
+        .ok();
+
+    let mut add_options = git2::WorktreeAddOptions::new();
+    if let Some(ref reference) = branch_ref {
+        add_options.reference(Some(reference));
+    }
+
+    // Create the worktree
+    repository
+        .worktree(&request.name, &worktree_path, Some(&add_options))
+        .map_err(|e| {
+            ProjectError::new(
+                "GIT_WORKTREE_FAILED",
+                format!("Could not create worktree: {}", e),
+            )
+        })?;
+
+    Ok(GitWorktreeInfo {
+        name: request.name,
+        path: worktree_path.to_string_lossy().to_string(),
+        branch: Some(branch_name.to_string()),
+    })
+}
+
+fn git_worktree_remove_impl(root: &Path, name: String) -> Result<(), ProjectError> {
+    let repository = open_repository(root)?;
+
+    let worktree = repository.find_worktree(&name).map_err(|_| {
+        ProjectError::new(
+            "GIT_WORKTREE_FAILED",
+            format!("Worktree '{}' not found.", name),
+        )
+    })?;
+
+    // Remove the worktree directory
+    let worktree_path = worktree.path();
+    if worktree_path.exists() {
+        std::fs::remove_dir_all(worktree_path).map_err(|_| {
+            ProjectError::new(
+                "GIT_WORKTREE_FAILED",
+                "Could not remove worktree directory.",
+            )
+        })?;
+    }
+
+    // Prune the worktree from git
+    worktree.prune(None).map_err(|_| {
+        ProjectError::new("GIT_WORKTREE_FAILED", "Could not prune worktree.")
+    })?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Tauri Commands for Git Write Operations
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_commit(
+    root_path: String,
+    request: GitCommitRequest,
+) -> Result<GitCommitResult, ProjectError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        git_commit_impl(&canonical, request)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "Git commit failed because the background task stopped.",
+        )
+    })?
+}
+
+#[tauri::command]
+pub async fn git_checkout(
+    root_path: String,
+    request: GitCheckoutRequest,
+) -> Result<(), ProjectError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        git_checkout_impl(&canonical, request)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "Git checkout failed because the background task stopped.",
+        )
+    })?
+}
+
+#[tauri::command]
+pub async fn git_merge(
+    root_path: String,
+    request: GitMergeRequest,
+) -> Result<GitMergeResult, ProjectError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        git_merge_impl(&canonical, request)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "Git merge failed because the background task stopped.",
+        )
+    })?
+}
+
+#[tauri::command]
+pub async fn git_reset(root_path: String, request: GitResetRequest) -> Result<(), ProjectError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        git_reset_impl(&canonical, request)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "Git reset failed because the background task stopped.",
+        )
+    })?
+}
+
+#[tauri::command]
+pub async fn git_worktree_list(root_path: String) -> Result<Vec<GitWorktreeInfo>, ProjectError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        git_worktree_list_impl(&canonical)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "List worktrees failed because the background task stopped.",
+        )
+    })?
+}
+
+#[tauri::command]
+pub async fn git_worktree_create(
+    root_path: String,
+    request: GitWorktreeCreateRequest,
+) -> Result<GitWorktreeInfo, ProjectError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        git_worktree_create_impl(&canonical, request)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "Create worktree failed because the background task stopped.",
+        )
+    })?
+}
+
+#[tauri::command]
+pub async fn git_worktree_remove(root_path: String, name: String) -> Result<(), ProjectError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = safe_directory(Path::new(&root_path))
+            .map_err(|message| ProjectError::new("INVALID_PROJECT_ROOT", message))?;
+        git_worktree_remove_impl(&canonical, name)
+    })
+    .await
+    .map_err(|_| {
+        ProjectError::new(
+            "GIT_TASK_FAILED",
+            "Remove worktree failed because the background task stopped.",
+        )
+    })?
 }
 
 #[cfg(test)]
