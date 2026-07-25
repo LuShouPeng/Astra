@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AgentProvider } from '../../../core/contracts/agents';
 import type { Project, ProjectGitSummary } from '../../../core/contracts/projects';
 import type { SessionId } from '../../../core/contracts/sessions';
-import type { LiveSessionService } from '../../sessions/services/liveSessionService';
+import type { LiveSessionService } from '../../sessions';
 
 export interface ProjectNativeAdapter {
   gitSummary(rootPath: string): Promise<ProjectGitSummary>;

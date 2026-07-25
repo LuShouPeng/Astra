@@ -7,14 +7,14 @@
 
 将原型从「确定性 Mock」升级为「真实 Agent 运行」，覆盖六项能力：
 
-| # | 能力 | 说明 |
-|---|------|------|
-| 1 | Claude CLI 接入 | 启动真实 `claude` 子进程，双向流式交互 |
-| 2 | Codex CLI 接入 | 启动真实 `codex` 子进程，复用运行时框架 |
-| 3 | Gemini CLI、运行时和适配器 | 统一运行时抽象 + 三个 Provider 适配器 |
-| 4 | Agent 能力发现 | 运行时探测 CLI 是否安装、版本、可执行性 |
-| 5 | 真实 Session 创建/执行/停止/恢复 | Session 绑定真实进程与磁盘持久化的元数据 |
-| 6 | 本地项目与真实 Session 关联 | 本地项目目录作为 Agent 工作目录，双向关联 |
+| #   | 能力                             | 说明                                      |
+| --- | -------------------------------- | ----------------------------------------- |
+| 1   | Claude CLI 接入                  | 启动真实 `claude` 子进程，双向流式交互    |
+| 2   | Codex CLI 接入                   | 启动真实 `codex` 子进程，复用运行时框架   |
+| 3   | Gemini CLI、运行时和适配器       | 统一运行时抽象 + 三个 Provider 适配器     |
+| 4   | Agent 能力发现                   | 运行时探测 CLI 是否安装、版本、可执行性   |
+| 5   | 真实 Session 创建/执行/停止/恢复 | Session 绑定真实进程与磁盘持久化的元数据  |
+| 6   | 本地项目与真实 Session 关联      | 本地项目目录作为 Agent 工作目录，双向关联 |
 
 ### 设计原则
 
@@ -66,20 +66,21 @@ src-tauri/Cargo.toml                     Rust 依赖
 ### 能力 3、4 优先：运行时抽象 + 能力发现（地基）
 
 **契约新增** `src/core/contracts/agents.ts`：
+
 ```typescript
 export interface ProviderCapability {
   provider: AgentProvider;
   label: string;
-  runtimeAvailable: boolean;   // 改为运行时探测结果
+  runtimeAvailable: boolean; // 改为运行时探测结果
   displayOnly: boolean;
-  version?: string;            // 新增：探测到的版本
-  executablePath?: string;     // 新增：解析到的可执行文件
-  discoveredAt?: string;       // 新增：探测时间
+  version?: string; // 新增：探测到的版本
+  executablePath?: string; // 新增：解析到的可执行文件
+  discoveredAt?: string; // 新增：探测时间
 }
 
 export interface AgentLaunchConfig {
   provider: AgentProvider;
-  workingDirectory: string;    // 必须是已注册的本地项目根
+  workingDirectory: string; // 必须是已注册的本地项目根
   prompt: string;
   sessionId: string;
 }
@@ -91,6 +92,7 @@ export type AgentStreamEvent =
 ```
 
 **后端新增** `src-tauri/src/modules/agent_capability.rs`：
+
 - `discover_agent_capabilities()`：对 `claude/codex/gemini` 逐一执行 `which`（跨平台用 `std::process::Command` + `--version`），返回 `HashMap<provider, capability>`。
 - 用 `tauri::async_runtime::spawn_blocking` 避免阻塞。
 
@@ -103,6 +105,7 @@ export type AgentStreamEvent =
 ### 能力 1、2、3：CLI 接入与适配器
 
 **后端新增** `src-tauri/src/modules/agent_runtime.rs`（核心）：
+
 ```rust
 // 进程注册表：sessionId -> Child handle + 状态
 struct AgentRegistry { procs: Mutex<HashMap<String, AgentHandle>> }
@@ -112,12 +115,14 @@ struct AgentRegistry { procs: Mutex<HashMap<String, AgentHandle>> }
 #[tauri::command] agent_stop(session_id, state) -> Result<(), AgentError>
 #[tauri::command] agent_list_running(state) -> Vec<String>
 ```
+
 - 用 `std::process::Command` / `tokio::process::Command` 启动，`stdin/stdout/stderr` 全 piped。
 - 独立线程读 stdout/stderr，每行通过 `app.emit("agent://stream/{sessionId}", AgentStreamEvent)` 推给前端。
 - `workingDirectory` 先过 `safe_directory()`。
 - provider → 命令映射集中在一个函数（claude/codex/gemini 只是 argv 不同），这就是「适配器」在后端的落点。
 
 **前端新增** `src/modules/agents/`：
+
 ```
 adapters/claudeAdapter.ts   # 组装 launch 参数（模型、flags）
 adapters/codexAdapter.ts
@@ -134,25 +139,28 @@ index.ts
 ### 能力 5：真实 Session 生命周期
 
 **契约扩展** `src/core/contracts/sessions.ts`：
+
 ```typescript
-export type SessionOrigin = 'demo' | 'live';   // 新增
+export type SessionOrigin = 'demo' | 'live'; // 新增
 export interface AgentSession {
   // ...现有字段
-  origin: SessionOrigin;        // 区分 mock/真实
-  runtimeProcessId?: string;    // 后端进程 key（= sessionId）
-  workingDirectory?: string;    // 真实工作目录
+  origin: SessionOrigin; // 区分 mock/真实
+  runtimeProcessId?: string; // 后端进程 key（= sessionId）
+  workingDirectory?: string; // 真实工作目录
 }
 ```
 
 **新增** `src/modules/sessions/services/liveSessionService.ts`：
+
 - `createLiveSession(project, provider, prompt)`：写入一条 `origin:'live'` 的 session 到快照 → 调 `agentRuntimeService.start`。
 - `stopLiveSession(sessionId)`：调后端 `agent_stop` → 更新快照状态。
-- `resumeLiveSession(sessionId)`：从持久化的历史重建上下文再 `start`（CLI 若支持 `--resume` 则透传，否则回放 prompt）。
+- `resumeLiveSession(session)`：M7 已实现 Codex-only 恢复；先读取持久化日志，再在原工作目录以 `codex exec resume --last` 启动。其他 Provider 显式拒绝，不做伪恢复。
 - 流事件 → 追加 `TimelineEvent` → 触发既有 `appEventBus`。
 
 **改造** `sessionTransitions.ts`：`stopSession`/`applyFollowUp` 增加 `origin` 分支——`live` 走真实调用，`demo` 保持现有模拟逻辑。
 
 **改造** `SessionDetailPage.tsx`：
+
 - `canStop` 逻辑接入真实进程运行状态。
 - follow-up 提交时，`live` session 走 `agentRuntimeService.sendInput`。
 - 订阅 `agent://stream` 事件实时刷新 Timeline。
@@ -173,13 +181,13 @@ export interface AgentSession {
 
 ## 4. 后端权限与依赖改动（易漏）
 
-| 文件 | 改动 |
-|------|------|
-| `src-tauri/Cargo.toml` | 加 `tokio`（进程/异步）；评估 `tauri-plugin-shell`（若用官方 shell 权限模型） |
-| `src-tauri/capabilities/default.json` | 新增自定义进程权限；若用 shell 插件需声明 `shell:allow-execute` 并配置 allowlist |
-| `src-tauri/src/lib.rs` | 注册 `agent_*` 与 `discover_*`、`session_*` 命令；`.manage(AgentRegistry::default())` |
-| `src-tauri/src/modules/mod.rs` | `pub mod agent_runtime; pub mod agent_capability; pub mod session_persistence;` |
-| `tauri.conf.json` CSP | 无需放开网络；进程走 IPC，保持现有 CSP |
+| 文件                                  | 改动                                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------------- |
+| `src-tauri/Cargo.toml`                | 加 `tokio`（进程/异步）；评估 `tauri-plugin-shell`（若用官方 shell 权限模型）         |
+| `src-tauri/capabilities/default.json` | 新增自定义进程权限；若用 shell 插件需声明 `shell:allow-execute` 并配置 allowlist      |
+| `src-tauri/src/lib.rs`                | 注册 `agent_*` 与 `discover_*`、`session_*` 命令；`.manage(AgentRegistry::default())` |
+| `src-tauri/src/modules/mod.rs`        | `pub mod agent_runtime; pub mod agent_capability; pub mod session_persistence;`       |
+| `tauri.conf.json` CSP                 | 无需放开网络；进程走 IPC，保持现有 CSP                                                |
 
 ---
 
@@ -207,7 +215,7 @@ export interface AgentSession {
 
 7. **stopSession 语义分裂**：现有函数对 display-only 抛错、只处理 running/waiting。加入 live 分支后状态机要重新梳理，避免 mock 测试回归。
 
-8. **恢复（resume）语义**：三个 CLI 的 resume 能力不同（是否支持 `--continue`/`--resume`、session id 格式）。无法真正 resume 时的降级策略要明确。
+8. **恢复（resume）语义**：M7 将范围限定为 Codex，使用工作目录内的 `exec resume --last`；Astra Session ID 不冒充 Codex thread ID。其他 Provider 不显示 Resume。
 
 ### 🟢 低风险
 
@@ -218,23 +226,24 @@ export interface AgentSession {
 
 ## 6. 工作分解（里程碑 = commit/tag 节点）
 
-| 里程碑 | 内容 | 验证 | Git 节点 |
-|--------|------|------|----------|
-| M0 | 分支+基线（已完成） | 138 测试通过 | tag `baseline-before-agent` |
-| M1 | 契约扩展（agents/sessions） + 单测 | `npm run typecheck && test` | commit `feat(contracts): agent runtime types` |
-| M2 | 能力发现（后端 + 前端 + Context 接入） | 探测本机 CLI 返回正确 | commit `feat(agents): capability discovery` |
-| M3 | 运行时后端（agent_runtime.rs + 权限） | `cargo test`；能启动 echo 进程 | commit `feat(tauri): agent process runtime` |
-| M4 | 前端运行时服务 + 流桥接 | 手动启动 claude 看到流 | tag `milestone-claude-live` |
-| M5 | Session 生命周期 + 持久化拆分 | 创建/停止/恢复闭环 | commit `feat(sessions): live lifecycle` |
-| M6 | 项目关联 + UI | 从项目页启动真实会话 | commit `feat(projects): link live sessions` |
-| M7 | Codex 适配器 + Session 恢复 | Claude/Codex 可启动，live Session 可恢复；不新增 Gemini 专用适配 | tag `milestone-codex-live` |
-| M8 | 回归 + 文档 + e2e | 全套 verification | commit `test: agent integration coverage` |
+| 里程碑 | 内容                                   | 验证                                                                         | Git 节点                                             |
+| ------ | -------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------- |
+| M0     | 分支+基线（已完成）                    | 138 测试通过                                                                 | tag `baseline-before-agent`                          |
+| M1     | 契约扩展（agents/sessions） + 单测     | `npm run typecheck && test`                                                  | commit `feat(contracts): agent runtime types`        |
+| M2     | 能力发现（后端 + 前端 + Context 接入） | 探测本机 CLI 返回正确                                                        | commit `feat(agents): capability discovery`          |
+| M3     | 运行时后端（agent_runtime.rs + 权限）  | `cargo test`；能启动 echo 进程                                               | commit `feat(tauri): agent process runtime`          |
+| M4     | 前端运行时服务 + 流桥接                | 手动启动 claude 看到流                                                       | tag `milestone-claude-live`                          |
+| M5     | Session 生命周期 + 持久化拆分          | 创建/停止/恢复闭环                                                           | commit `feat(sessions): live lifecycle`              |
+| M6     | 项目关联 + UI                          | 从项目页启动真实会话                                                         | commit `feat(projects): link live sessions`          |
+| M7     | Codex 适配器 + Session 恢复            | ✅ `codex exec resume --last` + 日志读取 + Resume UI；不新增 Gemini 专用适配 | commit `7a2983b`                                     |
+| M8     | 回归 + 文档 + e2e                      | ✅ 180 前端 + 22 后端 + build；Playwright 定位器修复后最终复跑待授权         | commit `test: complete agent integration regression` |
 
 ---
 
 ## 7. Git 代码管理策略
 
 ### 分支与标签
+
 ```bash
 # 已建立
 git tag  baseline-before-agent          # 回滚基线
@@ -246,10 +255,12 @@ git tag milestone-codex-live
 ```
 
 ### 提交规范
+
 - 每个里程碑一个（或多个小）commit，遵循 Conventional Commits。
 - 契约 / 后端 / 前端 / 测试尽量分开提交，回滚粒度更细。
 
 ### 回滚手册
+
 ```bash
 # 回到集成开发前的完全干净状态
 git checkout main                       # 或 git reset --hard baseline-before-agent
@@ -267,6 +278,7 @@ git checkout main && git branch -D feature/real-agent-integration
 > ⚠️ `reset --hard` 会丢弃工作区改动，执行前先 `git status` 确认，必要时 `git stash`。
 
 ### 提交前检查（每次里程碑）
+
 ```bash
 npm run typecheck && npm run lint && npm run test
 cd src-tauri && cargo fmt --check && cargo test && cd ..

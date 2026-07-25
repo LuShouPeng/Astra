@@ -6,6 +6,7 @@ import type { PrototypeRepository } from '../../../core/data/prototypeRepository
 import { WorkbenchProvider } from '../../../core/state/WorkbenchContext';
 import { createDemoSnapshot } from '../../demo';
 import type { ProjectService } from '../services/projectService';
+import type { LiveSessionService } from '../../sessions';
 import { ProjectDetailPage } from './ProjectDetailPage';
 
 function repository(snapshot = createDemoSnapshot()): PrototypeRepository {
@@ -27,6 +28,7 @@ function renderPage(
   path = '/projects/project-backend-api',
   snapshot = createDemoSnapshot(),
   projectService = service,
+  liveSessionService?: LiveSessionService,
 ) {
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -34,8 +36,11 @@ function renderPage(
         <Routes>
           <Route
             path="projects/:projectId"
-            element={<ProjectDetailPage service={projectService} />}
+            element={
+              <ProjectDetailPage service={projectService} liveSessionService={liveSessionService} />
+            }
           />
+          <Route path="sessions/:sessionId" element={<h1>Created live session</h1>} />
         </Routes>
       </WorkbenchProvider>
     </MemoryRouter>,
@@ -99,5 +104,28 @@ describe('ProjectDetailPage', () => {
     expect(screen.getByText('No activity recorded for this project.')).toBeVisible();
     await user.click(screen.getByRole('tab', { name: 'Configuration' }));
     expect(screen.getByText('Not available')).toBeVisible();
+  });
+
+  it('starts an available provider and navigates to the created live session', async () => {
+    const user = userEvent.setup();
+    const snapshot = createDemoSnapshot();
+    snapshot.projects[0].source = 'local';
+    snapshot.providerCapabilities.claude.runtimeAvailable = true;
+    snapshot.providerCapabilities.claude.displayOnly = false;
+    const liveSessionService = {
+      createLiveSession: vi.fn(async () => 'session-created'),
+    } as unknown as LiveSessionService;
+    renderPage('/projects/project-backend-api', snapshot, service, liveSessionService);
+
+    await user.click(await screen.findByRole('button', { name: 'Start Agent' }));
+    await user.type(screen.getByLabelText('Task'), 'Implement the integration');
+    await user.click(screen.getByRole('button', { name: /^Start$/ }));
+
+    expect(liveSessionService.createLiveSession).toHaveBeenCalledWith(
+      snapshot.projects[0],
+      'claude',
+      'Implement the integration',
+    );
+    expect(await screen.findByRole('heading', { name: 'Created live session' })).toBeVisible();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { LiveSessionService } from '../../sessions/services/liveSessionService';
+import type { LiveSessionService } from '../../sessions';
 import { createDemoSnapshot } from '../../demo';
 import {
   createProjectService,

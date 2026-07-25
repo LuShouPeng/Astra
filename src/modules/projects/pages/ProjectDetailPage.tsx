@@ -4,8 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { AgentProvider } from '../../../core/contracts/agents';
 import type { TimelineEvent } from '../../../core/contracts/sessions';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
-import { useLiveSessions } from '../../sessions';
-import type { LiveSessionService } from '../../sessions/services/liveSessionService';
+import { useLiveSessions, type LiveSessionService } from '../../sessions';
 import { startAgentSession, type ProjectService } from '../services/projectService';
 
 type ProjectTab = 'overview' | 'sessions' | 'changes' | 'activity' | 'configuration';
@@ -96,7 +95,7 @@ export function ProjectDetailPage({
     try {
       const sessionId = await startAgentSession(liveSessions, project!, provider, prompt);
       setLauncherOpen(false);
-      navigate(`/sessions/${sessionId}`);
+      void navigate(`/sessions/${sessionId}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Agent session could not be started.');
     } finally {

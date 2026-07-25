@@ -126,7 +126,7 @@ test('opens a session timeline and records a deterministic follow-up', async ({ 
   await page.goto('/?scenario=populated');
   await page.getByRole('button', { name: 'Open Astra Nexus' }).click();
   const tree = page.getByRole('tree', { name: 'Projects and sessions' });
-  await tree.getByRole('link', { name: 'Fix intermittent login timeout Unread' }).click();
+  await tree.getByRole('link', { name: /Fix intermittent login timeout/ }).click();
 
   await expect(page.getByRole('heading', { name: 'Fix intermittent login timeout' })).toBeVisible();
   await expect(page.getByText('Claude started the deterministic demo session.')).toBeVisible();
@@ -151,6 +151,8 @@ test('navigates project detail and structured session views', async ({ page }) =
   await tree.getByRole('link', { name: 'backend-api', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: 'backend-api' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start Agent' })).toBeDisabled();
+  await expect(tree.getByTitle('Demo session').first()).toBeVisible();
   await expect(page.getByRole('tab')).toHaveCount(5);
   await page.getByRole('tab', { name: 'Activity 6' }).click();
   await expect(page.getByText('Found four relevant call sites.')).toBeVisible();
