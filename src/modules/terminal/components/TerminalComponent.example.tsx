@@ -36,7 +36,7 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
               cols: 80,
               rows: 24,
             },
-            (data) => {
+            (data: string) => {
               if (mounted) {
                 setOutput((prev) => prev + data);
               }
@@ -49,7 +49,8 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
         }
       } catch (error) {
         console.error('Failed to create terminal session:', error);
-        alert(`Terminal error: ${error}`);
+        const message = error instanceof Error ? error.message : String(error);
+        alert(`Terminal error: ${message}`);
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -57,7 +58,7 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
       }
     }
 
-    initTerminal();
+    void initTerminal();
 
     return () => {
       mounted = false;
@@ -65,10 +66,10 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
         cleanupRef.current();
       }
       if (sessionId) {
-        terminalService.closeSession(sessionId).catch(console.error);
+        void terminalService.closeSession(sessionId).catch(console.error);
       }
     };
-  }, [workingDir]);
+  }, [workingDir, sessionId]);
 
   // Listen for command confirmation requests
   useEffect(() => {
@@ -76,13 +77,13 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
 
     async function setupListener() {
       unlisten = await terminalService.onCommandConfirmationRequired(
-        (command) => {
+        (command: string) => {
           setPendingCommand(command);
         }
       );
     }
 
-    setupListener();
+    void setupListener();
 
     return () => {
       if (unlisten) {
@@ -115,7 +116,8 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
       }
     } catch (error) {
       console.error('Command execution failed:', error);
-      setOutput((prev) => prev + `\nError: ${error}\n`);
+      const message = error instanceof Error ? error.message : String(error);
+      setOutput((prev) => prev + `\nError: ${message}\n`);
     } finally {
       setIsLoading(false);
     }
@@ -129,7 +131,8 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
       setPendingCommand(null);
     } catch (error) {
       console.error('Command confirmation failed:', error);
-      setOutput((prev) => prev + `\nError: ${error}\n`);
+      const message = error instanceof Error ? error.message : String(error);
+      setOutput((prev) => prev + `\nError: ${message}\n`);
     }
   };
 
@@ -146,9 +149,9 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      handleExecuteCommand();
+      void handleExecuteCommand();
     } else if (e.key === 'c' && e.ctrlKey) {
-      handleCancelCommand();
+      void handleCancelCommand();
     }
   };
 
@@ -204,7 +207,7 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
           </div>
           <div>
             <button
-              onClick={handleConfirmCommand}
+              onClick={() => void handleConfirmCommand()}
               style={{ marginRight: '8px' }}
             >
               Allow
@@ -241,13 +244,13 @@ export function TerminalComponent({ workingDir, onClose }: TerminalComponentProp
           }}
         />
         <button
-          onClick={handleExecuteCommand}
+          onClick={() => void handleExecuteCommand()}
           disabled={isLoading || !input.trim() || !!pendingCommand}
         >
           Execute
         </button>
         <button
-          onClick={handleCancelCommand}
+          onClick={() => void handleCancelCommand()}
           disabled={isLoading}
           title="Ctrl+C"
         >

@@ -12,6 +12,6 @@ export type {
   TerminalCommandConfirmation,
   TerminalOutput,
   TerminalError,
-} from '../../core/contracts/terminal';
+} from '@/core/contracts/terminal';
 
-export { ExecutionPolicy } from '../../core/contracts/terminal';
+export { ExecutionPolicy } from '@/core/contracts/terminal';

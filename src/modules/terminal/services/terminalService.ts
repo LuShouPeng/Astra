@@ -10,7 +10,7 @@ import type {
   TerminalSessionInfo,
   ExecutionPolicy,
   CommandRule,
-} from '../../core/contracts/terminal';
+} from '@/core/contracts/terminal';
 
 export class TauriTerminalService implements ITerminalService {
   private listeners: Map<string, () => void> = new Map();
@@ -107,7 +107,7 @@ export class TauriTerminalService implements ITerminalService {
     onOutput: (data: string) => void,
     intervalMs: number = 100,
   ): () => void {
-    const intervalId = setInterval(async () => {
+    const poll = async () => {
       try {
         const output = await this.readOutput(sessionId);
         if (output) {
@@ -117,7 +117,9 @@ export class TauriTerminalService implements ITerminalService {
         // Session might be closed or errored
         console.error('Error reading terminal output:', error);
       }
-    }, intervalMs);
+    };
+
+    const intervalId = setInterval(() => void poll(), intervalMs);
 
     const cleanup = () => {
       clearInterval(intervalId);

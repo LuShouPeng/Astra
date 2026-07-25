@@ -407,6 +407,205 @@ pub async fn terminal_get_command_rules(
     Ok(rules.clone())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::thread;
+    use std::time::Duration;
+
+    fn policy_name(p: &ExecutionPolicy) -> &'static str {
+        match p {
+            ExecutionPolicy::Allow => "Allow",
+            ExecutionPolicy::Confirm => "Confirm",
+            ExecutionPolicy::Deny => "Deny",
+        }
+    }
+
+    // --- Command execution policy engine ---
+
+    #[test]
+    fn default_rules_deny_rm_rf_root() {
+        let mgr = TerminalManager::new();
+        let policy = mgr.check_command_policy("rm -rf /").unwrap();
+        assert!(
+            matches!(policy, ExecutionPolicy::Deny),
+            "expected Deny for `rm -rf /`, got {}",
+            policy_name(&policy)
+        );
+    }
+
+    #[test]
+    fn default_rules_confirm_privilege_and_power() {
+        let mgr = TerminalManager::new();
+        for cmd in ["sudo apt update", "su root", "shutdown -h now", "reboot"] {
+            let policy = mgr.check_command_policy(cmd).unwrap();
+            assert!(
+                matches!(policy, ExecutionPolicy::Confirm),
+                "expected Confirm for `{cmd}`, got {}",
+                policy_name(&policy)
+            );
+        }
+    }
+
+    #[test]
+    fn default_rules_confirm_force_push() {
+        let mgr = TerminalManager::new();
+        let policy = mgr
+            .check_command_policy("git push origin main --force")
+            .unwrap();
+        assert!(matches!(policy, ExecutionPolicy::Confirm));
+    }
+
+    #[test]
+    fn ordinary_commands_are_allowed() {
+        let mgr = TerminalManager::new();
+        for cmd in ["ls -la", "npm install", "echo hello", "git status"] {
+            let policy = mgr.check_command_policy(cmd).unwrap();
+            assert!(
+                matches!(policy, ExecutionPolicy::Allow),
+                "expected Allow for `{cmd}`, got {}",
+                policy_name(&policy)
+            );
+        }
+    }
+
+    #[test]
+    fn custom_rule_takes_effect() {
+        let mgr = TerminalManager::new();
+        // Baseline: docker rm is allowed by default.
+        assert!(matches!(
+            mgr.check_command_policy("docker rm -f box").unwrap(),
+            ExecutionPolicy::Allow
+        ));
+
+        mgr.command_rules.lock().unwrap().push(CommandRule {
+            pattern: r"^docker\s+rm.*-f".to_string(),
+            policy: ExecutionPolicy::Confirm,
+            description: "Force docker removal requires confirmation".to_string(),
+        });
+
+        assert!(matches!(
+            mgr.check_command_policy("docker rm -f box").unwrap(),
+            ExecutionPolicy::Confirm
+        ));
+    }
+
+    // --- Real PTY interaction (proves portable-pty works on this host) ---
+
+    #[test]
+    fn pty_spawns_shell_and_echoes_command() {
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty should succeed");
+
+        let (shell, marker, cmd_line) = if cfg!(windows) {
+            (
+                "powershell.exe".to_string(),
+                "PTY_OK_1234".to_string(),
+                "Write-Output PTY_OK_1234\r\nexit\r\n".to_string(),
+            )
+        } else {
+            let sh = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+            (
+                sh,
+                "PTY_OK_1234".to_string(),
+                "echo PTY_OK_1234\nexit\n".to_string(),
+            )
+        };
+
+        let mut cmd = CommandBuilder::new(&shell);
+        cmd.cwd(std::env::temp_dir());
+        let mut child = pair
+            .slave
+            .spawn_command(cmd)
+            .expect("spawning shell in PTY should succeed");
+
+        let mut writer = pair.master.take_writer().expect("take writer");
+        writer
+            .write_all(cmd_line.as_bytes())
+            .expect("write command to PTY");
+        writer.flush().ok();
+
+        let mut reader = pair.master.try_clone_reader().expect("clone reader");
+        // Read in a thread so we never block the test forever.
+        let handle = thread::spawn(move || {
+            let mut collected = String::new();
+            let mut buf = [0u8; 4096];
+            let deadline = 60; // ~6s worth of 100ms polls
+            for _ in 0..deadline {
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        collected.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        if collected.contains("PTY_OK_1234") {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            collected
+        });
+
+        let output = handle.join().unwrap_or_default();
+        let _ = child.wait();
+        drop(writer);
+
+        assert!(
+            output.contains(&marker),
+            "PTY output should contain `{marker}`, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn pty_resize_succeeds() {
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+
+        let mut cmd = CommandBuilder::new(if cfg!(windows) {
+            "powershell.exe"
+        } else {
+            "/bin/sh"
+        });
+        cmd.cwd(std::env::temp_dir());
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+
+        pair.master
+            .resize(PtySize {
+                rows: 40,
+                cols: 120,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("resize should succeed");
+
+        // Give the shell a moment, then confirm it is still alive.
+        thread::sleep(Duration::from_millis(100));
+        assert!(
+            child.try_wait().ok().flatten().is_none(),
+            "shell should still be alive after resize"
+        );
+
+        let mut writer = pair.master.take_writer().expect("writer");
+        let _ = writer.write_all(if cfg!(windows) { b"exit\r\n" } else { b"exit\n" });
+        let _ = child.wait();
+    }
+}
+
 /// Change working directory for a session
 #[tauri::command]
 pub async fn terminal_change_directory(
