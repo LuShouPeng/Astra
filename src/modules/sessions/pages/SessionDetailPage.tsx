@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Check,
+  ExternalLink,
   FolderOpen,
   GitCompareArrows,
   MessageSquare,
@@ -18,6 +19,7 @@ import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import { ChangesReview, type ChangesService } from '../../changes';
 import { resolveAttention } from '../../attention';
 import type { ProjectService } from '../../projects';
+import { workflowCopy } from '../../workflows/workflowCopy';
 import { CommandsView, ContextView, TestsView } from '../components/SessionEventViews';
 import { Timeline } from '../components/Timeline';
 import { applyFollowUp, nextSessionTimestamp, stopSession } from '../model/sessionTransitions';
@@ -93,12 +95,14 @@ export function SessionDetailPage({
   const approval = snapshot.attentionItems.find(
     (item) => item.sessionId === session.id && item.type === 'approval' && !item.resolved,
   );
-  const canStop =
-    !capability.displayOnly && (session.status === 'running' || session.status === 'waiting');
+  const isRuntimeSession = session.source === 'runtime';
+  const canSimulate = !capability.displayOnly && !isRuntimeSession;
+  const canStop = canSimulate && (session.status === 'running' || session.status === 'waiting');
   const canOpenProject = Boolean(
     projectService && project?.source === 'local' && project.status === 'available',
   );
   const duration = formatDuration(session.startedAt, session.completedAt ?? session.updatedAt);
+  const workflowLabels = workflowCopy(language);
 
   function selectTab(nextTab: SessionTab) {
     setSearchParams(nextTab === 'timeline' ? {} : { tab: nextTab }, { replace: true });
@@ -106,6 +110,7 @@ export function SessionDetailPage({
 
   async function submitFollowUp(event: FormEvent) {
     event.preventDefault();
+    if (!canSimulate) return;
     setError(null);
     try {
       const next = applyFollowUp(snapshot!, session!.id, message, nextSessionTimestamp(snapshot!));
@@ -120,7 +125,7 @@ export function SessionDetailPage({
   }
 
   async function resolveApproval(action: 'approve' | 'reject') {
-    if (!approval) return;
+    if (!approval || !canSimulate) return;
     setError(null);
     try {
       const previousStatus = session!.status;
@@ -140,6 +145,7 @@ export function SessionDetailPage({
   }
 
   async function stop() {
+    if (!canStop) return;
     setError(null);
     try {
       const previousStatus = session!.status;
@@ -190,13 +196,13 @@ export function SessionDetailPage({
         <button
           className="button button--secondary button--compact"
           type="button"
-          disabled={capability.displayOnly}
+          disabled={!canSimulate}
           onClick={() => followUpRef.current?.focus()}
         >
           <MessageSquare size={15} aria-hidden="true" />
           {t('session.sendMessage')}
         </button>
-        {approval && (
+        {approval && canSimulate && (
           <>
             <button
               className="button button--primary button--compact"
@@ -228,6 +234,15 @@ export function SessionDetailPage({
             <Square size={14} aria-hidden="true" />
             {t('session.stop')}
           </button>
+        )}
+        {isRuntimeSession && session.workflowRunId && (
+          <Link
+            className="button button--secondary button--compact"
+            to={`/runs/${session.workflowRunId}`}
+          >
+            <ExternalLink size={15} aria-hidden="true" />
+            {workflowLabels.runTitle}
+          </Link>
         )}
         <button
           className="button button--secondary button--compact"
@@ -324,14 +339,14 @@ export function SessionDetailPage({
           id="follow-up-message"
           value={message}
           onChange={(event) => setMessage(event.target.value)}
-          disabled={capability.displayOnly || saving}
+          disabled={!canSimulate || saving}
           rows={2}
         />
         <button
           className="button button--primary"
           type="submit"
           aria-label={t('session.sendFollowUp')}
-          disabled={capability.displayOnly || saving || message.trim().length === 0}
+          disabled={!canSimulate || saving || message.trim().length === 0}
         >
           <Send size={16} aria-hidden="true" />
           {t('session.send')}

@@ -14,3 +14,4 @@ artifacts/demo/recording/
 artifacts/demo/screenshots/
 artifacts/demo/Astra-Nexus-Roadshow/
 artifacts/demo/*.inspect.ndjson
+.env.local

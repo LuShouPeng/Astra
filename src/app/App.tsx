@@ -1,28 +1,30 @@
 import { lazy, Suspense, useEffect, useMemo, type ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
-import type { WorkspaceService } from '../core/contracts/workspace';
 import type { Project, ProjectGitSummary } from '../core/contracts/projects';
-import { appEventBus } from '../core/events/appEventBus';
+import type { WorkspaceService } from '../core/contracts/workspace';
 import {
   createPrototypeRepository,
   type PrototypeRepository,
 } from '../core/data/prototypeRepository';
 import { TauriPrototypeStore } from '../core/data/tauriPrototypeStore';
+import { appEventBus } from '../core/events/appEventBus';
+import { I18nProvider } from '../core/i18n/I18nContext';
+import { startThemePreference } from '../core/preferences/appearance';
 import { WorkbenchProvider, useWorkbench } from '../core/state/WorkbenchContext';
-import { CommandCenterPage } from '../modules/command-center';
 import { AttentionPage } from '../modules/attention';
 import {
   ChangesPage,
-  TauriChangesNativeAdapter,
   createChangesService,
+  TauriChangesNativeAdapter,
   type ChangesService,
 } from '../modules/changes';
+import { CommandCenterPage } from '../modules/command-center';
 import { createDemoSnapshot } from '../modules/demo';
 import {
+  createDesktopNotificationService,
   DesktopNotificationBridge,
   NotificationsPage,
   TauriDesktopNotificationAdapter,
-  createDesktopNotificationService,
   type DesktopNotificationService,
 } from '../modules/notifications';
 import {
@@ -40,8 +42,6 @@ import { createWorkspaceService } from '../modules/workspace/services/workspaceS
 import { WorkspaceProvider, useWorkspace } from '../modules/workspace/state/WorkspaceContext';
 import { resolveAppRoute } from './routes';
 import { WorkbenchShell } from './shell/WorkbenchShell';
-import { startThemePreference } from '../core/preferences/appearance';
-import { I18nProvider } from '../core/i18n/I18nContext';
 
 const WorkflowsPage = lazy(() =>
   import('../modules/workflows/pages/WorkflowsPage').then((module) => ({
@@ -209,6 +209,7 @@ export function App({
     () => suppliedDesktopNotifications ?? createDefaultDesktopNotificationService(),
     [suppliedDesktopNotifications],
   );
+
   return (
     <I18nProvider>
       <HashRouter>

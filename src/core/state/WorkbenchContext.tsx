@@ -5,11 +5,16 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   type ReactNode,
 } from 'react';
+import type { AgentProvider, ProviderCapability } from '../contracts/agents';
 import type { WorkbenchSnapshot } from '../contracts/workbenchData';
 import type { PrototypeRepository } from '../data/prototypeRepository';
 import { useI18n } from '../i18n/I18nContext';
+
+export type CapabilityDiscovery = () => Promise<Partial<Record<AgentProvider, ProviderCapability>>>;
+export type SnapshotMutator = (snapshot: WorkbenchSnapshot) => WorkbenchSnapshot;
 
 type WorkbenchLoadState = 'loading' | 'ready' | 'error';
 
@@ -23,9 +28,11 @@ interface WorkbenchState {
 
 type WorkbenchAction =
   | { type: 'loaded'; snapshot: WorkbenchSnapshot; warning: string | null }
-  | { type: 'failed'; message: string }
-  | { type: 'saving' }
-  | { type: 'saved'; snapshot: WorkbenchSnapshot };
+  | { type: 'load-failed'; message: string }
+  | { type: 'snapshot-updated'; snapshot: WorkbenchSnapshot }
+  | { type: 'save-begin' }
+  | { type: 'save-succeeded' }
+  | { type: 'save-failed'; message: string };
 
 const initialState: WorkbenchState = {
   loadState: 'loading',
@@ -45,18 +52,24 @@ function reducer(state: WorkbenchState, action: WorkbenchAction): WorkbenchState
         error: null,
         saving: false,
       };
-    case 'failed':
+    case 'load-failed':
       return { ...state, loadState: 'error', error: action.message, saving: false };
-    case 'saving':
+    case 'snapshot-updated':
+      return { ...state, snapshot: action.snapshot };
+    case 'save-begin':
       return { ...state, saving: true, error: null };
-    case 'saved':
-      return { ...state, snapshot: action.snapshot, saving: false };
+    case 'save-succeeded':
+      return { ...state, saving: false };
+    case 'save-failed':
+      return { ...state, saving: false, error: action.message };
   }
 }
 
 interface WorkbenchContextValue extends WorkbenchState {
   repository: PrototypeRepository;
   saveSnapshot: (snapshot: WorkbenchSnapshot) => Promise<void>;
+  updateSnapshot: (mutate: SnapshotMutator, options?: { persist?: boolean }) => void;
+  flushPending: () => Promise<void>;
   resetSnapshot: () => Promise<WorkbenchSnapshot>;
 }
 
@@ -66,61 +79,181 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Workbench data could not be loaded.';
 }
 
+const CLOSE_FLUSH_INTERVAL_MS = 120_000;
+
 export function WorkbenchProvider({
   children,
   repository,
+  discoverCapabilities,
 }: {
   children: ReactNode;
   repository: PrototypeRepository;
+  discoverCapabilities?: CapabilityDiscovery;
 }) {
   const { text } = useI18n();
   const [state, dispatch] = useReducer(reducer, initialState);
+  const snapshotRef = useRef<WorkbenchSnapshot | null>(null);
+  const snapshotVersionRef = useRef(0);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const dirtyVersionRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void repository
-      .load()
-      .then((snapshot) => {
-        if (cancelled) return;
-        dispatch({
-          type: 'loaded',
-          snapshot,
-          warning: repository.consumeWarning()?.message ?? null,
+  const enqueueSave = useCallback(
+    (snapshot: WorkbenchSnapshot, version: number): Promise<void> => {
+      const attempt = saveQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          dispatch({ type: 'save-begin' });
+          try {
+            await repository.save(snapshot);
+            if (dirtyVersionRef.current !== null && dirtyVersionRef.current <= version) {
+              dirtyVersionRef.current = null;
+            }
+            dispatch({ type: 'save-succeeded' });
+          } catch (error) {
+            dispatch({ type: 'save-failed', message: errorMessage(error) });
+            throw error;
+          }
         });
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) dispatch({ type: 'failed', message: errorMessage(error) });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [repository]);
-
-  const saveSnapshot = useCallback(
-    async (snapshot: WorkbenchSnapshot) => {
-      dispatch({ type: 'saving' });
-      try {
-        await repository.save(snapshot);
-        dispatch({ type: 'saved', snapshot });
-      } catch (error) {
-        dispatch({ type: 'failed', message: errorMessage(error) });
-        throw error;
-      }
+      saveQueueRef.current = attempt.catch(() => undefined);
+      return attempt;
     },
     [repository],
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      let snapshot: WorkbenchSnapshot;
+      try {
+        snapshot = await repository.load();
+      } catch (error: unknown) {
+        if (!cancelled) dispatch({ type: 'load-failed', message: errorMessage(error) });
+        return;
+      }
+      if (cancelled) return;
+
+      snapshotRef.current = snapshot;
+      snapshotVersionRef.current += 1;
+      dirtyVersionRef.current = null;
+      dispatch({
+        type: 'loaded',
+        snapshot,
+        warning: repository.consumeWarning()?.message ?? null,
+      });
+
+      if (!discoverCapabilities) return;
+      try {
+        const capabilities = await discoverCapabilities();
+        if (cancelled || !snapshotRef.current) return;
+        const next = {
+          ...snapshotRef.current,
+          providerCapabilities: {
+            ...snapshotRef.current.providerCapabilities,
+            ...capabilities,
+          },
+        };
+        snapshotRef.current = next;
+        snapshotVersionRef.current += 1;
+        dispatch({ type: 'snapshot-updated', snapshot: next });
+      } catch {
+        // Capability discovery is optional and must not block the workbench.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [discoverCapabilities, repository]);
+
+  const saveSnapshot = useCallback(
+    (snapshot: WorkbenchSnapshot) => {
+      snapshotRef.current = snapshot;
+      snapshotVersionRef.current += 1;
+      const version = snapshotVersionRef.current;
+      dispatch({ type: 'snapshot-updated', snapshot });
+      return enqueueSave(snapshot, version);
+    },
+    [enqueueSave],
+  );
+
+  const updateSnapshot = useCallback(
+    (mutate: SnapshotMutator, options?: { persist?: boolean }) => {
+      const base = snapshotRef.current;
+      if (!base) return;
+      const next = mutate(base);
+      snapshotRef.current = next;
+      snapshotVersionRef.current += 1;
+      const version = snapshotVersionRef.current;
+      dispatch({ type: 'snapshot-updated', snapshot: next });
+      if (options?.persist) {
+        void enqueueSave(next, version).catch(() => undefined);
+      } else {
+        dirtyVersionRef.current = version;
+      }
+    },
+    [enqueueSave],
+  );
+
+  const flushPending = useCallback(async () => {
+    const snapshot = snapshotRef.current;
+    if (dirtyVersionRef.current !== null && snapshot) {
+      const version = snapshotVersionRef.current;
+      void enqueueSave(snapshot, version).catch(() => undefined);
+    }
+    await saveQueueRef.current;
+  }, [enqueueSave]);
+
   const resetSnapshot = useCallback(async () => {
-    dispatch({ type: 'saving' });
+    dispatch({ type: 'save-begin' });
     try {
+      await saveQueueRef.current;
       const snapshot = await repository.reset();
-      dispatch({ type: 'saved', snapshot });
+      snapshotRef.current = snapshot;
+      snapshotVersionRef.current += 1;
+      dirtyVersionRef.current = null;
+      dispatch({ type: 'snapshot-updated', snapshot });
+      dispatch({ type: 'save-succeeded' });
       return snapshot;
     } catch (error) {
-      dispatch({ type: 'failed', message: errorMessage(error) });
+      dispatch({ type: 'save-failed', message: errorMessage(error) });
       throw error;
     }
   }, [repository]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void flushPending();
+    }, CLOSE_FLUSH_INTERVAL_MS);
+
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    if (inTauri) {
+      void (async () => {
+        try {
+          const { getCurrentWindow } = await import('@tauri-apps/api/window');
+          const appWindow = getCurrentWindow();
+          const stop = await appWindow.onCloseRequested(async (event) => {
+            event.preventDefault();
+            try {
+              await flushPending();
+            } finally {
+              await appWindow.destroy();
+            }
+          });
+          if (disposed) stop();
+          else unlisten = stop;
+        } catch {
+          // Browser and test environments use the interval fallback only.
+        }
+      })();
+    }
+
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+      unlisten?.();
+    };
+  }, [flushPending]);
 
   const value = useMemo(
     () => ({
@@ -130,9 +263,12 @@ export function WorkbenchProvider({
       repository,
       resetSnapshot,
       saveSnapshot,
+      updateSnapshot,
+      flushPending,
     }),
-    [repository, resetSnapshot, saveSnapshot, state, text],
+    [flushPending, repository, resetSnapshot, saveSnapshot, state, text, updateSnapshot],
   );
+
   return <WorkbenchContext.Provider value={value}>{children}</WorkbenchContext.Provider>;
 }
 

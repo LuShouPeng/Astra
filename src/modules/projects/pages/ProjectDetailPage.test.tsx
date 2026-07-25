@@ -32,10 +32,7 @@ function renderPage(
     <MemoryRouter initialEntries={[path]}>
       <WorkbenchProvider repository={repository(snapshot)}>
         <Routes>
-          <Route
-            path="projects/:projectId"
-            element={<ProjectDetailPage service={projectService} />}
-          />
+          <Route path="projects/:projectId" element={<ProjectDetailPage service={projectService} />} />
         </Routes>
       </WorkbenchProvider>
     </MemoryRouter>,

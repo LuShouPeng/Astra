@@ -1,4 +1,4 @@
-export type AgentProvider = 'claude' | 'codex' | 'gemini';
+export type AgentProvider = 'claude' | 'codex';
 
 export interface ProviderCapability {
   provider: AgentProvider;

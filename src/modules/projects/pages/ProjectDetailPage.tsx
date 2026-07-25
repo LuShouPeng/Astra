@@ -90,7 +90,6 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
   ).length;
   const openEnabled =
     project.source === 'local' && project.status === 'available' && Boolean(service);
-
   async function openProject() {
     if (!service) return;
     setError(null);

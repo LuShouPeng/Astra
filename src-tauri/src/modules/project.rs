@@ -1050,7 +1050,9 @@ mod tests {
             .as_nanos();
         let path = std::env::temp_dir().join(format!("astra-{label}-{suffix}"));
         fs::create_dir_all(&path).expect("create temporary directory");
-        path
+        // Canonicalize so the returned path matches what validate_relative_path
+        // sees after dunce::canonicalize (short path vs long path on Windows).
+        dunce::canonicalize(&path).expect("canonicalize temp dir")
     }
 
     fn remove_temporary_directory(path: std::path::PathBuf) {
