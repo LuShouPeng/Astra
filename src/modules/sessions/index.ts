@@ -18,3 +18,4 @@ export {
   type SessionPersistence,
   type SessionLogEntry,
 } from './adapters/sessionPersistenceAdapter';
+export { createWorkbenchLiveSessionSink } from './services/workbenchLiveSessionSink';
