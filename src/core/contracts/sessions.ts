@@ -5,6 +5,12 @@ export type SessionId = string;
 export type SessionStatus = 'idle' | 'running' | 'waiting' | 'completed' | 'failed' | 'stopped';
 export type TestStatus = 'not_run' | 'running' | 'passed' | 'failed';
 
+/**
+ * 会话来源。省略时按 'demo' 处理——既有持久化数据与 mock fixtures
+ * 均无此字段，语义上就是确定性演示会话；真实运行会话必须显式标 'live'。
+ */
+export type SessionOrigin = 'demo' | 'live';
+
 export interface AgentSession {
   id: SessionId;
   projectId: ProjectId;
@@ -19,6 +25,12 @@ export interface AgentSession {
   changedFilesCount: number;
   testStatus: TestStatus;
   unread: boolean;
+  /** 缺省视为 'demo'（向后兼容旧快照）。 */
+  origin?: SessionOrigin;
+  /** 后端进程 key（约定 = sessionId），仅 live 会话有。 */
+  runtimeProcessId?: string;
+  /** 真实工作目录（= 关联本地项目根），仅 live 会话有。 */
+  workingDirectory?: string;
 }
 
 interface TimelineEventBase {

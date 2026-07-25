@@ -332,7 +332,7 @@ export function createDemoSnapshot(): WorkbenchSnapshot {
   return structuredClone({
     schemaVersion: 1,
     projects,
-    sessions,
+    sessions: sessions.map((session) => ({ ...session, origin: 'demo' as const })),
     timelineEvents,
     fileChanges,
     attentionItems,

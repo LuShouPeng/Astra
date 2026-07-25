@@ -7,13 +7,13 @@
 | 项 | 值 |
 |----|----|
 | 更新日期 | 2026-07-25 |
-| 当前里程碑 | **M0 完成**（基线已建立，集成开发尚未开始） |
+| 当前里程碑 | **M1 完成**（契约扩展就绪，尚无功能变为可用） |
 | 分支 | `feature/real-agent-integration` |
 | 回滚基线 | tag `baseline-before-agent` |
-| 最新 commit | `c5171f4` docs(dev): 开发文档与 git 管理策略 |
-| 前端测试 | 138 用例（Timeline 2 条性能用例偶发超时，非阻塞） |
-| 后端测试 | 6 用例（4 通过；2 条路径校验用例失败，pre-existing） |
-| 编译 | ✅ 前端 typecheck/lint 通过；后端 `cargo build` 成功（18MB exe） |
+| 最新 commit | M1: feat(contracts) agent runtime types（见 git log） |
+| 前端测试 | 143 用例全通过（+5 契约测试；Timeline 用例本次通过） |
+| 后端测试 | 6 用例（4 通过；2 条路径校验用例失败，pre-existing，M1 未触及） |
+| 编译 | ✅ 前端 typecheck/lint 通过；后端未改动 |
 
 ## 图例
 
@@ -28,7 +28,7 @@
 | 里程碑 | 内容 | 状态 | Git 节点 |
 |--------|------|------|----------|
 | M0 | 分支 + 基线 + 开发文档 | ✅ 完成 | tag `baseline-before-agent` |
-| M1 | 契约扩展（agents/sessions） | ❌ 未开始 | — |
+| M1 | 契约扩展（agents/sessions） | ✅ 完成 | commit `feat(contracts): agent runtime types` |
 | M2 | 能力发现（后端+前端+Context） | ❌ 未开始 | — |
 | M3 | 运行时后端（agent_runtime.rs+权限） | ❌ 未开始 | — |
 | M4 | 前端运行时服务 + 流桥接 | ❌ 未开始 | — |
@@ -96,11 +96,14 @@
 
 ---
 
-## 契约现状（决定 M1 起点）
+## 契约现状（M1 后）
 
-- `agents.ts`：`ProviderCapability` **仅 4 字段**（provider/label/runtimeAvailable/displayOnly），缺 `version`/`executablePath`/`discoveredAt`；无 `AgentLaunchConfig`、`AgentStreamEvent`。
-- `sessions.ts`：`AgentSession` **无** `origin`/`runtimeProcessId`/`workingDirectory` 字段。
-- `mod.rs`：仅 `pub mod project; pub mod workspace;`。
+- `agents.ts`：✅ `ProviderCapability` 已加可选 `version`/`executablePath`/`discoveredAt`；✅ 新增 `AgentLaunchConfig`、`AgentStreamEvent`。字段留空待 M2 探测填充。
+- `sessions.ts`：✅ 新增 `SessionOrigin`；`AgentSession` 已加可选 `origin`/`runtimeProcessId`/`workingDirectory`。**`origin` 缺省即 `'demo'`**——旧快照与 mock 无需迁移，`isWorkbenchSnapshot` 不校验该字段，向后兼容。
+- `demoFixtures.ts`：✅ 6 条会话现显式标 `origin:'demo'`（构造时 map 注入）。
+- `mod.rs`：仍为 `pub mod project; pub mod workspace;`（M1 未动后端）。
+
+**M1 契约已就位，但无任何功能变为可用**——这些类型要到 M2（能力发现填充探测字段）、M5（live 会话消费 origin/进程字段）才被实际使用。六项能力状态因此不变。
 
 ## 结构性缺口（最重要的一条）
 
