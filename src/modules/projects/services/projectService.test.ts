@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { LiveSessionService } from '../../sessions/services/liveSessionService';
 import { createDemoSnapshot } from '../../demo';
 import {
   createProjectService,
   ProjectOperationError,
+  startAgentSession,
   type ProjectNativeAdapter,
 } from './projectService';
 
@@ -53,6 +55,25 @@ describe('project service', () => {
     await expect(service.openDirectory(demo)).rejects.toBeInstanceOf(ProjectOperationError);
     await expect(
       service.openDirectory({ ...demo, source: 'local', status: 'missing' }),
+    ).rejects.toBeInstanceOf(ProjectOperationError);
+  });
+
+  it('starts live sessions only for available local projects', async () => {
+    const demo = createDemoSnapshot().projects[0];
+    const local = { ...demo, source: 'local' as const };
+    const liveSessions = {
+      createLiveSession: vi.fn(async () => 'session-live'),
+    } as unknown as LiveSessionService;
+
+    await expect(startAgentSession(liveSessions, local, 'claude', 'Fix it')).resolves.toBe(
+      'session-live',
+    );
+    expect(liveSessions.createLiveSession).toHaveBeenCalledWith(local, 'claude', 'Fix it');
+    await expect(startAgentSession(liveSessions, demo, 'claude', 'Fix it')).rejects.toBeInstanceOf(
+      ProjectOperationError,
+    );
+    await expect(
+      startAgentSession(liveSessions, { ...local, status: 'missing' }, 'claude', 'Fix it'),
     ).rejects.toBeInstanceOf(ProjectOperationError);
   });
 });

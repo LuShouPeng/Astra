@@ -227,7 +227,7 @@ export interface AgentSession {
 | M4 | 前端运行时服务 + 流桥接 | 手动启动 claude 看到流 | tag `milestone-claude-live` |
 | M5 | Session 生命周期 + 持久化拆分 | 创建/停止/恢复闭环 | commit `feat(sessions): live lifecycle` |
 | M6 | 项目关联 + UI | 从项目页启动真实会话 | commit `feat(projects): link live sessions` |
-| M7 | Codex + Gemini 适配器 | 三 Provider 均可启动 | tag `milestone-all-providers` |
+| M7 | Codex 适配器 + Session 恢复 | Claude/Codex 可启动，live Session 可恢复；不新增 Gemini 专用适配 | tag `milestone-codex-live` |
 | M8 | 回归 + 文档 + e2e | 全套 verification | commit `test: agent integration coverage` |
 
 ---
@@ -242,7 +242,7 @@ git checkout -b feature/real-agent-integration
 
 # 每个里程碑提交后打 tag（关键节点）
 git tag milestone-claude-live
-git tag milestone-all-providers
+git tag milestone-codex-live
 ```
 
 ### 提交规范
@@ -276,4 +276,4 @@ cd src-tauri && cargo fmt --check && cargo test && cd ..
 
 ## 8. 一句话总结
 
-先搭「契约 + 能力发现 + 后端运行时」三块地基（M1–M3），把**流式 IPC 桥接**和**日志/快照分离**这两个最易翻车的点在 M4–M5 打通，再横向复制到 Codex/Gemini。全程以里程碑 tag 保证可随时回滚到 `baseline-before-agent`。
+先搭「契约 + 能力发现 + 后端运行时」三块地基（M1–M3），把**流式 IPC 桥接**和**日志/快照分离**这两个最易翻车的点在 M4–M5 打通，M6 接通项目 UI，M7 仅完善 Codex 与 Session 恢复。Gemini 保留既有通用运行时映射，不新增专用适配工作。全程以里程碑 tag 保证可随时回滚到 `baseline-before-agent`。

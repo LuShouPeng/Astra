@@ -266,7 +266,7 @@
 .project-tree__session {
   display: grid;
   height: 30px;
-  grid-template-columns: 12px minmax(0, 1fr) 8px;
+  grid-template-columns: 12px minmax(0, 1fr) 14px 8px;
   align-items: center;
   gap: 6px;
   padding: 0 var(--space-2) 0 38px;
@@ -275,6 +275,17 @@
   transition:
     color var(--transition-fast),
     background var(--transition-fast);
+}
+
+.project-tree__origin {
+  color: var(--color-text-subtle);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.project-tree__origin--live {
+  color: var(--color-accent-status);
 }
 
 .project-tree__session:hover,

@@ -1,11 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
 import type { AgentRuntimeService } from '../../agents';
-import { TauriSessionPersistence, type SessionPersistence } from '../adapters/sessionPersistenceAdapter';
 import {
-  createLiveSessionService,
-  type LiveSessionService,
-} from '../services/liveSessionService';
+  TauriSessionPersistence,
+  type SessionPersistence,
+} from '../adapters/sessionPersistenceAdapter';
+import { createLiveSessionService, type LiveSessionService } from '../services/liveSessionService';
 import { createWorkbenchLiveSessionSink } from '../services/workbenchLiveSessionSink';
 
 const LiveSessionContext = createContext<LiveSessionService | null>(null);
@@ -37,8 +37,7 @@ export function LiveSessionProvider({
 
   useEffect(() => () => service.dispose(), [service]);
 
-  // M5 dev 钩子：M6 尚未提供启动 UI，dev 下把 live 服务挂到 window，
-  // 便于 devtools 手动驱动 createLiveSession 做真机验证。生产 no-op。
+  // Dev-only diagnostics hook for driving live sessions from devtools. Production no-op.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     (globalThis as unknown as { __astraLiveSessions?: LiveSessionService }).__astraLiveSessions =

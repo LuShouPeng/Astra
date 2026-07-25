@@ -7,13 +7,13 @@
 | 项 | 值 |
 |----|----|
 | 更新日期 | 2026-07-25 |
-| 当前里程碑 | **M5 完成**（真实 live 会话创建/停止/追问 + 持久化拆分；单测 + 端到端集成测 + **真机验证全部通过** ✅，真机发现并修复 2 个 Bug） |
+| 当前里程碑 | **M6 完成**（本地项目页可选择已安装 Provider、输入任务并启动真实会话；项目列表与侧栏区分 live/demo） |
 | 分支 | `feature/real-agent-integration` |
 | 回滚基线 | tag `baseline-before-agent` |
-| 最新 commit | `test(sessions): end-to-end live session persistence-split integration`（M5 收尾，见 git log） |
-| 前端测试 | 175 用例（+1 ChangesReview 回归测；此前 174）。满载时 Timeline 一条大数据用例偶发 5s 超时，隔离运行通过（机器负载导致，非回归） |
+| 最新 commit | `fix(sessions): close M5 device verification gaps`；M6 提交待本轮完成 |
+| 前端测试 | 176 用例已定义（M6 +1 projectService）；按用户要求本轮未执行。最近一次 M5 验证为 175 用例 |
 | 后端测试 | 21 用例**全绿**（14→21，+7 session_persistence：roundtrip / 分页 / 缺失→空 / 隔离 / 损坏行跳过 / 路径穿越拒绝 / id 形状校验） |
-| 编译 | ✅ 前端 typecheck/lint (--max-warnings 0) 通过；后端 `cargo check` / `cargo test --lib` 全绿 |
+| 编译 | M6 本轮按用户要求未执行；M5 基线：✅ 前端 typecheck/lint、后端 `cargo check` / `cargo test --lib` 全绿 |
 | M5 真机验证 | ✅ 2026-07-25 全部通过：happy path / 持久化拆分（38 行→1 条 agent_message）/ stop 杀进程 / C3 冲突拒绝 / C4 gemini exit 55+stderr 片段 / B1 关闭落盘。经 dev 钩子驱动真实代码路径，目标项目 Astra_Test。**真机发现并修复 2 Bug**：ChangesReview 零变更崩溃、窗口无法关闭（缺 `allow-destroy` 权限）。详见 [`history/M5-live-sessions.md`](./history/M5-live-sessions.md) |
 
 ## 图例
@@ -34,8 +34,8 @@
 | M3 | 运行时后端（agent_runtime.rs+权限） | ✅ 完成 | commit `feat(tauri): agent process runtime` |
 | M4 | 前端运行时服务 + 流桥接 | ✅ 完成（**IPC 真机已验证** ✅） | commit `feat(agents): frontend runtime service` + `fix(tauri): agent_start async` |
 | M5 | Session 生命周期 + 持久化拆分 | ✅ 完成（逻辑 + 集成测覆盖，**真机验证已通过** ✅） | commit `session_persistence` + `live session service` + `serialized snapshot` + `wire SessionDetailPage` + `真机验证 + 2 Bug 修复` |
-| M6 | 项目关联 + UI | ❌ 未开始 | — |
-| M7 | Codex + Gemini 适配器 | ❌ 未开始 | — |
+| M6 | 项目关联 + UI | ✅ 完成（本轮按要求未运行测试） | commit `feat(projects): link live sessions` |
+| M7 | Codex 适配 + Session 恢复 | ❌ 未开始 | — |
 | M8 | 回归 + 文档 + e2e | ❌ 未开始 | — |
 
 ---
@@ -44,12 +44,12 @@
 
 | # | 能力 | 状态 | 依赖里程碑 |
 |---|------|------|-----------|
-| 1 | Claude CLI 接入 | 🔧 前后端服务就位（M3+M4），**流式 IPC 真机已验证**，UI 待接（M6） | M3 ✓, M4 ✓ |
-| 2 | Codex CLI 接入 | 🔧 前后端 argv/适配器已映射，待授权 + UI | M3 ✓, M4 ✓, M7 |
-| 3 | Gemini CLI / 运行时 / 适配器 | 🔧 前后端 argv/适配器已映射，待授权 + UI | M3 ✓, M4 ✓, M7 |
+| 1 | Claude CLI 接入 | ✅ 前后端服务、流式 IPC 与项目启动 UI 已接通 | M3 ✓, M4 ✓, M6 ✓ |
+| 2 | Codex CLI 接入 | 🔧 通用 argv/运行时与项目 UI 已映射，M7 完善 Codex 专用适配与恢复 | M3 ✓, M4 ✓, M6 ✓, M7 |
+| 3 | Gemini CLI / 运行时 | 🔧 保留既有通用映射与能力发现；不再安排专用适配里程碑 | M3 ✓, M4 ✓ |
 | 4 | Agent 能力发现 | ✅ **已实现**（M2） | M2 ✓ |
 | 5 | 真实 Session 创建/执行/停止/恢复 | ✅ 创建/停止/追问已实现（M5，含持久化拆分）；**恢复(resume) 仍 mock，留 M7** | M5 ✓（resume M7） |
-| 6 | 本地项目 ↔ 真实 Session 关联 | 🔧 需修改（数据断开） | M6 |
+| 6 | 本地项目 ↔ 真实 Session 关联 | ✅ 项目页启动、`projectId` 双向派生、live/demo 展示已接通 | M6 ✓ |
 
 ---
 
@@ -84,8 +84,8 @@
 |------|------|------|---------|
 | Session 停止/追问 | `SessionDetailPage.tsx` + `liveSessionService.ts` | ✅ M5 已按 `origin` 分支：live 走真实 `agent_stop`/`agent_send_input`，demo 保留纯函数 | — |
 | Session 恢复(resume) | `liveSessionService.resumeLiveSession` | mock（抛「计划 M7 支持」）；需读日志重建上下文 + provider `--resume` 支持 | M7 |
-| Session 从项目启动的 UI 入口 | `ProjectDetailPage` / `ProjectSessionTree` | 服务(`createLiveSession`)就位但无 UI 按钮；仅 dev-only `window.__astraAgentRuntime` | M6 |
-| 运行中 stderr 实时展示 | `liveSessionService` 流处理 | stderr 只落日志，仅 exit 失败抓末尾；运行中不进 Timeline | M6（见 M5-known-limitations 3.1） |
+| Session 从项目启动的 UI 入口 | `ProjectDetailPage` / `ProjectSessionTree` | ✅ M6 已接入真实启动面板与 live/demo 标识 | — |
+| 运行中 stderr 实时展示 | `liveSessionService` 流处理 | stderr 只落日志，仅 exit 失败抓末尾；运行中不进 Timeline | M8 回归评估（见 M5-known-limitations 3.1） |
 | 项目详情 Changes 页 | `ProjectDetailPage.tsx:43` | 读 `snapshot.fileChanges`（mock 假 diff） | 与真实 git 变更打通（能力 6） |
 | 项目卡片统计 | `projectSelectors.ts:10-22` | `changedFileCount = sum(session.changedFilesCount)`（mock） | live session 汇入后自然真实 |
 
@@ -93,7 +93,6 @@
 
 | 功能 | 计划落点 | 说明 |
 |------|---------|------|
-| 从项目启动 Agent 会话（UI） | `ProjectDetailPage` / `ProjectSessionTree` | M5 已备好 `createLiveSession` 服务，但仍无 UI 启动入口（仅 dev-only `window.__astraAgentRuntime`）；M6 补 |
 | Session 恢复(resume) | `liveSessionService.resumeLiveSession` | M5 mock；需 provider `--resume` + 从日志重建，M7 补 |
 | 日志文件轮转 | `session_persistence.rs` | 长跑会话日志无上限，M5 暂不处理（见 M5-known-limitations） |
 
@@ -108,7 +107,6 @@
 
 **M1 契约已就位**——`origin`/`runtimeProcessId`/`workingDirectory` 字段自 M5 起被 live 会话实际消费（创建时写入、停止/追问时按 `origin` 分支、冲突检测用 `workingDirectory`）。demo 会话仍靠 `origin` 缺省 = `'demo'` 向后兼容。
 
-## 结构性缺口（M6 待补）
+## M6 项目关联（已完成）
 
-live 会话服务（`createLiveSession`）已就位并经集成测验证，但**仍无 UI 启动入口**：用户无法在本地项目卡片上点击启动真实会话，只能经 dev-only `window.__astraAgentRuntime` 手动触发。真实项目与 Session 的 UI 关联、卡片统计打通（能力 6）是 M6 的核心任务。
-
+本地且可用的项目现在可从详情页打开启动面板。Provider 列表由运行时能力发现过滤，创建成功后直接进入新 Session；项目详情和侧栏均按 `session.projectId` 派生关联并标识 live/demo。详见 [`history/M6-project-link-ui.md`](./history/M6-project-link-ui.md)。

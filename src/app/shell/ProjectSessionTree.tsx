@@ -67,6 +67,12 @@ export function ProjectSessionTree({
                           fill="currentColor"
                         />
                         <span>{session.title}</span>
+                        <b
+                          className={`project-tree__origin project-tree__origin--${session.origin === 'live' ? 'live' : 'demo'}`}
+                          title={session.origin === 'live' ? 'Live session' : 'Demo session'}
+                        >
+                          {session.origin === 'live' ? 'L' : 'D'}
+                        </b>
                         {session.unread && <i aria-label="Unread" />}
                       </NavLink>
                     </div>

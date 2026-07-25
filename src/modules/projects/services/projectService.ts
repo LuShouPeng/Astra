@@ -1,5 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
+import type { AgentProvider } from '../../../core/contracts/agents';
 import type { Project, ProjectGitSummary } from '../../../core/contracts/projects';
+import type { SessionId } from '../../../core/contracts/sessions';
+import type { LiveSessionService } from '../../sessions/services/liveSessionService';
 
 export interface ProjectNativeAdapter {
   gitSummary(rootPath: string): Promise<ProjectGitSummary>;
@@ -17,6 +20,25 @@ export class ProjectOperationError extends Error {
     super(message);
     this.name = 'ProjectOperationError';
   }
+}
+
+/** Project-facing live session entry point. Runtime details stay owned by sessions. */
+export async function startAgentSession(
+  liveSessions: LiveSessionService | null,
+  project: Project,
+  provider: AgentProvider,
+  prompt: string,
+): Promise<SessionId> {
+  if (!liveSessions) {
+    throw new ProjectOperationError('The live Agent runtime is unavailable.');
+  }
+  if (project.source !== 'local') {
+    throw new ProjectOperationError('Live Agent sessions require a local project.');
+  }
+  if (project.status !== 'available') {
+    throw new ProjectOperationError('This project directory is missing.');
+  }
+  return liveSessions.createLiveSession(project, provider, prompt);
 }
 
 export class TauriProjectNativeAdapter implements ProjectNativeAdapter {

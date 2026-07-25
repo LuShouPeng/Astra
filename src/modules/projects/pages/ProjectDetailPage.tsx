@@ -1,9 +1,12 @@
-import { ArrowLeft, ExternalLink, FolderOpen } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FolderOpen, Play, X } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import type { AgentProvider } from '../../../core/contracts/agents';
 import type { TimelineEvent } from '../../../core/contracts/sessions';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
-import type { ProjectService } from '../services/projectService';
+import { useLiveSessions } from '../../sessions';
+import type { LiveSessionService } from '../../sessions/services/liveSessionService';
+import { startAgentSession, type ProjectService } from '../services/projectService';
 
 type ProjectTab = 'overview' | 'sessions' | 'changes' | 'activity' | 'configuration';
 
@@ -23,11 +26,24 @@ function activityText(event: TimelineEvent): string {
   }
 }
 
-export function ProjectDetailPage({ service }: { service?: ProjectService }) {
+export function ProjectDetailPage({
+  service,
+  liveSessionService,
+}: {
+  service?: ProjectService;
+  liveSessionService?: LiveSessionService;
+}) {
   const { projectId } = useParams();
   const { snapshot } = useWorkbench();
+  const contextLiveSessions = useLiveSessions();
+  const liveSessions = liveSessionService ?? contextLiveSessions;
+  const navigate = useNavigate();
   const [tab, setTab] = useState<ProjectTab>('overview');
   const [opening, setOpening] = useState(false);
+  const [launcherOpen, setLauncherOpen] = useState(false);
+  const [provider, setProvider] = useState<AgentProvider>('claude');
+  const [prompt, setPrompt] = useState('');
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!snapshot) return <div className="projects-state">Loading project...</div>;
   const project = snapshot.projects.find((candidate) => candidate.id === projectId);
@@ -49,6 +65,17 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
   ).length;
   const openEnabled =
     project.source === 'local' && project.status === 'available' && Boolean(service);
+  const availableProviders = (Object.keys(snapshot.providerCapabilities) as AgentProvider[]).filter(
+    (candidate) => {
+      const capability = snapshot.providerCapabilities[candidate];
+      return capability.runtimeAvailable && !capability.displayOnly;
+    },
+  );
+  const launchEnabled =
+    project.source === 'local' &&
+    project.status === 'available' &&
+    Boolean(liveSessions) &&
+    availableProviders.length > 0;
 
   async function openProject() {
     if (!service) return;
@@ -60,6 +87,20 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
       setError(caught instanceof Error ? caught.message : 'Project directory could not be opened.');
     } finally {
       setOpening(false);
+    }
+  }
+
+  async function launchAgent() {
+    setError(null);
+    setStarting(true);
+    try {
+      const sessionId = await startAgentSession(liveSessions, project!, provider, prompt);
+      setLauncherOpen(false);
+      navigate(`/sessions/${sessionId}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Agent session could not be started.');
+    } finally {
+      setStarting(false);
     }
   }
 
@@ -82,17 +123,86 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
           <h1>{project.name}</h1>
           <span>{project.description ?? 'No project description'}</span>
         </div>
-        <button
-          className="button button--secondary"
-          aria-label="Open project directory"
-          disabled={!openEnabled || opening}
-          title={project.source === 'demo' ? 'Demo projects have no local directory' : undefined}
-          onClick={() => void openProject()}
-        >
-          <FolderOpen size={16} aria-hidden="true" />
-          {opening ? 'Opening...' : 'Open folder'}
-        </button>
+        <div className="project-detail__actions">
+          <button
+            className="button button--secondary"
+            aria-label="Open project directory"
+            disabled={!openEnabled || opening}
+            title={project.source === 'demo' ? 'Demo projects have no local directory' : undefined}
+            onClick={() => void openProject()}
+          >
+            <FolderOpen size={16} aria-hidden="true" />
+            {opening ? 'Opening...' : 'Open folder'}
+          </button>
+          <button
+            className="button button--primary"
+            disabled={!launchEnabled}
+            title={
+              !launchEnabled
+                ? 'No installed Agent runtime is available for this project'
+                : undefined
+            }
+            onClick={() => {
+              setProvider(availableProviders[0] ?? 'claude');
+              setLauncherOpen(true);
+            }}
+          >
+            <Play size={16} aria-hidden="true" />
+            Start Agent
+          </button>
+        </div>
       </header>
+
+      {launcherOpen && (
+        <section className="project-launcher" aria-label="Start Agent session">
+          <div className="project-launcher__heading">
+            <div>
+              <h2>Start Agent session</h2>
+              <span>{project.rootPath}</span>
+            </div>
+            <button
+              className="icon-button"
+              aria-label="Close Agent launcher"
+              onClick={() => setLauncherOpen(false)}
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="project-launcher__fields">
+            <label>
+              Provider
+              <select
+                value={provider}
+                onChange={(event) => setProvider(event.target.value as AgentProvider)}
+              >
+                {availableProviders.map((candidate) => (
+                  <option key={candidate} value={candidate}>
+                    {snapshot.providerCapabilities[candidate].label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="project-launcher__prompt">
+              Task
+              <textarea
+                autoFocus
+                rows={3}
+                value={prompt}
+                placeholder="Describe the task for the Agent"
+                onChange={(event) => setPrompt(event.target.value)}
+              />
+            </label>
+            <button
+              className="button button--primary"
+              disabled={starting || !prompt.trim()}
+              onClick={() => void launchAgent()}
+            >
+              <Play size={16} aria-hidden="true" />
+              {starting ? 'Starting...' : 'Start'}
+            </button>
+          </div>
+        </section>
+      )}
 
       <div className="project-detail__tabs" role="tablist" aria-label="Project views">
         {tabs.map((item) => (
@@ -142,7 +252,9 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
                   <Link key={session.id} to={`/sessions/${session.id}`}>
                     <span>
                       <strong>{session.title}</strong>
-                      <small>{session.provider}</small>
+                      <small>
+                        {session.provider} / {session.origin === 'live' ? 'live' : 'demo'}
+                      </small>
                     </span>
                     <span className={`session-status session-status--${session.status}`}>
                       {session.status}
@@ -162,7 +274,10 @@ export function ProjectDetailPage({ service }: { service?: ProjectService }) {
               <Link key={session.id} to={`/sessions/${session.id}`}>
                 <span>
                   <strong>{session.title}</strong>
-                  <small>{session.currentAction ?? session.provider}</small>
+                  <small>
+                    {session.origin === 'live' ? 'LIVE' : 'DEMO'} /{' '}
+                    {session.currentAction ?? session.provider}
+                  </small>
                 </span>
                 <span className={`session-status session-status--${session.status}`}>
                   {session.status}

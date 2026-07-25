@@ -41,6 +41,65 @@
 .project-detail__header > div {
   min-width: 0;
 }
+.project-detail__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.project-launcher {
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border-strong);
+  background: var(--color-surface-raised);
+}
+.project-launcher__heading,
+.project-launcher__fields {
+  display: flex;
+  width: min(920px, 100%);
+  margin: 0 auto;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.project-launcher__heading {
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+.project-launcher__heading h2 {
+  font-size: var(--text-md);
+}
+.project-launcher__heading span {
+  color: var(--color-text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.project-launcher label {
+  display: grid;
+  gap: 5px;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.project-launcher select,
+.project-launcher textarea {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  background: var(--color-canvas);
+  font: inherit;
+}
+.project-launcher select {
+  min-width: 140px;
+  height: 36px;
+  padding: 0 var(--space-2);
+}
+.project-launcher textarea {
+  min-height: 68px;
+  padding: var(--space-2);
+  resize: vertical;
+}
+.project-launcher__prompt {
+  min-width: 0;
+  flex: 1;
+}
 .project-detail__header h1 {
   margin-top: 2px;
   overflow-wrap: anywhere;
@@ -399,6 +458,17 @@
   .projects-page {
     padding: var(--space-4);
   }
+  .project-detail__header {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .project-detail__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+  .project-launcher__fields {
+    align-items: stretch;
+    flex-direction: column;
+  }
   .projects-page__header {
     align-items: flex-start;
   }
@@ -428,7 +498,7 @@
     white-space: normal;
   }
   .project-detail__header {
-    grid-template-columns: 32px minmax(0, 1fr) 40px;
+    grid-template-columns: 32px minmax(0, 1fr);
     padding: var(--space-4);
   }
   .project-detail__header h1 {
