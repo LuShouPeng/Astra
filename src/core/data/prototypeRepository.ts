@@ -1,4 +1,5 @@
 import type { WorkbenchSnapshot } from '../contracts/workbenchData';
+import { migrateWorkbenchSnapshot } from './workbenchMigration';
 
 export type PrototypeRepositoryErrorCode =
   'INVALID_SNAPSHOT' | 'STORE_CORRUPTED' | 'STORE_UNAVAILABLE';
@@ -71,7 +72,7 @@ function hasSafeRelativePaths(snapshot: WorkbenchSnapshot): boolean {
 }
 
 export function isWorkbenchSnapshot(value: unknown): value is WorkbenchSnapshot {
-  if (!isObject(value) || value.schemaVersion !== 1) return false;
+  if (!isObject(value) || value.schemaVersion !== 2) return false;
   const arrays = [
     value.projects,
     value.sessions,
@@ -89,6 +90,11 @@ export function isWorkbenchSnapshot(value: unknown): value is WorkbenchSnapshot 
     return false;
   }
   if (!snapshot.sessions.every((session) => isObject(session) && hasString(session, 'id'))) {
+    return false;
+  }
+  if (
+    !snapshot.sessions.every((session) => session.source === 'demo' || session.source === 'runtime')
+  ) {
     return false;
   }
   if (!snapshot.timelineEvents.every((event) => isObject(event) && hasString(event, 'id'))) {
@@ -156,15 +162,29 @@ export function createPrototypeRepository({
         return recover();
       }
       if (stored === null || stored === undefined) return recover();
-      if (!isWorkbenchSnapshot(stored)) {
+      let migrated: WorkbenchSnapshot;
+      try {
+        migrated = migrateWorkbenchSnapshot(stored);
+      } catch {
         warning = new PrototypeRepositoryError(
           'STORE_CORRUPTED',
           'Saved workbench data was invalid. Demo data was restored.',
         );
         return recover();
       }
-      cached = clone(stored);
-      return clone(stored);
+      if (!isWorkbenchSnapshot(migrated)) {
+        warning = new PrototypeRepositoryError(
+          'STORE_CORRUPTED',
+          'Saved workbench data was invalid. Demo data was restored.',
+        );
+        return recover();
+      }
+      if ((stored as { schemaVersion?: unknown }).schemaVersion !== migrated.schemaVersion) {
+        await persist(migrated);
+      } else {
+        cached = clone(migrated);
+      }
+      return clone(migrated);
     },
 
     async save(snapshot) {

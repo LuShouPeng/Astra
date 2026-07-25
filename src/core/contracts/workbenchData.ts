@@ -7,7 +7,7 @@ import type { Project } from './projects';
 import type { AgentSession, TimelineEvent } from './sessions';
 
 export interface WorkbenchSnapshot {
-  schemaVersion: 1;
+  schemaVersion: 2;
   projects: Project[];
   sessions: AgentSession[];
   timelineEvents: TimelineEvent[];

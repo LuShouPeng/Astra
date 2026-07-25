@@ -81,6 +81,7 @@ const sessions: AgentSession[] = [
     changedFilesCount: 4,
     testStatus: 'running',
     unread: true,
+    source: 'demo',
   },
   {
     id: 'session-backend-codex',
@@ -95,6 +96,7 @@ const sessions: AgentSession[] = [
     changedFilesCount: 2,
     testStatus: 'passed',
     unread: false,
+    source: 'demo',
   },
   {
     id: 'session-backend-gemini',
@@ -109,6 +111,7 @@ const sessions: AgentSession[] = [
     changedFilesCount: 1,
     testStatus: 'not_run',
     unread: false,
+    source: 'demo',
   },
   {
     id: 'session-frontend-codex',
@@ -122,6 +125,7 @@ const sessions: AgentSession[] = [
     changedFilesCount: 1,
     testStatus: 'not_run',
     unread: true,
+    source: 'demo',
   },
   {
     id: 'session-frontend-claude',
@@ -135,6 +139,7 @@ const sessions: AgentSession[] = [
     changedFilesCount: 3,
     testStatus: 'failed',
     unread: true,
+    source: 'demo',
   },
   {
     id: 'session-ai-gemini',
@@ -148,6 +153,7 @@ const sessions: AgentSession[] = [
     changedFilesCount: 2,
     testStatus: 'not_run',
     unread: false,
+    source: 'demo',
   },
 ];
 
@@ -330,7 +336,7 @@ const notifications: AppNotification[] = [
 
 export function createDemoSnapshot(): WorkbenchSnapshot {
   return structuredClone({
-    schemaVersion: 1,
+    schemaVersion: 2,
     projects,
     sessions,
     timelineEvents,

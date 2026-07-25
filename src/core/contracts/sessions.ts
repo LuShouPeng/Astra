@@ -19,6 +19,10 @@ export interface AgentSession {
   changedFilesCount: number;
   testStatus: TestStatus;
   unread: boolean;
+  source: 'demo' | 'runtime';
+  workflowRunId?: string;
+  workflowNodeId?: string;
+  externalSessionId?: string;
 }
 
 interface TimelineEventBase {
