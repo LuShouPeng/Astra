@@ -34,8 +34,8 @@ D8085F94261D7F8229395B04258C7F4D4FBA1A17E187D50F9B718BE156174DD9  Astra-Nexus-Ro
 
 - Portable EXE launched with window title `Astra Nexus` and reported a responsive process.
 - NSIS generation completed with current-user install mode.
-- Frontend verification passed 138 unit/component tests and 24 E2E tests across both configured
-  desktop viewports.
+- Frontend verification passed 143 unit/component tests and 26 E2E tests across both configured
+  desktop viewports, including persistent Simplified Chinese selection.
 - Rust formatting and all six native unit tests passed before packaging.
 - Demo MP4 fully decoded and was visually sampled across all application scenes.
 - PPTX was rendered and visually inspected slide by slide; speaker notes contain source blocks.

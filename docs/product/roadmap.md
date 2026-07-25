@@ -18,8 +18,8 @@
 - Add accessible bulk actions and performance telemetry for large portfolios.
 - Connect local project activity to real provider Sessions and review provenance.
 
-Dark, Light, and System themes plus the documented navigation shortcuts are already included in
-the 0.1.0 prototype.
+Dark, Light, and System themes, persistent English/Simplified Chinese localization, and the
+documented navigation shortcuts are already included in the 0.1.0 prototype.
 
 ## Phase 4 - Platform And Collaboration
 

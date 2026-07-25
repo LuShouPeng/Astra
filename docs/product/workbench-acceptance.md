@@ -66,6 +66,7 @@ Status values: `pending`, `implemented`, `verified`, `deferred`, `excluded`.
 | Actionable empty states  | verified |
 | Keyboard shortcuts       | verified |
 | Multiple themes          | verified |
+| English/Chinese language | verified |
 | Demo playback speed      | verified |
 
 ## Cross-Cutting Gates
@@ -78,6 +79,7 @@ Status values: `pending`, `implemented`, `verified`, `deferred`, `excluded`.
 | Performance     | Cold start <5 s; page feedback <300 ms; 100 Sessions and 500 events usable | verified |
 | Security        | No upload/key storage/Agent command execution/Git write/out-of-root reads  | verified |
 | Packaging       | Source, installer, executable, README, PRD and prototype documentation     | verified |
+| Localization    | English default; Simplified Chinese UI/demo text persists across reloads   | verified |
 | Demo kit        | Data guide, script, slide deck, backup video, known issues, roadmap        | verified |
 
 ## Explicit Exclusions
@@ -119,15 +121,16 @@ visual coverage; no Gemini CLI behavior may be implemented.
 | Failure recovery             | Failed project removal retains its confirmation; failed Request Changes retains typed feedback; tests cover both retry paths                                                                                               | verified     |
 | Module boundaries            | ESLint rejects cross-module deep imports; modules expose public entry points while `core` and `shared` remain common dependencies                                                                                          | verified     |
 | Review event interpretation  | The PRD data contract fixes seven Timeline variants. Request Changes therefore emits `user_message` and, when needed, `status`; review state is persisted on `FileChange` instead of adding an undocumented eighth variant | verified     |
-| Settings scope               | Theme and notification settings are functional; language, startup, and default-directory fields are truthful prototype representations or visibly marked `Coming soon`                                                     | verified     |
+| Settings scope               | Theme, language, and notification settings are functional; startup and default-directory fields are truthful prototype representations or visibly marked `Coming soon`                                                     | verified     |
 | Prohibited capabilities      | No Agent CLI, Gemini runtime, key collection, upload, shell execution, Git mutation, or project-root escape is exposed                                                                                                     | verified     |
 
 ## Release Evidence
 
-- Frontend unit/component suite: 138 tests passed across 40 files. Coverage was 90.58% statements,
-  83.50% branches, 92.08% functions, and 92.26% lines.
-- E2E suite: 24 tests passed across desktop projects at 1280x720 and 1440x900, including
-  browser-clock checks that each of the six primary page transitions completes in under 300 ms.
+- Frontend unit/component suite: 143 tests passed across 42 files. Coverage was 90.99% statements,
+  83.63% branches, 92.20% functions, and 92.60% lines.
+- E2E suite: 26 tests passed across desktop projects at 1280x720 and 1440x900, including persistent
+  Simplified Chinese selection and browser-clock checks that each of the six primary page
+  transitions completes in under 300 ms.
 - Rust suite: 6 tests passed, covering path confinement, bounded read-only Git behavior, binary
   fallback, repository isolation, path identity, and async Git command dispatch.
 - NSIS build produced a current-user installer; the portable EXE launch probe passed.
@@ -142,3 +145,5 @@ visual coverage; no Gemini CLI behavior may be implemented.
   Request Changes also creates a `review_requested` application notification.
 - Dark, Light, and System themes persist locally. `Alt+1` through `Alt+6` navigate primary pages,
   and `Ctrl+,` / `Cmd+,` opens Settings while editable controls retain normal keyboard behavior.
+- English is the default interface language; Simplified Chinese persists locally and covers fixed
+  UI copy plus frozen demo content without translating user-authored text.

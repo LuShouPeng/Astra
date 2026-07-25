@@ -92,7 +92,7 @@ capability is `displayOnly: true`; all Session mutation controls are disabled fo
 | Request Changes dialog  | Required feedback, severity, immediate rerun option                                                              | verified |
 | Attention               | All/Approval/Input/Review/Failure/Completed and every specified shortcut                                         | verified |
 | Notifications           | Seven event types, title/message/time/project/session/read/target, read/clear tools                              | verified |
-| Settings General        | Theme works; Language and default directory are truthful prototype values; startup is Coming Soon                | verified |
+| Settings General        | Theme and English/Simplified Chinese language persist; default directory is truthful; startup is Coming Soon     | verified |
 | Settings Notifications  | Desktop enable plus Waiting, Completed, and Failed rules                                                         | verified |
 | Settings Demo           | Reset, play/pause/step, `0.5x`/`1x`/`2x` speed                                                                   | verified |
 | Settings About          | Version, description, technology stack, provider runtime scope                                                   | verified |

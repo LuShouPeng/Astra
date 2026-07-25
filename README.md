@@ -24,6 +24,8 @@ read-only Git inspection, and review decisions into one desktop control plane.
 - Unified text diff, binary fallback, Accept, Mark Reviewed, and Request Changes.
 - Application and desktop notifications with per-event settings.
 - Three-step demo playback with pause, single-step, reset, and `0.5x` / `1x` / `2x` speeds.
+- Persistent English and Simplified Chinese interface language, including localized frozen demo
+  content while preserving user-authored project and Session text.
 
 ## Requirements
 
@@ -51,6 +53,9 @@ npm run dev
 3. Open the Claude timeout Session and inspect Timeline and Changes.
 4. Open Settings > Demo, reset, then advance all three deterministic steps.
 5. Open the completion notification, request changes, and return to Command Center.
+
+Use Settings > General > Language to switch between English and Simplified Chinese. English is
+the default, and the selection persists across application restarts.
 
 The full talk track is in `docs/product/demo-script.md`. Frozen data and state transitions are
 documented in `docs/product/demo-data.md`.

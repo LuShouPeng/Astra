@@ -62,7 +62,10 @@ The application uses hash routes so desktop navigation does not depend on an HTT
 - `Ctrl+,` on Windows and `Cmd+,` on macOS opens Settings.
 - Navigation shortcuts are ignored while focus is in an input, textarea, select, or editable area.
 - Settings links can open General, Notifications, Demo, or About directly with the `tab` query.
-- The interface and frozen prototype content are English only.
+- Settings supports persistent English and Simplified Chinese. English remains the default, and
+  the document language updates immediately when the selection changes.
+- Fixed interface copy and frozen prototype content are localized. User-authored and local project
+  content is never translated automatically.
 
 ## Recovery
 
