@@ -45,6 +45,65 @@ describe('planning Provider output', () => {
 
   it('rejects malformed Provider output', () => {
     expect(() => finalizePlannedWorkflow('project-1', { nodes: [], edges: [] })).toThrow();
+    expect(() =>
+      finalizePlannedWorkflow('project-1', { name: 'Null node', nodes: [null], edges: [] }),
+    ).toThrow(/invalid/i);
+    expect(() =>
+      finalizePlannedWorkflow('project-1', {
+        name: 'Incomplete agent',
+        nodes: [
+          {
+            id: 'agent-1',
+            type: 'agent',
+            name: 'Implement',
+            position: { x: 0, y: 0 },
+            provider: 'auto',
+            prompt: 'Implement it',
+            skillIds: 'not-an-array',
+            mcpServerIds: [],
+          },
+        ],
+        edges: [],
+      }),
+    ).toThrow(/invalid/i);
+    expect(() =>
+      finalizePlannedWorkflow('project-1', {
+        name: 'Malformed edge',
+        nodes: [
+          {
+            id: 'agent-1',
+            type: 'agent',
+            name: 'Implement',
+            position: { x: 0, y: 0 },
+            provider: 'auto',
+            prompt: 'Implement it',
+            skillIds: [],
+            mcpServerIds: [],
+          },
+        ],
+        edges: [{ id: 'edge-1', source: 'agent-1', target: 42 }],
+      }),
+    ).toThrow(/invalid/i);
+  });
+
+  it('rejects standalone MCP nodes because MCP is an Agent capability', () => {
+    expect(() =>
+      finalizePlannedWorkflow('project-1', {
+        name: 'Legacy MCP plan',
+        nodes: [
+          {
+            id: 'mcp-1',
+            type: 'mcp_tool',
+            name: 'Search',
+            position: { x: 0, y: 0 },
+            serverId: 'exa',
+            toolName: 'search',
+            arguments: {},
+          },
+        ],
+        edges: [],
+      }),
+    ).toThrow(/Agent capability/);
   });
 
   it('instantiates templates with fresh graph identifiers', () => {

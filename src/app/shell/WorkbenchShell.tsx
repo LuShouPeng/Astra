@@ -52,7 +52,11 @@ function WorkbenchShellContent({
         {!controlPlane && (
           <aside className="sidebar-slot">
             {snapshot ? (
-              <ProjectSessionTree projects={snapshot.projects} sessions={snapshot.sessions} />
+              <ProjectSessionTree
+                workspaceName={workspaceName}
+                projects={snapshot.projects}
+                sessions={snapshot.sessions}
+              />
             ) : (
               <div className="slot-loading" aria-label={t('shell.loadingProjectTree')} />
             )}

@@ -16,12 +16,20 @@ describe('ProjectSessionTree', () => {
 
     render(
       <MemoryRouter>
-        <ProjectSessionTree projects={snapshot.projects} sessions={snapshot.sessions} />
+        <ProjectSessionTree
+          workspaceName="Astra Workspace"
+          projects={snapshot.projects}
+          sessions={snapshot.sessions}
+        />
         <LocationProbe />
       </MemoryRouter>,
     );
 
     expect(screen.getByRole('tree', { name: 'Projects and sessions' })).toBeVisible();
+    expect(screen.getByRole('treeitem', { name: /Astra Workspace/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
     expect(screen.getByText('backend-api')).toBeVisible();
     expect(screen.getByText('frontend')).toBeVisible();
     expect(screen.getByText('ai-service')).toBeVisible();
@@ -36,7 +44,11 @@ describe('ProjectSessionTree', () => {
 
     render(
       <MemoryRouter>
-        <ProjectSessionTree projects={snapshot.projects} sessions={snapshot.sessions} />
+        <ProjectSessionTree
+          workspaceName="Astra Workspace"
+          projects={snapshot.projects}
+          sessions={snapshot.sessions}
+        />
       </MemoryRouter>,
     );
 
@@ -56,11 +68,15 @@ describe('ProjectSessionTree', () => {
     }));
     render(
       <MemoryRouter>
-        <ProjectSessionTree projects={[snapshot.projects[0]]} sessions={sessions} />
+        <ProjectSessionTree
+          workspaceName="Astra Workspace"
+          projects={[snapshot.projects[0]]}
+          sessions={sessions}
+        />
       </MemoryRouter>,
     );
 
-    expect(screen.getAllByRole('treeitem')).toHaveLength(31);
+    expect(screen.getAllByRole('treeitem')).toHaveLength(32);
     expect(screen.getByText('70 more sessions')).toBeVisible();
   });
 });

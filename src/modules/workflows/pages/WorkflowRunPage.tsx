@@ -1,5 +1,5 @@
 import { GitBranch, GitMerge, Play, RotateCcw, ShieldCheck, Square, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Channel, invoke } from '@tauri-apps/api/core';
 import { useI18n } from '../../../core/i18n/I18nContext';
@@ -62,6 +62,8 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
   const desktop = '__TAURI_INTERNALS__' in window;
   const [run, setRun] = useState<WorkflowRunProjection | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const cancelRequested = useRef(false);
   const [error, setError] = useState('');
   const [runWorktree, setRunWorktree] = useState<RunWorktree>();
   const [evidence, setEvidence] = useState<IntegrationEvidence>();
@@ -120,7 +122,11 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
     setBusy(true);
     setError('');
     try {
-      setRun(await service.decideApproval(run!.id, approvalId, approved));
+      const next = await service.decideApproval(run!.id, approvalId, approved);
+      setRun(next);
+      if (approved && next.nodeRuns.some((node) => node.status === 'ready')) {
+        setTimeout(() => void executeReadyBatch(next), 0);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -129,22 +135,39 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
   }
 
   async function cancel() {
-    setBusy(true);
+    cancelRequested.current = true;
+    setCancelling(true);
     try {
       if (desktop) {
         await invoke('orchestration_cancel_agent', { runId: run!.id }).catch(() => undefined);
       }
       setRun(await service.cancelRun(run!.id));
     } finally {
+      setCancelling(false);
+    }
+  }
+
+  async function resume() {
+    setBusy(true);
+    setError('');
+    try {
+      const next = await service.resumeRun(run!.id);
+      setRun(next);
+      if (next.nodeRuns.some((node) => node.status === 'ready')) {
+        setTimeout(() => void executeReadyBatch(next), 0);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
       setBusy(false);
     }
   }
 
-  async function simulate(workflow: WorkflowDefinition) {
+  async function simulate(workflow: WorkflowDefinition, currentRun: WorkflowRunProjection) {
     const statuses = Object.fromEntries(
-      run!.nodeRuns.map((node) => [node.nodeId, node.status]),
+      currentRun.nodeRuns.map((node) => [node.nodeId, node.status]),
     ) as Record<string, NodeRunStatus>;
-    const events = [...run!.events];
+    const events = [...currentRun.events];
     const outcomes: Record<string, boolean> = {};
     for (let pass = 0; pass <= workflow.nodes.length; pass += 1) {
       for (const nodeId of skippedNodeIds(workflow, statuses, outcomes)) {
@@ -165,9 +188,12 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
       }
     }
     const next: WorkflowRunProjection = {
-      ...run!,
+      ...currentRun,
       status: 'completed',
-      nodeRuns: run!.nodeRuns.map((node) => ({ ...node, status: statuses[node.nodeId] })),
+      nodeRuns: currentRun.nodeRuns.map((node) => ({
+        ...node,
+        status: statuses[node.nodeId],
+      })),
       events,
     };
     await service.persistProjection(next);
@@ -176,6 +202,7 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
 
   async function executeAgent(
     workflow: WorkflowDefinition,
+    currentRun: WorkflowRunProjection,
     nodeRun: NodeRun,
     providers: ProviderStatus[],
   ) {
@@ -189,13 +216,26 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
     if (!provider?.executablePath) {
       throw new Error(`${providerName} is unavailable. Configure its executable path and sign in.`);
     }
+    await invoke('orchestration_update_node_provider', {
+      runId: currentRun.id,
+      nodeId: nodeRun.nodeId,
+      provider: providerName,
+    });
+    await invoke('orchestration_preflight_agent_capabilities', {
+      input: {
+        runId: currentRun.id,
+        nodeId: nodeRun.nodeId,
+        mcpServerIds: definition.mcpServerIds,
+        skillIds: definition.skillIds,
+      },
+    });
     const nodeWorktree = await invoke<NodeWorktree>('orchestration_prepare_node_worktree', {
       repository: activeWorkspace.rootPath,
       run: runWorktree,
       nodeId: nodeRun.nodeId,
     });
     await invoke('orchestration_update_node_status', {
-      runId: run!.id,
+      runId: currentRun.id,
       nodeId: nodeRun.nodeId,
       status: 'running',
       worktreePath: nodeWorktree.path,
@@ -217,13 +257,13 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
     };
     const skillContext = definition.skillIds.length
       ? await invoke<string>('orchestration_build_skill_context', {
-          runId: run!.id,
+          runId: currentRun.id,
           skillIds: definition.skillIds,
         })
       : '';
     await invoke('orchestration_start_agent', {
       input: {
-        runId: run!.id,
+        runId: currentRun.id,
         nodeId: nodeRun.nodeId,
         provider: providerName,
         providerPath: provider.executablePath,
@@ -236,83 +276,122 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
     return { definition, nodeRun, nodeWorktree, providerName };
   }
 
-  async function executeReadyBatch() {
+  async function executeReadyBatch(startRun: WorkflowRunProjection = run!) {
+    cancelRequested.current = false;
     setBusy(true);
     setError('');
     try {
-      const workflow = (await service.list()).find((item) => item.id === run!.workflowId);
+      const workflow = (await service.list()).find((item) => item.id === startRun.workflowId);
       if (!workflow) throw new Error('The workflow definition is unavailable.');
       if (!desktop) {
-        await simulate(workflow);
+        await simulate(workflow, startRun);
         return;
       }
       if (!activeWorkspace || !runWorktree)
         throw new Error('The approved worktree is unavailable.');
-      const ready = run!.nodeRuns.filter((node) => node.status === 'ready');
-      if (!ready.length) throw new Error('No node is ready to run.');
       const providers = await invoke<ProviderStatus[]>('orchestration_discover_providers', {
         input: loadProviderPreferences(),
       });
-      const results = await Promise.allSettled(
-        ready.map(async (nodeRun) => {
-          const definition = workflow.nodes.find((node) => node.id === nodeRun.nodeId);
-          if (!definition) throw new Error('The workflow node is unavailable.');
-          if (definition.type === 'mcp_tool') {
-            await invoke('orchestration_call_mcp_tool', {
-              runId: run!.id,
-              nodeId: nodeRun.nodeId,
-              serverId: definition.serverId,
-              toolName: definition.toolName,
-              arguments: definition.arguments,
-            });
-            return { definition, nodeRun };
-          }
-          return executeAgent(workflow, nodeRun, providers);
-        }),
-      );
+      let currentRun = startRun;
       const failures: string[] = [];
-      for (let index = 0; index < results.length; index += 1) {
-        const result = results[index];
-        const nodeRun = ready[index];
-        const definition = workflow.nodes.find((node) => node.id === nodeRun.nodeId)!;
-        if (result.status === 'rejected') {
-          const retry = await service.retryNode(
-            run!.id,
-            nodeRun.nodeId,
-            definition.retries ?? workflow.settings.defaultRetries,
-          );
-          if (!retry)
-            failures.push(
-              result.reason instanceof Error ? result.reason.message : String(result.reason),
+      for (;;) {
+        const ready = currentRun.nodeRuns.filter((node) => node.status === 'ready');
+        if (!ready.length) break;
+        const results = await Promise.allSettled(
+          ready.map(async (nodeRun) => {
+            const definition = workflow.nodes.find((node) => node.id === nodeRun.nodeId);
+            if (!definition) throw new Error('The workflow node is unavailable.');
+            if (definition.type === 'mcp_tool') {
+              await invoke('orchestration_call_mcp_tool', {
+                runId: currentRun.id,
+                nodeId: nodeRun.nodeId,
+                serverId: definition.serverId,
+                toolName: definition.toolName,
+                arguments: definition.arguments,
+              });
+              return { definition, nodeRun };
+            }
+            return executeAgent(workflow, currentRun, nodeRun, providers);
+          }),
+        );
+        if (cancelRequested.current) return;
+        for (let index = 0; index < results.length; index += 1) {
+          const result = results[index];
+          const nodeRun = ready[index];
+          const definition = workflow.nodes.find((node) => node.id === nodeRun.nodeId)!;
+          if (result.status === 'rejected') {
+            const message =
+              result.reason instanceof Error ? result.reason.message : String(result.reason);
+            if (definition.type !== 'mcp_tool') {
+              await invoke('orchestration_update_node_status', {
+                runId: currentRun.id,
+                nodeId: nodeRun.nodeId,
+                status: 'running',
+              });
+              await invoke('orchestration_update_node_evidence', {
+                runId: currentRun.id,
+                nodeId: nodeRun.nodeId,
+                error: message,
+              });
+              await invoke('orchestration_update_node_status', {
+                runId: currentRun.id,
+                nodeId: nodeRun.nodeId,
+                status: 'failed',
+              });
+            }
+            const retry = await service.retryNode(
+              currentRun.id,
+              nodeRun.nodeId,
+              definition.retries ?? workflow.settings.defaultRetries,
             );
-          continue;
+            if (!retry) failures.push(message);
+            continue;
+          }
+          if ('nodeWorktree' in result.value) {
+            try {
+              const commit = await invoke<string>('orchestration_integrate_node', {
+                repository: activeWorkspace.rootPath,
+                run: runWorktree,
+                node: result.value.nodeWorktree,
+                workflowId: workflow.id,
+              });
+              await invoke('orchestration_update_node_evidence', {
+                runId: currentRun.id,
+                nodeId: nodeRun.nodeId,
+                output: { commit, provider: result.value.providerName },
+              });
+              await invoke('orchestration_update_node_status', {
+                runId: currentRun.id,
+                nodeId: nodeRun.nodeId,
+                status: 'succeeded',
+                worktreePath: result.value.nodeWorktree.path,
+              });
+            } catch (reason) {
+              const message = reason instanceof Error ? reason.message : String(reason);
+              await invoke('orchestration_update_node_evidence', {
+                runId: currentRun.id,
+                nodeId: nodeRun.nodeId,
+                error: message,
+              });
+              await invoke('orchestration_update_node_status', {
+                runId: currentRun.id,
+                nodeId: nodeRun.nodeId,
+                status: 'failed',
+                worktreePath: result.value.nodeWorktree.path,
+              });
+              failures.push(message);
+            }
+          }
         }
-        if ('nodeWorktree' in result.value) {
-          const commit = await invoke<string>('orchestration_integrate_node', {
-            repository: activeWorkspace.rootPath,
-            run: runWorktree,
-            node: result.value.nodeWorktree,
-            workflowId: workflow.id,
-          });
-          await invoke('orchestration_update_node_evidence', {
-            runId: run!.id,
-            nodeId: nodeRun.nodeId,
-            output: { commit, provider: result.value.providerName },
-          });
-          await invoke('orchestration_update_node_status', {
-            runId: run!.id,
-            nodeId: nodeRun.nodeId,
-            status: 'succeeded',
-            worktreePath: result.value.nodeWorktree.path,
-          });
-        }
+        currentRun = await service.reconcileRun(currentRun.id);
+        setRun(currentRun);
+        if (failures.length || currentRun.status !== 'running') break;
       }
-      const next = await service.reconcileRun(run!.id);
-      setRun(next);
       if (failures.length) setError(failures.join(' '));
     } catch (reason) {
+      if (cancelRequested.current) return;
       setError(reason instanceof Error ? reason.message : String(reason));
-      setRun(await service.reconcileRun(run!.id).catch(() => run));
+      setRun(await service.reconcileRun(startRun.id).catch(() => startRun));
     } finally {
       setBusy(false);
     }
@@ -360,7 +439,7 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
         </div>
         <button
           className="button button--danger"
-          disabled={busy || ['cancelled', 'completed'].includes(run.status)}
+          disabled={cancelling || ['cancelled', 'completed'].includes(run.status)}
           onClick={() => void cancel()}
         >
           <Square size={15} />
@@ -378,11 +457,7 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
             <RotateCcw size={18} />
             <strong>{language === 'zh-CN' ? '运行已中断' : 'Run interrupted'}</strong>
           </div>
-          <button
-            className="button button--primary"
-            disabled={busy}
-            onClick={() => void service.resumeRun(run.id).then(setRun)}
-          >
+          <button className="button button--primary" disabled={busy} onClick={() => void resume()}>
             {language === 'zh-CN' ? '继续运行' : 'Resume'}
           </button>
         </div>
@@ -447,8 +522,8 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
             <strong>{language === 'zh-CN' ? '节点已就绪' : 'Nodes ready'}</strong>
             <span>
               {language === 'zh-CN'
-                ? '将在隔离 worktree 中按并发限制执行。'
-                : 'The ready batch will run in isolated worktrees within the concurrency limit.'}
+                ? '启动后将自动推进所有就绪节点，并在隔离 worktree 中遵守并发限制。'
+                : 'The scheduler will advance every ready node in isolated worktrees within the concurrency limit.'}
             </span>
           </div>
           <button
@@ -457,7 +532,7 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
             onClick={() => void executeReadyBatch()}
           >
             <Play size={15} />
-            {language === 'zh-CN' ? '执行就绪批次' : 'Run ready batch'}
+            {language === 'zh-CN' ? '启动自动编排' : 'Start orchestration'}
           </button>
         </div>
       )}
@@ -533,11 +608,27 @@ export function WorkflowRunPage({ service: supplied }: { service?: WorkflowServi
             {run.nodeRuns.map((node) => (
               <article key={node.id}>
                 <span className={`run-status run-status--${node.status}`}>{node.status}</span>
-                <strong>{node.nodeId}</strong>
-                <small>
-                  {c.attempt} {node.attempt}
-                  {node.provider ? ` · ${node.provider}` : ''}
-                </small>
+                <div className="run-node-main">
+                  <strong>{node.nodeId}</strong>
+                  <small>
+                    {c.attempt} {node.attempt}
+                    {node.provider ? ` · ${node.provider}` : ''}
+                  </small>
+                  {node.externalSessionId && (
+                    <small title={node.externalSessionId}>
+                      Session · <code>{node.externalSessionId}</code>
+                    </small>
+                  )}
+                  {node.error && <small className="run-node-error">{node.error}</small>}
+                  {(run.artifacts ?? [])
+                    .filter((artifact) => artifact.nodeRunId === node.id)
+                    .map((artifact) => (
+                      <small className="run-node-artifact" key={artifact.id} title={artifact.path}>
+                        {artifact.kind} · {artifact.byteLength.toLocaleString(language)} B ·{' '}
+                        <code>{artifact.contentHash.slice(0, 12)}</code>
+                      </small>
+                    ))}
+                </div>
               </article>
             ))}
           </div>

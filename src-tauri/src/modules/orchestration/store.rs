@@ -11,6 +11,8 @@ pub enum StoreError {
     Database(#[from] rusqlite::Error),
     #[error("Orchestration migration backup could not be created.")]
     Io(#[from] std::io::Error),
+    #[error("Orchestration data failed an integrity check: {0}")]
+    Integrity(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -100,6 +102,7 @@ pub struct RunProjection {
     pub nodes: Vec<NodeRunProjection>,
     pub approvals: Vec<ApprovalRecord>,
     pub events: Vec<RunEventRecord>,
+    pub artifacts: Vec<ArtifactRecord>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -256,6 +259,14 @@ impl OrchestrationStore {
                 FOREIGN KEY (skill_id, version, content_hash)
                     REFERENCES skill_packages(id, version, content_hash)
             );
+            CREATE TABLE IF NOT EXISTS workflow_node_mcp_configs (
+                run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+                node_id TEXT NOT NULL,
+                server_id TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (run_id, node_id, server_id)
+            );
             ",
         )?;
         Self::ensure_column(&transaction, "workflow_runs", "started_at", "TEXT")?;
@@ -266,7 +277,7 @@ impl OrchestrationStore {
         Self::ensure_column(&transaction, "node_runs", "started_at", "TEXT")?;
         Self::ensure_column(&transaction, "node_runs", "completed_at", "TEXT")?;
         Self::ensure_column(&transaction, "skill_packages", "uninstalled_at", "TEXT")?;
-        transaction.pragma_update(None, "user_version", 2)?;
+        transaction.pragma_update(None, "user_version", 3)?;
         transaction.commit()?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -418,6 +429,107 @@ impl OrchestrationStore {
         Ok(())
     }
 
+    pub fn create_run_bundle(
+        &self,
+        run: &WorkflowRunRecord,
+        nodes: &[NodeRunRecord],
+        approval: &ApprovalRecord,
+        skill_ids: &[String],
+        node_mcp_servers: &[(String, Vec<String>)],
+        event_json: &str,
+    ) -> Result<(), StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "INSERT INTO workflow_runs
+               (id, workflow_id, workflow_version, project_id, status, integration_branch)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                run.id,
+                run.workflow_id,
+                run.workflow_version,
+                run.project_id,
+                run.status,
+                run.integration_branch
+            ],
+        )?;
+        for skill_id in skill_ids {
+            let inserted = transaction.execute(
+                "INSERT INTO workflow_run_skills (run_id, skill_id, version, content_hash)
+                 SELECT ?1, id, version, content_hash FROM skill_packages
+                 WHERE id = ?2 AND uninstalled_at IS NULL ORDER BY installed_at DESC LIMIT 1",
+                params![run.id, skill_id],
+            )?;
+            if inserted != 1 {
+                return Err(StoreError::Integrity(format!(
+                    "Skill '{skill_id}' was not available for the run snapshot."
+                )));
+            }
+        }
+        for (node_id, server_ids) in node_mcp_servers {
+            for server_id in server_ids {
+                let inserted = transaction.execute(
+                    "INSERT INTO workflow_node_mcp_configs
+                       (run_id, node_id, server_id, config_json)
+                     SELECT ?1, ?2, id, config_json FROM mcp_servers WHERE id = ?3",
+                    params![run.id, node_id, server_id],
+                )?;
+                if inserted != 1 {
+                    return Err(StoreError::Integrity(format!(
+                        "MCP server '{server_id}' was not available for the run snapshot."
+                    )));
+                }
+            }
+        }
+        for node in nodes {
+            transaction.execute(
+                "INSERT INTO node_runs
+                   (id, run_id, node_id, status, attempt, provider, worktree_path)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    node.id,
+                    node.run_id,
+                    node.node_id,
+                    node.status,
+                    node.attempt,
+                    node.provider,
+                    node.worktree_path
+                ],
+            )?;
+        }
+        transaction.execute(
+            "INSERT INTO approvals
+               (id, run_id, node_run_id, capability, risk, summary, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                approval.id,
+                approval.run_id,
+                approval.node_run_id,
+                approval.capability,
+                approval.risk,
+                approval.summary,
+                approval.status
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![run.id, event_json],
+        )?;
+        let approval_event = serde_json::json!({
+            "type": "approval_requested",
+            "approvalId": approval.id,
+            "nodeRunId": approval.node_run_id,
+            "capability": approval.capability,
+            "risk": approval.risk,
+        });
+        transaction.execute(
+            "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+            params![run.id, approval_event.to_string()],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn get_run(&self, id: &str) -> Result<Option<WorkflowRunRecord>, StoreError> {
         Ok(self
             .connection()
@@ -485,6 +597,20 @@ impl OrchestrationStore {
         Ok(records)
     }
 
+    pub fn update_node_provider(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        provider: &str,
+    ) -> Result<(), StoreError> {
+        self.connection().execute(
+            "UPDATE node_runs SET provider = ?3, updated_at = CURRENT_TIMESTAMP
+             WHERE run_id = ?1 AND node_id = ?2",
+            params![run_id, node_id, provider],
+        )?;
+        Ok(())
+    }
+
     pub fn save_approval(&self, approval: &ApprovalRecord) -> Result<(), StoreError> {
         self.connection().execute(
             "INSERT INTO approvals
@@ -504,6 +630,36 @@ impl OrchestrationStore {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn request_approval(
+        &self,
+        approval: &ApprovalRecord,
+        event_json: &str,
+    ) -> Result<bool, StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        let inserted = transaction.execute(
+            "INSERT OR IGNORE INTO approvals
+               (id, run_id, node_run_id, capability, risk, summary, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending')",
+            params![
+                approval.id,
+                approval.run_id,
+                approval.node_run_id,
+                approval.capability,
+                approval.risk,
+                approval.summary,
+            ],
+        )?;
+        if inserted == 1 {
+            transaction.execute(
+                "INSERT INTO run_events (run_id, event_json) VALUES (?1, ?2)",
+                params![approval.run_id, event_json],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(inserted == 1)
     }
 
     pub fn list_approvals(&self, run_id: &str) -> Result<Vec<ApprovalRecord>, StoreError> {
@@ -537,19 +693,48 @@ impl OrchestrationStore {
         Ok(connection.last_insert_rowid())
     }
 
-    pub fn decide_run(&self, run_id: &str, approved: bool) -> Result<(), StoreError> {
+    pub fn decide_run(&self, run_id: &str, approved: bool) -> Result<bool, StoreError> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
-        transaction.execute(
-            "UPDATE approvals SET status = ?2, updated_at = CURRENT_TIMESTAMP
-             WHERE run_id = ?1 AND status = 'pending'",
-            params![run_id, if approved { "approved" } else { "rejected" }],
-        )?;
-        transaction.execute(
-            "UPDATE node_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP
-             WHERE id = (SELECT id FROM node_runs WHERE run_id = ?1 ORDER BY created_at, id LIMIT 1)",
-            params![run_id, if approved { "pending" } else { "cancelled" }],
-        )?;
+        let target = transaction
+            .query_row(
+                "SELECT a.id, a.node_run_id
+                 FROM approvals a
+                 INNER JOIN workflow_runs r ON r.id = a.run_id
+                 INNER JOIN node_runs n ON n.id = a.node_run_id AND n.run_id = r.id
+                 WHERE a.run_id = ?1 AND a.capability = 'worktree' AND a.status = 'pending'
+                   AND r.status = 'waiting' AND n.status = 'waiting_approval'",
+                [run_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        let Some((approval_id, node_run_id)) = target else {
+            return Ok(false);
+        };
+        if approved {
+            transaction.execute(
+                "UPDATE approvals SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+                [approval_id],
+            )?;
+        } else {
+            transaction.execute(
+                "UPDATE approvals SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
+                 WHERE run_id = ?1 AND status = 'pending'",
+                [run_id],
+            )?;
+        }
+        if approved {
+            transaction.execute(
+                "UPDATE node_runs SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+                [node_run_id],
+            )?;
+        } else {
+            transaction.execute(
+                "UPDATE node_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+                 WHERE run_id = ?1 AND status IN ('pending','ready','running','waiting_approval')",
+                [run_id],
+            )?;
+        }
         transaction.execute(
             "UPDATE workflow_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
             params![run_id, if approved { "queued" } else { "cancelled" }],
@@ -566,26 +751,39 @@ impl OrchestrationStore {
             ],
         )?;
         transaction.commit()?;
-        Ok(())
+        Ok(true)
     }
 
-    pub fn decide_approval(&self, approval_id: &str, approved: bool) -> Result<(), StoreError> {
+    pub fn decide_approval(&self, approval_id: &str, approved: bool) -> Result<bool, StoreError> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
         let target = transaction
             .query_row(
-                "SELECT run_id, node_run_id FROM approvals WHERE id = ?1 AND status = 'pending'",
+                "SELECT a.run_id, a.node_run_id
+                 FROM approvals a
+                 INNER JOIN workflow_runs r ON r.id = a.run_id
+                 INNER JOIN node_runs n ON n.id = a.node_run_id AND n.run_id = r.id
+                 WHERE a.id = ?1 AND a.status = 'pending' AND a.capability != 'worktree'
+                   AND r.status = 'waiting' AND n.status = 'waiting_approval'",
                 [approval_id],
                 |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?;
         let Some((run_id, node_run_id)) = target else {
-            return Ok(());
+            return Ok(false);
         };
-        transaction.execute(
-            "UPDATE approvals SET status = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
-            params![approval_id, if approved { "approved" } else { "rejected" }],
-        )?;
+        if approved {
+            transaction.execute(
+                "UPDATE approvals SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+                [approval_id],
+            )?;
+        } else {
+            transaction.execute(
+                "UPDATE approvals SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
+                 WHERE run_id = ?1 AND node_run_id = ?2 AND status = 'pending'",
+                params![run_id, node_run_id],
+            )?;
+        }
         transaction.execute(
             "UPDATE node_runs SET status = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
             params![node_run_id, if approved { "pending" } else { "cancelled" }],
@@ -600,7 +798,7 @@ impl OrchestrationStore {
             params![run_id, event.to_string()],
         )?;
         transaction.commit()?;
-        Ok(())
+        Ok(true)
     }
 
     pub fn set_run_status(&self, run_id: &str, status: &str) -> Result<(), StoreError> {
@@ -614,27 +812,43 @@ impl OrchestrationStore {
         Ok(())
     }
 
-    pub fn cancel_run(&self, run_id: &str) -> Result<(), StoreError> {
+    pub fn cancel_run(&self, run_id: &str) -> Result<bool, StoreError> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
+        let changed = transaction.execute(
+            "UPDATE workflow_runs SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND status IN ('waiting','queued','running','interrupted')",
+            [run_id],
+        )?;
+        if changed == 0 {
+            return Ok(false);
+        }
+        transaction.execute(
+            "UPDATE approvals SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
+             WHERE run_id = ?1 AND status = 'pending'",
+            [run_id],
+        )?;
         transaction.execute("UPDATE node_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND status IN ('pending','ready','running','waiting_approval')", [run_id])?;
-        transaction.execute("UPDATE workflow_runs SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?1", [run_id])?;
         transaction.execute("INSERT INTO run_events (run_id, event_json) VALUES (?1, '{\"type\":\"run_cancelled\"}')", [run_id])?;
         transaction.commit()?;
-        Ok(())
+        Ok(true)
     }
 
-    pub fn resume_run(&self, run_id: &str) -> Result<(), StoreError> {
+    pub fn resume_run(&self, run_id: &str) -> Result<bool, StoreError> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
+        let changed = transaction.execute(
+            "UPDATE workflow_runs SET status = 'queued', completed_at = NULL,
+             updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND status = 'interrupted'",
+            [run_id],
+        )?;
+        if changed == 0 {
+            return Ok(false);
+        }
         transaction.execute(
             "UPDATE node_runs SET status = 'pending', completed_at = NULL,
              updated_at = CURRENT_TIMESTAMP WHERE run_id = ?1 AND status = 'interrupted'",
-            [run_id],
-        )?;
-        transaction.execute(
-            "UPDATE workflow_runs SET status = 'queued', completed_at = NULL,
-             updated_at = CURRENT_TIMESTAMP WHERE id = ?1 AND status = 'interrupted'",
             [run_id],
         )?;
         transaction.execute(
@@ -642,7 +856,7 @@ impl OrchestrationStore {
             [run_id],
         )?;
         transaction.commit()?;
-        Ok(())
+        Ok(true)
     }
 
     pub fn update_node_status(
@@ -729,6 +943,7 @@ impl OrchestrationStore {
             nodes,
             approvals: self.list_approvals(id)?,
             events,
+            artifacts: self.list_artifacts(id)?,
         }))
     }
 
@@ -752,6 +967,28 @@ impl OrchestrationStore {
         Ok(())
     }
 
+    pub fn list_artifacts(&self, run_id: &str) -> Result<Vec<ArtifactRecord>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT id, run_id, node_run_id, kind, path, content_hash, byte_length
+             FROM run_artifacts WHERE run_id = ?1 ORDER BY created_at, id",
+        )?;
+        let artifacts = statement
+            .query_map([run_id], |row| {
+                Ok(ArtifactRecord {
+                    id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    node_run_id: row.get(2)?,
+                    kind: row.get(3)?,
+                    path: row.get(4)?,
+                    content_hash: row.get(5)?,
+                    byte_length: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(artifacts)
+    }
+
     pub fn retry_node(
         &self,
         run_id: &str,
@@ -760,16 +997,28 @@ impl OrchestrationStore {
     ) -> Result<bool, StoreError> {
         let mut connection = self.connection();
         let transaction = connection.transaction()?;
-        let attempt = transaction
+        let node = transaction
             .query_row(
-                "SELECT attempt FROM node_runs WHERE run_id = ?1 AND node_id = ?2",
+                "SELECT n.attempt, n.status, r.status
+                 FROM node_runs n
+                 INNER JOIN workflow_runs r ON r.id = n.run_id
+                 WHERE n.run_id = ?1 AND n.node_id = ?2",
                 params![run_id, node_id],
-                |row| row.get::<_, i64>(0),
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
             )
             .optional()?;
-        let Some(attempt) = attempt else {
+        let Some((attempt, node_status, run_status)) = node else {
             return Ok(false);
         };
+        if node_status != "failed" || run_status != "running" {
+            return Ok(false);
+        }
         let decision = retry_decision(attempt.clamp(0, u8::MAX as i64) as u8, max_retries);
         let retry = matches!(decision, RetryDecision::Retry { .. });
         if let RetryDecision::Retry {
@@ -779,7 +1028,7 @@ impl OrchestrationStore {
             transaction.execute(
                 "UPDATE node_runs SET status = 'pending', attempt = ?3,
                  error = NULL, completed_at = NULL, updated_at = CURRENT_TIMESTAMP
-                 WHERE run_id = ?1 AND node_id = ?2",
+                 WHERE run_id = ?1 AND node_id = ?2 AND status = 'failed'",
                 params![run_id, node_id, next_attempt],
             )?;
             let event = serde_json::json!({
@@ -834,6 +1083,47 @@ impl OrchestrationStore {
                 },
             )
             .optional()?)
+    }
+
+    pub fn snapshot_node_mcp_configs(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        server_ids: &[String],
+    ) -> Result<(), StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        for server_id in server_ids {
+            transaction.execute(
+                "INSERT OR IGNORE INTO workflow_node_mcp_configs
+                 (run_id, node_id, server_id, config_json)
+                 SELECT ?1, ?2, id, config_json FROM mcp_servers WHERE id = ?3",
+                params![run_id, node_id, server_id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn list_node_mcp_configs(
+        &self,
+        run_id: &str,
+        node_id: &str,
+    ) -> Result<Vec<McpConfigRecord>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT server_id, config_json FROM workflow_node_mcp_configs
+             WHERE run_id = ?1 AND node_id = ?2 ORDER BY server_id",
+        )?;
+        let records = statement
+            .query_map(params![run_id, node_id], |row| {
+                Ok(McpConfigRecord {
+                    id: row.get(0)?,
+                    config_json: row.get(1)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(records)
     }
 
     pub fn save_skill_package(
@@ -931,6 +1221,22 @@ impl OrchestrationStore {
         self.connection()
             .execute("DELETE FROM mcp_servers WHERE id = ?1", [id])?;
         Ok(())
+    }
+
+    pub fn mcp_secret_reference_in_use(&self, reference: &str) -> Result<bool, StoreError> {
+        let connection = self.connection();
+        let count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM (
+                SELECT 1 FROM mcp_servers
+                WHERE json_extract(config_json, '$.secretRef') = ?1
+                UNION ALL
+                SELECT 1 FROM workflow_node_mcp_configs
+                WHERE json_extract(config_json, '$.secretRef') = ?1
+            )",
+            [reference],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
     }
 
     pub fn list_events(&self, run_id: &str) -> Result<Vec<String>, StoreError> {

@@ -198,6 +198,20 @@
   min-height: 20px;
   grid-template-columns: 48px 48px minmax(520px, 1fr);
 }
+.diff-line:is(button) {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+}
+.diff-line:is(button):not(:disabled) {
+  cursor: pointer;
+}
+.diff-line:is(button):not(:disabled):hover {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
 .diff-line > span {
   padding: 0 var(--space-2);
   border-right: 1px solid var(--color-border);

@@ -57,8 +57,9 @@ describe('ChangesPage', () => {
     expect(screen.getByText('Binary preview unavailable')).toBeVisible();
     await user.click(screen.getByRole('option', { name: /src\/auth\/session\.ts/ }));
 
-    await user.click(screen.getByRole('button', { name: 'Request Changes' }));
+    await user.click(screen.getByRole('row', { name: 'Comment on new line 12' }));
     expect(screen.getByRole('button', { name: 'Submit request' })).toBeDisabled();
+    expect(screen.getByLabelText('Code location')).toHaveValue('src/auth/session.ts:12');
     await user.type(screen.getByLabelText('Requested changes'), 'Cover refresh token expiry.');
     await user.selectOptions(screen.getByLabelText('Severity'), 'high');
     await user.click(screen.getByRole('button', { name: 'Submit request' }));

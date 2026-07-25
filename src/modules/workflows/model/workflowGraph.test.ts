@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkflowDefinition } from '../../../core/contracts/workflows';
-import { readyNodeIds, skippedNodeIds, validateWorkflow } from './workflowGraph';
+import { layoutWorkflow, readyNodeIds, skippedNodeIds, validateWorkflow } from './workflowGraph';
 
 function workflow(overrides: Partial<WorkflowDefinition> = {}): WorkflowDefinition {
   return {
@@ -68,6 +68,17 @@ describe('workflow graph', () => {
     );
   });
 
+  it('rejects true or false outcomes on non-condition edges', () => {
+    const definition = workflow({
+      edges: [{ id: 'invalid-branch', source: 'plan', target: 'approve', outcome: 'true' }],
+    });
+
+    expect(validateWorkflow(definition)).toContainEqual({
+      code: 'INVALID_EDGE_OUTCOME',
+      edgeId: 'invalid-branch',
+    });
+  });
+
   it('does not release a dependent node after failed or skipped dependencies', () => {
     const definition = workflow();
 
@@ -94,5 +105,41 @@ describe('workflow graph', () => {
     const outcomes = { plan: true };
     expect(readyNodeIds(definition, statuses, outcomes)).toEqual(['approve']);
     expect(skippedNodeIds(definition, statuses, outcomes)).toEqual(['other']);
+  });
+
+  it('lays out dependencies by topological depth and keeps parallel nodes in one column', () => {
+    const definition = workflow({
+      nodes: [
+        workflow().nodes[0],
+        { ...workflow().nodes[1], id: 'review', name: 'Review' },
+        { ...workflow().nodes[1], id: 'test', name: 'Test' },
+        workflow().nodes[1],
+      ],
+      edges: [
+        { id: 'plan-review', source: 'plan', target: 'review' },
+        { id: 'plan-test', source: 'plan', target: 'test' },
+        { id: 'review-approve', source: 'review', target: 'approve' },
+        { id: 'test-approve', source: 'test', target: 'approve' },
+      ],
+    });
+
+    const positions = layoutWorkflow(definition);
+    expect(positions.get('plan')?.x).toBeLessThan(positions.get('review')!.x);
+    expect(positions.get('review')?.x).toBe(positions.get('test')?.x);
+    expect(positions.get('review')?.y).not.toBe(positions.get('test')?.y);
+    expect(positions.get('approve')?.x).toBeGreaterThan(positions.get('review')!.x);
+  });
+
+  it('keeps cyclic remnants visible in a fallback column', () => {
+    const definition = workflow({
+      edges: [
+        { id: 'forward', source: 'plan', target: 'approve' },
+        { id: 'back', source: 'approve', target: 'plan' },
+      ],
+    });
+
+    const positions = layoutWorkflow(definition);
+    expect([...positions.keys()]).toEqual(['plan', 'approve']);
+    expect(positions.get('plan')?.x).toBe(positions.get('approve')?.x);
   });
 });

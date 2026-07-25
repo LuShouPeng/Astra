@@ -143,4 +143,9 @@ fn reconciliation_reports_waiting_and_failed_runs() {
         reconcile(&graph, &failed, &HashMap::new()).disposition,
         RunDisposition::Failed
     );
+    let cancelled = HashMap::from([("approval".into(), NodeStatus::Cancelled)]);
+    assert_eq!(
+        reconcile(&graph, &cancelled, &HashMap::new()).disposition,
+        RunDisposition::Cancelled
+    );
 }

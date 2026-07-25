@@ -11,6 +11,7 @@ export interface RequestChangesInput {
   severity: ReviewSeverity;
   rerunImmediately: boolean;
   timestamp: string;
+  location?: string;
 }
 
 function requireSession(snapshot: WorkbenchSnapshot, sessionId: SessionId) {
@@ -116,7 +117,7 @@ export function requestSessionChanges(
       sessionId: input.sessionId,
       type: 'user_message',
       timestamp: input.timestamp,
-      content: `[${severity}] ${feedback}`,
+      content: `[${severity}]${input.location ? ` ${input.location}` : ''} ${feedback}`,
     },
     {
       id: `event-review-status-${input.timestamp}`,

@@ -6,7 +6,8 @@ use tauri::State;
 
 use super::permissions::{classify_operation, Operation, PolicyDecision};
 use super::scheduler::{
-    reconcile, Edge, JoinStrategy, Node, NodeKind, NodeStatus, RunDisposition, Workflow,
+    reconcile, validate_definition, Edge, JoinStrategy, Node, NodeKind, NodeStatus, RunDisposition,
+    Workflow,
 };
 use super::store::{
     ApprovalRecord, NodeRunRecord, OrchestrationStore, RunProjection, WorkflowRecord,
@@ -33,6 +34,14 @@ fn valid_identifier(value: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || b"-_.".contains(&character))
 }
 
+fn valid_capability_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|character| character.is_ascii_alphanumeric() || b"-_.:/".contains(&character))
+}
+
 pub(super) fn validate_workflow_input(input: &WorkflowSaveInput) -> Result<(), String> {
     if !valid_identifier(&input.id) || !valid_identifier(&input.project_id) {
         return Err("Workflow identifiers are invalid.".into());
@@ -49,11 +58,16 @@ pub(super) fn validate_workflow_input(input: &WorkflowSaveInput) -> Result<(), S
         .as_object()
         .ok_or_else(|| "Workflow definition must be an object.".to_string())?;
     if object.get("id").and_then(Value::as_str) != Some(input.id.as_str())
+        || object.get("version").and_then(Value::as_i64) != Some(input.version)
+        || object.get("projectId").and_then(Value::as_str) != Some(input.project_id.as_str())
         || !object.get("nodes").is_some_and(Value::is_array)
         || !object.get("edges").is_some_and(Value::is_array)
     {
         return Err("Workflow definition fields are invalid.".into());
     }
+    let runtime: RuntimeDefinition = serde_json::from_value(definition)
+        .map_err(|_| "Workflow runtime fields are invalid.".to_string())?;
+    validate_runtime_definition(&runtime)?;
     Ok(())
 }
 
@@ -118,6 +132,7 @@ pub(super) fn validate_run_input(input: &RunCreateInput) -> Result<(), String> {
         || input.node_ids.is_empty()
         || input.node_ids.len() > 256
         || input.node_ids.iter().any(|id| !valid_identifier(id))
+        || input.node_ids.iter().collect::<HashSet<_>>().len() != input.node_ids.len()
         || !input.integration_branch.starts_with("astra/run-")
         || input.integration_branch.len() > 180
     {
@@ -126,84 +141,198 @@ pub(super) fn validate_run_input(input: &RunCreateInput) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct NodeCapabilities {
+    pub node_id: String,
+    pub mcp_server_ids: Vec<String>,
+    pub skill_ids: Vec<String>,
+}
+
+pub(super) fn validate_run_definition(
+    input: &RunCreateInput,
+    definition: &Value,
+) -> Result<Vec<NodeCapabilities>, String> {
+    if definition.get("projectId").and_then(Value::as_str) != Some(input.project_id.as_str()) {
+        return Err("The workflow run project does not match the saved definition.".into());
+    }
+    let nodes = definition
+        .get("nodes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "The stored workflow nodes are invalid.".to_string())?;
+    let mut capabilities = Vec::with_capacity(nodes.len());
+    let mut definition_ids = HashSet::new();
+    for node in nodes {
+        let node_id = node
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| valid_identifier(id))
+            .ok_or_else(|| "A stored workflow node identifier is invalid.".to_string())?;
+        if !definition_ids.insert(node_id.to_string()) {
+            return Err("Stored workflow node identifiers must be unique.".into());
+        }
+        let node_type = node.get("type").and_then(Value::as_str).unwrap_or_default();
+        let mcp_server_ids = match node_type {
+            "agent" => node
+                .get("mcpServerIds")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .filter(|id| valid_capability_identifier(id))
+                        .map(ToOwned::to_owned)
+                        .ok_or_else(|| "An Agent MCP server identifier is invalid.".to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            "mcp_tool" => vec![node
+                .get("serverId")
+                .and_then(Value::as_str)
+                .filter(|id| valid_capability_identifier(id))
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| "An MCP tool server identifier is invalid.".to_string())?],
+            _ => Vec::new(),
+        };
+        let skill_ids = if node_type == "agent" {
+            node.get("skillIds")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .filter(|id| valid_identifier(id))
+                        .map(ToOwned::to_owned)
+                        .ok_or_else(|| "An Agent Skill identifier is invalid.".to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
+        if mcp_server_ids.iter().collect::<HashSet<_>>().len() != mcp_server_ids.len()
+            || skill_ids.iter().collect::<HashSet<_>>().len() != skill_ids.len()
+        {
+            return Err("Workflow node capabilities must not be duplicated.".into());
+        }
+        capabilities.push(NodeCapabilities {
+            node_id: node_id.to_string(),
+            mcp_server_ids,
+            skill_ids,
+        });
+    }
+    let submitted = input.node_ids.iter().cloned().collect::<HashSet<_>>();
+    if submitted != definition_ids {
+        return Err("Workflow run nodes must exactly match the saved definition.".into());
+    }
+    Ok(capabilities)
+}
+
 #[tauri::command]
 pub fn orchestration_create_run(
     store: State<'_, OrchestrationStore>,
     input: RunCreateInput,
 ) -> Result<(), String> {
+    create_run(&store, input)
+}
+
+pub(super) fn create_run(store: &OrchestrationStore, input: RunCreateInput) -> Result<(), String> {
     validate_run_input(&input)?;
-    store
-        .save_run(&WorkflowRunRecord {
-            id: input.id.clone(),
-            workflow_id: input.workflow_id.clone(),
-            workflow_version: input.workflow_version,
-            project_id: input.project_id,
-            status: "waiting".into(),
-            integration_branch: Some(input.integration_branch),
-        })
-        .map_err(|error| error.to_string())?;
-    if let Some(workflow) = store
+    if store
+        .get_run(&input.id)
+        .map_err(|error| error.to_string())?
+        .is_some()
+    {
+        return Err("A workflow run with this identifier already exists.".into());
+    }
+    let workflow = store
         .get_workflow(&input.workflow_id, input.workflow_version)
         .map_err(|error| error.to_string())?
-    {
-        let definition: Value = serde_json::from_str(&workflow.definition_json)
-            .map_err(|_| "Stored workflow definition is invalid.".to_string())?;
-        let skill_ids = definition
-            .get("nodes")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .flat_map(|node| {
-                node.get("skillIds")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-            })
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        store
-            .snapshot_skill_refs(&input.id, &skill_ids)
-            .map_err(|error| error.to_string())?;
+        .ok_or_else(|| "Workflow definition was not found.".to_string())?;
+    if workflow.project_id != input.project_id {
+        return Err("The workflow run project does not match the saved workflow.".into());
     }
-    for (index, node_id) in input.node_ids.iter().enumerate() {
-        let node_run_id = format!("{}-{node_id}", input.id);
-        store
-            .save_node_run(&NodeRunRecord {
-                id: node_run_id.clone(),
-                run_id: input.id.clone(),
-                node_id: node_id.clone(),
-                status: if index == 0 {
-                    "waiting_approval".into()
-                } else {
-                    "pending".into()
-                },
-                attempt: 1,
-                provider: None,
-                worktree_path: None,
-            })
-            .map_err(|error| error.to_string())?;
-        if index == 0 {
-            if classify_operation(Operation::Worktree) != PolicyDecision::RequireApproval {
-                return Err("The worktree permission policy is invalid.".into());
-            }
-            store
-                .save_approval(&ApprovalRecord {
-                    id: format!("approval-{}", input.id),
-                    run_id: input.id.clone(),
-                    node_run_id,
-                    capability: "worktree".into(),
-                    risk: "medium".into(),
-                    summary: "Create isolated integration and Agent worktrees.".into(),
-                    status: "pending".into(),
-                })
-                .map_err(|error| error.to_string())?;
+    let definition: Value = serde_json::from_str(&workflow.definition_json)
+        .map_err(|_| "Stored workflow definition is invalid.".to_string())?;
+    let capabilities = validate_run_definition(&input, &definition)?;
+    for server_id in capabilities
+        .iter()
+        .flat_map(|node| &node.mcp_server_ids)
+        .collect::<HashSet<_>>()
+    {
+        if store
+            .get_mcp_config(server_id)
+            .map_err(|error| error.to_string())?
+            .is_none()
+        {
+            return Err(format!("MCP server '{server_id}' is not registered."));
         }
     }
+    let skill_ids = capabilities
+        .iter()
+        .flat_map(|node| node.skill_ids.iter().cloned())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let installed_skills = store
+        .list_skill_packages(false)
+        .map_err(|error| error.to_string())?;
+    if let Some(missing) = skill_ids
+        .iter()
+        .find(|skill_id| !installed_skills.iter().any(|skill| &skill.id == *skill_id))
+    {
+        return Err(format!("Skill '{missing}' is not installed."));
+    }
+    if classify_operation(Operation::Worktree) != PolicyDecision::RequireApproval {
+        return Err("The worktree permission policy is invalid.".into());
+    }
+    let nodes = input
+        .node_ids
+        .iter()
+        .enumerate()
+        .map(|(index, node_id)| NodeRunRecord {
+            id: format!("{}-{node_id}", input.id),
+            run_id: input.id.clone(),
+            node_id: node_id.clone(),
+            status: if index == 0 {
+                "waiting_approval".into()
+            } else {
+                "pending".into()
+            },
+            attempt: 1,
+            provider: None,
+            worktree_path: None,
+        })
+        .collect::<Vec<_>>();
+    let run = WorkflowRunRecord {
+        id: input.id.clone(),
+        workflow_id: input.workflow_id,
+        workflow_version: input.workflow_version,
+        project_id: input.project_id,
+        status: "waiting".into(),
+        integration_branch: Some(input.integration_branch),
+    };
+    let approval = ApprovalRecord {
+        id: format!("approval-{}", input.id),
+        run_id: input.id.clone(),
+        node_run_id: nodes[0].id.clone(),
+        capability: "worktree".into(),
+        risk: "medium".into(),
+        summary: "Create isolated integration and Agent worktrees.".into(),
+        status: "pending".into(),
+    };
+    let node_mcp_servers = capabilities
+        .into_iter()
+        .map(|node| (node.node_id, node.mcp_server_ids))
+        .collect::<Vec<_>>();
     store
-        .append_event(&input.id, r#"{"type":"run_created","status":"waiting"}"#)
+        .create_run_bundle(
+            &run,
+            &nodes,
+            &approval,
+            &skill_ids,
+            &node_mcp_servers,
+            r#"{"type":"run_created","status":"waiting"}"#,
+        )
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -217,9 +346,13 @@ pub fn orchestration_decide_run(
     if !valid_identifier(&run_id) {
         return Err("Workflow run identifier is invalid.".into());
     }
-    store
+    let changed = store
         .decide_run(&run_id, approved)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if !changed {
+        return Err("The run has no pending worktree approval in its current state.".into());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -230,7 +363,13 @@ pub fn orchestration_cancel_run(
     if !valid_identifier(&run_id) {
         return Err("Workflow run identifier is invalid.".into());
     }
-    store.cancel_run(&run_id).map_err(|error| error.to_string())
+    if !store
+        .cancel_run(&run_id)
+        .map_err(|error| error.to_string())?
+    {
+        return Err("The workflow run cannot be cancelled in its current state.".into());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -241,9 +380,12 @@ pub fn orchestration_resume_run(
     if !valid_identifier(&run_id) {
         return Err("Workflow run identifier is invalid.".into());
     }
-    store
+    let resumed = store
         .resume_run(&run_id)
         .map_err(|error| error.to_string())?;
+    if !resumed {
+        return Err("Only an interrupted workflow run can be resumed.".into());
+    }
     reconcile_persisted_run(&store, &run_id)
 }
 
@@ -255,10 +397,32 @@ pub fn orchestration_update_node_status(
     status: String,
     worktree_path: Option<String>,
 ) -> Result<(), String> {
-    if !valid_identifier(&run_id)
-        || !valid_identifier(&node_id)
+    update_node_status_checked(&store, &run_id, &node_id, &status, worktree_path.as_deref())
+}
+
+pub(super) fn valid_external_node_transition(current: &str, target: &str) -> bool {
+    current == target
+        || matches!(
+            (current, target),
+            ("ready", "running" | "cancelled" | "interrupted")
+                | (
+                    "running",
+                    "waiting_approval" | "succeeded" | "failed" | "cancelled" | "interrupted"
+                )
+        )
+}
+
+pub(super) fn update_node_status_checked(
+    store: &OrchestrationStore,
+    run_id: &str,
+    node_id: &str,
+    status: &str,
+    worktree_path: Option<&str>,
+) -> Result<(), String> {
+    if !valid_identifier(run_id)
+        || !valid_identifier(node_id)
         || !matches!(
-            status.as_str(),
+            status,
             "ready"
                 | "running"
                 | "waiting_approval"
@@ -269,19 +433,103 @@ pub fn orchestration_update_node_status(
                 | "interrupted"
         )
         || worktree_path
-            .as_deref()
-            .is_some_and(|path| path.len() > 32_768)
+            .is_some_and(|path| path.len() > 32_768 || !std::path::Path::new(path).is_absolute())
     {
         return Err("Node status input is invalid.".into());
     }
+    let run = store
+        .get_run(run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workflow run was not found.".to_string())?;
+    if run.status != "running" {
+        return Err("Node execution status can only change while the run is running.".into());
+    }
+    let node = store
+        .list_node_runs(run_id)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .find(|node| node.node_id == node_id)
+        .ok_or_else(|| "Workflow node run was not found.".to_string())?;
+    if !valid_external_node_transition(&node.status, status) {
+        return Err("The requested node status transition is not allowed.".into());
+    }
     store
-        .update_node_status(&run_id, &node_id, &status, worktree_path.as_deref())
+        .update_node_status(run_id, node_id, status, worktree_path)
         .map_err(|error| error.to_string())?;
     let event = serde_json::json!({ "type": "node_status", "nodeId": node_id, "status": status });
     store
-        .append_event(&run_id, &event.to_string())
+        .append_event(run_id, &event.to_string())
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn orchestration_update_node_provider(
+    store: State<'_, OrchestrationStore>,
+    run_id: String,
+    node_id: String,
+    provider: String,
+) -> Result<(), String> {
+    update_node_provider_checked(&store, &run_id, &node_id, &provider)
+}
+
+pub(super) fn update_node_provider_checked(
+    store: &OrchestrationStore,
+    run_id: &str,
+    node_id: &str,
+    provider: &str,
+) -> Result<(), String> {
+    if !valid_identifier(run_id)
+        || !valid_identifier(node_id)
+        || !matches!(provider, "claude" | "codex" | "gemini")
+    {
+        return Err("Node Provider input is invalid.".into());
+    }
+    let projection = store
+        .get_run_projection(run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workflow run was not found.".to_string())?;
+    if projection.run.status != "running" {
+        return Err("Node Provider can only be selected while the run is running.".into());
+    }
+    let node_run = projection
+        .nodes
+        .iter()
+        .find(|node| node.node.node_id == node_id)
+        .ok_or_else(|| "Workflow node run was not found.".to_string())?;
+    if !matches!(node_run.node.status.as_str(), "ready" | "running") {
+        return Err("Node Provider cannot be changed in the current node state.".into());
+    }
+    let workflow = store
+        .get_workflow(&projection.run.workflow_id, projection.run.workflow_version)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workflow definition was not found.".to_string())?;
+    let definition: Value = serde_json::from_str(&workflow.definition_json)
+        .map_err(|_| "Stored workflow definition is invalid.".to_string())?;
+    let is_agent = definition
+        .get("nodes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|node| {
+            node.get("id").and_then(Value::as_str) == Some(node_id)
+                && node.get("type").and_then(Value::as_str) == Some("agent")
+        });
+    if !is_agent {
+        return Err("Provider selection is only valid for Agent nodes.".into());
+    }
+    store
+        .update_node_provider(run_id, node_id, provider)
+        .map_err(|error| error.to_string())?;
+    let event = serde_json::json!({
+        "type": "node_provider_selected",
+        "nodeId": node_id,
+        "provider": provider
+    });
+    store
+        .append_event(run_id, &event.to_string())
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -295,7 +543,12 @@ struct RuntimeSettings {
 #[serde(rename_all = "camelCase", tag = "type")]
 enum RuntimeNode {
     #[serde(rename = "agent")]
-    Agent { id: String, retries: Option<u8> },
+    Agent {
+        id: String,
+        retries: Option<u8>,
+        #[serde(default, rename = "mcpServerIds")]
+        mcp_server_ids: Vec<String>,
+    },
     #[serde(rename = "mcp_tool")]
     McpTool { id: String, retries: Option<u8> },
     #[serde(rename = "approval")]
@@ -364,6 +617,55 @@ struct RuntimeDefinition {
     edges: Vec<RuntimeEdge>,
 }
 
+fn runtime_graph(definition: &RuntimeDefinition) -> Workflow {
+    Workflow {
+        max_concurrency: definition.settings.max_concurrency,
+        default_retries: definition.settings.default_retries,
+        nodes: definition
+            .nodes
+            .iter()
+            .map(|node| Node {
+                id: node.id().to_string(),
+                kind: node.kind(),
+                retries: node.retries(),
+            })
+            .collect(),
+        edges: definition
+            .edges
+            .iter()
+            .map(|edge| Edge {
+                source: edge.source.clone(),
+                target: edge.target.clone(),
+                outcome: edge.outcome.as_deref().and_then(|value| match value {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => None,
+                }),
+            })
+            .collect(),
+    }
+}
+
+fn validate_runtime_definition(definition: &RuntimeDefinition) -> Result<(), String> {
+    if definition.nodes.len() > 256 || definition.edges.len() > 1_024 {
+        return Err("Workflow graph exceeds the supported size.".into());
+    }
+    let kinds = definition
+        .nodes
+        .iter()
+        .map(|node| (node.id(), node.kind()))
+        .collect::<HashMap<_, _>>();
+    for edge in &definition.edges {
+        match edge.outcome.as_deref() {
+            None | Some("success") => {}
+            Some("true" | "false")
+                if matches!(kinds.get(edge.source.as_str()), Some(NodeKind::Condition)) => {}
+            _ => return Err("Workflow edge outcomes are invalid.".into()),
+        }
+    }
+    validate_definition(&runtime_graph(definition))
+}
+
 fn status(value: &str) -> Option<NodeStatus> {
     match value {
         "pending" => Some(NodeStatus::Pending),
@@ -413,32 +715,7 @@ pub(super) fn reconcile_persisted_run(
         .ok_or_else(|| "Workflow definition was not found.".to_string())?;
     let definition: RuntimeDefinition = serde_json::from_str(&workflow_record.definition_json)
         .map_err(|_| "Stored workflow definition is invalid.".to_string())?;
-    let graph = Workflow {
-        max_concurrency: definition.settings.max_concurrency,
-        default_retries: definition.settings.default_retries,
-        nodes: definition
-            .nodes
-            .iter()
-            .map(|node| Node {
-                id: node.id().to_string(),
-                kind: node.kind(),
-                retries: node.retries(),
-            })
-            .collect(),
-        edges: definition
-            .edges
-            .iter()
-            .map(|edge| Edge {
-                source: edge.source.clone(),
-                target: edge.target.clone(),
-                outcome: edge.outcome.as_deref().and_then(|value| match value {
-                    "true" => Some(true),
-                    "false" => Some(false),
-                    _ => None,
-                }),
-            })
-            .collect(),
-    };
+    let graph = runtime_graph(&definition);
 
     for _ in 0..=definition.nodes.len() {
         let projection = store
@@ -474,14 +751,6 @@ pub(super) fn reconcile_persisted_run(
             changed = true;
         }
         let approvals = projection.approvals;
-        let approved = approvals
-            .iter()
-            .filter(|approval| {
-                approval.status == "approved"
-                    && matches!(approval.capability.as_str(), "execute" | "network")
-            })
-            .map(|approval| approval.node_run_id.as_str())
-            .collect::<HashSet<_>>();
         for node_id in plan.ready {
             let Some(node) = definition.nodes.iter().find(|node| node.id() == node_id) else {
                 continue;
@@ -519,7 +788,24 @@ pub(super) fn reconcile_persisted_run(
                         .iter()
                         .find(|item| item.node.node_id == node_id)
                         .ok_or_else(|| "Workflow node run was not found.".to_string())?;
-                    if approved.contains(node_run.node.id.as_str()) {
+                    let required_capabilities = match node {
+                        RuntimeNode::Agent { mcp_server_ids, .. } if !mcp_server_ids.is_empty() => {
+                            vec![
+                                ("execute", Operation::Execute),
+                                ("network", Operation::Network),
+                            ]
+                        }
+                        RuntimeNode::McpTool { .. } => vec![("network", Operation::Network)],
+                        _ => vec![("execute", Operation::Execute)],
+                    };
+                    let all_approved = required_capabilities.iter().all(|(capability, _)| {
+                        approvals.iter().any(|approval| {
+                            approval.node_run_id == node_run.node.id
+                                && approval.capability == *capability
+                                && approval.status == "approved"
+                        })
+                    });
+                    if all_approved {
                         store
                             .update_node_status(
                                 run_id,
@@ -533,19 +819,20 @@ pub(super) fn reconcile_persisted_run(
                             )
                             .map_err(|error| error.to_string())?;
                     } else {
-                        let (capability, operation) = if matches!(node, RuntimeNode::McpTool { .. })
-                        {
-                            ("network", Operation::Network)
-                        } else {
-                            ("execute", Operation::Execute)
-                        };
-                        if classify_operation(operation) != PolicyDecision::RequireApproval {
-                            return Err("The node permission policy is invalid.".into());
-                        }
-                        let approval_id = format!("approval-{run_id}-{node_id}-{capability}");
-                        store
-                            .save_approval(&ApprovalRecord {
-                                id: approval_id,
+                        for (capability, operation) in required_capabilities {
+                            if classify_operation(operation) != PolicyDecision::RequireApproval {
+                                return Err("The node permission policy is invalid.".into());
+                            }
+                            let exists = approvals.iter().any(|approval| {
+                                approval.node_run_id == node_run.node.id
+                                    && approval.capability == capability
+                            });
+                            if exists {
+                                continue;
+                            }
+                            let approval_id = format!("approval-{run_id}-{node_id}-{capability}");
+                            let approval = ApprovalRecord {
+                                id: approval_id.clone(),
                                 run_id: run_id.to_string(),
                                 node_run_id: node_run.node.id.clone(),
                                 capability: capability.into(),
@@ -559,8 +846,18 @@ pub(super) fn reconcile_persisted_run(
                                     "Allow {capability} capability for node {node_id}."
                                 ),
                                 status: "pending".into(),
-                            })
-                            .map_err(|error| error.to_string())?;
+                            };
+                            let event = serde_json::json!({
+                                "type": "approval_requested",
+                                "approvalId": approval_id,
+                                "nodeId": node_id,
+                                "capability": capability,
+                                "risk": approval.risk,
+                            });
+                            store
+                                .request_approval(&approval, &event.to_string())
+                                .map_err(|error| error.to_string())?;
+                        }
                         store
                             .update_node_status(run_id, &node_id, "waiting_approval", None)
                             .map_err(|error| error.to_string())?;
@@ -573,6 +870,7 @@ pub(super) fn reconcile_persisted_run(
             RunDisposition::Waiting => "waiting",
             RunDisposition::Completed => "completed",
             RunDisposition::Failed => "failed",
+            RunDisposition::Cancelled => "cancelled",
             RunDisposition::Interrupted => "interrupted",
             RunDisposition::Running => "running",
         };
@@ -622,9 +920,13 @@ pub fn orchestration_decide_approval(
     if !valid_identifier(&approval_id) {
         return Err("Approval identifier is invalid.".into());
     }
-    store
+    let changed = store
         .decide_approval(&approval_id, approved)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if !changed {
+        return Err("The approval cannot be decided in its current state.".into());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -634,11 +936,51 @@ pub fn orchestration_retry_node(
     node_id: String,
     max_retries: u8,
 ) -> Result<bool, String> {
-    if !valid_identifier(&run_id) || !valid_identifier(&node_id) || max_retries > 3 {
+    if max_retries > 3 {
         return Err("Node retry input is invalid.".into());
     }
+    retry_node_checked(&store, &run_id, &node_id)
+}
+
+pub(super) fn retry_node_checked(
+    store: &OrchestrationStore,
+    run_id: &str,
+    node_id: &str,
+) -> Result<bool, String> {
+    if !valid_identifier(run_id) || !valid_identifier(node_id) {
+        return Err("Node retry input is invalid.".into());
+    }
+    let projection = store
+        .get_run_projection(run_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workflow run was not found.".to_string())?;
+    if projection.run.status != "running" {
+        return Err("Nodes can only be retried while the run is running.".into());
+    }
+    let node_run = projection
+        .nodes
+        .iter()
+        .find(|node| node.node.node_id == node_id)
+        .ok_or_else(|| "Workflow node run was not found.".to_string())?;
+    if node_run.node.status != "failed" {
+        return Err("Only failed workflow nodes can be retried.".into());
+    }
+    let workflow = store
+        .get_workflow(&projection.run.workflow_id, projection.run.workflow_version)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Workflow definition was not found.".to_string())?;
+    let definition: RuntimeDefinition = serde_json::from_str(&workflow.definition_json)
+        .map_err(|_| "Stored workflow definition is invalid.".to_string())?;
+    let node = definition
+        .nodes
+        .iter()
+        .find(|node| node.id() == node_id)
+        .ok_or_else(|| "Workflow node definition was not found.".to_string())?;
+    let configured_retries = node
+        .retries()
+        .unwrap_or(definition.settings.default_retries);
     store
-        .retry_node(&run_id, &node_id, max_retries)
+        .retry_node(run_id, node_id, configured_retries)
         .map_err(|error| error.to_string())
 }
 
@@ -651,12 +993,28 @@ pub fn orchestration_update_node_evidence(
     output: Option<Value>,
     error: Option<String>,
 ) -> Result<(), String> {
-    if !valid_identifier(&run_id)
-        || !valid_identifier(&node_id)
-        || external_session_id
-            .as_deref()
-            .is_some_and(|value| value.len() > 512)
-        || error.as_deref().is_some_and(|value| value.len() > 16_384)
+    update_node_evidence_checked(
+        &store,
+        &run_id,
+        &node_id,
+        external_session_id.as_deref(),
+        output,
+        error.as_deref(),
+    )
+}
+
+pub(super) fn update_node_evidence_checked(
+    store: &OrchestrationStore,
+    run_id: &str,
+    node_id: &str,
+    external_session_id: Option<&str>,
+    output: Option<Value>,
+    error: Option<&str>,
+) -> Result<(), String> {
+    if !valid_identifier(run_id)
+        || !valid_identifier(node_id)
+        || external_session_id.is_some_and(|value| value.len() > 512)
+        || error.is_some_and(|value| value.len() > 16_384)
     {
         return Err("Node evidence input is invalid.".into());
     }
@@ -670,13 +1028,28 @@ pub fn orchestration_update_node_evidence(
     {
         return Err("Node evidence output is too large.".into());
     }
+    let projection = store
+        .get_run_projection(run_id)
+        .map_err(|store_error| store_error.to_string())?
+        .ok_or_else(|| "Workflow run was not found.".to_string())?;
+    if projection.run.status != "running" {
+        return Err("Node evidence can only be updated while the run is running.".into());
+    }
+    let node = projection
+        .nodes
+        .iter()
+        .find(|node| node.node.node_id == node_id)
+        .ok_or_else(|| "Workflow node run was not found.".to_string())?;
+    if node.node.status != "running" {
+        return Err("Node evidence can only be updated while the node is running.".into());
+    }
     store
         .update_node_evidence(
-            &run_id,
-            &node_id,
-            external_session_id.as_deref(),
+            run_id,
+            node_id,
+            external_session_id,
             output_json.as_deref(),
-            error.as_deref(),
+            error,
         )
         .map_err(|store_error| store_error.to_string())
 }

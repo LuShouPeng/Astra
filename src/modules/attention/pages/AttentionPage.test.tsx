@@ -68,7 +68,7 @@ describe('AttentionPage', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Needs Attention' })).toBeVisible();
-    expect(screen.getAllByRole('tab')).toHaveLength(6);
+    expect(screen.getAllByRole('tab')).toHaveLength(8);
     expect(
       screen.getByRole('button', { name: 'Approve Dependency approval required' }),
     ).toBeVisible();
@@ -107,5 +107,24 @@ describe('AttentionPage', () => {
       '/command-center',
     );
     expect(store.save).toHaveBeenCalledTimes(2);
+  });
+
+  it('sorts by priority and exposes resolved items', async () => {
+    const user = userEvent.setup();
+    const snapshot = createDemoSnapshot();
+    snapshot.attentionItems[0].resolved = true;
+    render(
+      <MemoryRouter>
+        <WorkbenchProvider repository={repository(snapshot)}>
+          <AttentionPage />
+        </WorkbenchProvider>
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Resolved 1' }));
+    expect(screen.getByText('Dependency approval required')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Approve Dependency/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Open 1' }));
+    expect(screen.getByText('TypeScript typecheck failed')).toBeVisible();
   });
 });

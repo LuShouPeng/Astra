@@ -3,7 +3,13 @@ import type { FileChange } from '../../../core/contracts/changes';
 import { useI18n } from '../../../core/i18n/I18nContext';
 import { parseUnifiedDiff } from '../model/unifiedDiff';
 
-export function DiffViewer({ change }: { change: FileChange }) {
+export function DiffViewer({
+  change,
+  onSelectLine,
+}: {
+  change: FileChange;
+  onSelectLine?: (line: number) => void;
+}) {
   const { t } = useI18n();
   if (change.binary) {
     return (
@@ -25,10 +31,16 @@ export function DiffViewer({ change }: { change: FileChange }) {
       aria-label={t('diff.unifiedNamed', { name: change.relativePath })}
     >
       {lines.map((line, index) => (
-        <div
+        <button
+          type="button"
           className={`diff-line diff-line--${line.kind}`}
           role="row"
           key={`${index}-${line.text}`}
+          disabled={line.newLine === null || !onSelectLine}
+          aria-label={
+            line.newLine === null ? undefined : t('changes.commentLine', { line: line.newLine })
+          }
+          onClick={() => line.newLine !== null && onSelectLine?.(line.newLine)}
         >
           <span
             aria-label={
@@ -45,7 +57,7 @@ export function DiffViewer({ change }: { change: FileChange }) {
             {line.newLine ?? ''}
           </span>
           <code>{line.text || ' '}</code>
-        </div>
+        </button>
       ))}
     </div>
   );

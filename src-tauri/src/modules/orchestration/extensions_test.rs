@@ -4,9 +4,24 @@ use std::{
 };
 
 use super::extensions::{
-    install_local_skill, validate_git_source, validate_mcp_config, validate_mcp_tool_call,
-    McpServerInput,
+    install_local_skill, mcp_environment_allowed, test_mcp_connection, validate_git_source,
+    validate_mcp_config, validate_mcp_tool_call, McpServerInput,
 };
+
+fn node_executable() -> Option<std::path::PathBuf> {
+    let locator = if cfg!(windows) { "where.exe" } else { "which" };
+    let output = std::process::Command::new(locator)
+        .arg("node")
+        .output()
+        .ok()?;
+    output.status.success().then(|| {
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .map(str::trim)
+            .map(std::path::PathBuf::from)
+    })?
+}
 
 fn temp(label: &str) -> std::path::PathBuf {
     let suffix = SystemTime::now()
@@ -29,6 +44,7 @@ fn validates_stdio_and_streamable_http_without_accepting_legacy_sse() {
         url: Some("https://mcp.exa.ai/mcp".into()),
         secret_ref: Some("astra/exa".into()),
         secret_header: Some("x-api-key".into()),
+        enabled: true,
     })
     .is_ok());
     assert!(validate_mcp_config(&McpServerInput {
@@ -40,8 +56,206 @@ fn validates_stdio_and_streamable_http_without_accepting_legacy_sse() {
         url: Some("https://example.test/sse".into()),
         secret_ref: None,
         secret_header: None,
+        enabled: true,
     })
     .is_err());
+
+    for unsafe_url in [
+        "http://localhost.evil.example/mcp",
+        "http://localhost@evil.example/mcp",
+        "https://user:password@example.test/mcp",
+    ] {
+        assert!(validate_mcp_config(&McpServerInput {
+            id: "unsafe".into(),
+            name: "Unsafe".into(),
+            transport: "streamable_http".into(),
+            command: None,
+            args: vec![],
+            url: Some(unsafe_url.into()),
+            secret_ref: None,
+            secret_header: None,
+            enabled: true,
+        })
+        .is_err());
+    }
+    for local_url in ["http://localhost:3000/mcp", "http://127.0.0.1:3000/mcp"] {
+        assert!(validate_mcp_config(&McpServerInput {
+            id: "local".into(),
+            name: "Local".into(),
+            transport: "streamable_http".into(),
+            command: None,
+            args: vec![],
+            url: Some(local_url.into()),
+            secret_ref: None,
+            secret_header: None,
+            enabled: true,
+        })
+        .is_ok());
+    }
+}
+
+#[test]
+fn stdio_mcp_environment_does_not_inherit_application_secrets() {
+    assert!(mcp_environment_allowed("PATH"));
+    assert!(!mcp_environment_allowed("OPENAI_API_KEY"));
+    assert!(!mcp_environment_allowed("EXA_API_KEY"));
+    assert!(!mcp_environment_allowed("GITHUB_TOKEN"));
+    assert!(!mcp_environment_allowed("NODE_OPTIONS"));
+}
+
+#[test]
+fn rejects_unapproved_secret_headers_and_ambiguous_references() {
+    let base = McpServerInput {
+        id: "exa".into(),
+        name: "Exa".into(),
+        transport: "streamable_http".into(),
+        command: None,
+        args: vec![],
+        url: Some("https://mcp.exa.ai/mcp".into()),
+        secret_ref: Some("credentials/exa".into()),
+        secret_header: Some("x-api-key".into()),
+        enabled: true,
+    };
+    assert!(validate_mcp_config(&base).is_ok());
+    assert!(validate_mcp_config(&McpServerInput {
+        secret_header: Some("x-forwarded-authorization".into()),
+        ..base.clone()
+    })
+    .is_err());
+    assert!(validate_mcp_config(&McpServerInput {
+        secret_ref: Some("credentials/../exa".into()),
+        ..base
+    })
+    .is_err());
+}
+
+#[tokio::test]
+async fn connects_to_stdio_mcp_and_reads_the_tool_catalog() {
+    let Some(node) = node_executable() else {
+        return;
+    };
+    let directory = temp("stdio-mcp");
+    let script = directory.join("server.mjs");
+    fs::write(
+        &script,
+        r#"import readline from 'node:readline';
+const lines = readline.createInterface({ input: process.stdin });
+lines.on('line', (line) => {
+  const message = JSON.parse(line);
+  if (message.method === 'initialize') {
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {
+      protocolVersion: message.params.protocolVersion,
+      capabilities: { tools: {} },
+      serverInfo: { name: 'astra-test-mcp', version: '1.0.0' }
+    } }) + '\n');
+  } else if (message.method === 'tools/list') {
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {
+      tools: [
+        { name: 'search', description: 'Search locally', inputSchema: { type: 'object' } },
+        { name: 'inspect', description: 'Inspect a record', inputSchema: { type: 'object' } }
+      ]
+    } }) + '\n');
+  }
+});
+"#,
+    )
+    .unwrap();
+    let report = test_mcp_connection(&McpServerInput {
+        id: "local-test".into(),
+        name: "Local test".into(),
+        transport: "stdio".into(),
+        command: Some(node.to_string_lossy().into_owned()),
+        args: vec![script.to_string_lossy().into_owned()],
+        url: None,
+        secret_ref: None,
+        secret_header: None,
+        enabled: true,
+    })
+    .await
+    .expect("connect and list tools");
+    assert_eq!(report.tool_count, 2);
+    assert_eq!(report.tools, ["inspect", "search"]);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn connects_to_streamable_http_mcp_and_reads_the_tool_catalog() {
+    let Some(node) = node_executable() else {
+        return;
+    };
+    let reservation = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = reservation.local_addr().unwrap().port();
+    drop(reservation);
+    let directory = temp("http-mcp");
+    let script = directory.join("server.mjs");
+    fs::write(
+        &script,
+        r#"import http from 'node:http';
+const port = Number(process.argv[2]);
+const server = http.createServer((request, response) => {
+  if (request.method === 'DELETE') {
+    response.writeHead(200).end();
+    return;
+  }
+  let body = '';
+  request.on('data', (chunk) => body += chunk);
+  request.on('end', () => {
+    const message = JSON.parse(body);
+    let result = {};
+    if (message.method === 'initialize') {
+      result = {
+        protocolVersion: message.params.protocolVersion,
+        capabilities: { tools: {} },
+        serverInfo: { name: 'astra-http-test-mcp', version: '1.0.0' }
+      };
+    } else if (message.method === 'tools/list') {
+      result = { tools: [
+        { name: 'fetch', description: 'Fetch locally', inputSchema: { type: 'object' } },
+        { name: 'search', description: 'Search locally', inputSchema: { type: 'object' } }
+      ] };
+    } else if (message.id === undefined) {
+      response.writeHead(202).end();
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
+  });
+});
+server.listen(port, '127.0.0.1');
+"#,
+    )
+    .unwrap();
+    let mut child = std::process::Command::new(node)
+        .args([script.to_string_lossy().as_ref(), &port.to_string()])
+        .spawn()
+        .expect("start HTTP MCP server");
+    let ready = (0..50).any(|_| {
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            true
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            false
+        }
+    });
+    assert!(ready, "HTTP MCP server did not start");
+    let report = test_mcp_connection(&McpServerInput {
+        id: "http-test".into(),
+        name: "HTTP test".into(),
+        transport: "streamable_http".into(),
+        command: None,
+        args: vec![],
+        url: Some(format!("http://localhost:{port}/mcp")),
+        secret_ref: None,
+        secret_header: None,
+        enabled: true,
+    })
+    .await
+    .expect("connect and list HTTP tools");
+    assert_eq!(report.tool_count, 2);
+    assert_eq!(report.tools, ["fetch", "search"]);
+    child.kill().unwrap();
+    child.wait().unwrap();
+    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]

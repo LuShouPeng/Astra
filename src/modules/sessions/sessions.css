@@ -4,6 +4,99 @@
   min-height: 0;
   grid-template-rows: auto auto auto auto minmax(240px, 1fr) auto;
 }
+
+.session-library-page {
+  max-width: 1100px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: var(--space-6);
+}
+.session-library-header,
+.session-library-toolbar,
+.session-library-results article footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.session-library-header h1 {
+  font-size: var(--text-xl);
+}
+.session-library-header > strong {
+  color: var(--color-text-muted);
+}
+.session-library-toolbar {
+  margin: var(--space-5) 0;
+}
+.session-library-toolbar > label {
+  display: flex;
+  min-width: 280px;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.session-library-toolbar input {
+  width: 100%;
+  height: 38px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text);
+}
+.session-library-toolbar [role='tablist'] {
+  display: flex;
+}
+.session-library-toolbar [role='tab'] {
+  height: 38px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+}
+.session-library-toolbar [role='tab'][aria-selected='true'] {
+  color: var(--color-text);
+  background: var(--color-surface-selected);
+}
+.session-library-results {
+  display: grid;
+  gap: var(--space-2);
+}
+.session-library-results article {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.session-library-results article > div {
+  display: flex;
+  gap: var(--space-2);
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+.session-library-results h2 {
+  margin: var(--space-2) 0;
+  font-size: var(--text-md);
+}
+.session-library-results h2 a {
+  color: var(--color-text);
+  text-decoration: none;
+}
+.session-library-results p {
+  color: var(--color-text-muted);
+}
+.session-library-results footer {
+  margin-top: var(--space-3);
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+.session-library-empty {
+  padding: var(--space-8);
+  color: var(--color-text-muted);
+  text-align: center;
+}
 .session-state {
   display: grid;
   height: 100%;

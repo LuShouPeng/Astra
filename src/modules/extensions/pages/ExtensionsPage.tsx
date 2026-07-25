@@ -15,9 +15,22 @@ import { useSearchParams } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 import type { McpServerConfig, SkillPackage } from '../../../core/contracts/extensions';
 import { useI18n } from '../../../core/i18n/I18nContext';
+import { fromRuntimeMcp, type RuntimeMcpConfig } from '../model/extensionRuntime';
 
 const MCP_KEY = 'astra.extensions.mcp.v1';
 const SKILL_KEY = 'astra.extensions.skills.v1';
+function emptyMcpForm() {
+  return {
+    name: '',
+    transport: 'streamable_http' as 'stdio' | 'streamable_http',
+    url: '',
+    command: '',
+    args: '',
+    credential: '',
+    credentialHeader: 'authorization',
+    secret: '',
+  };
+}
 const catalog = [
   {
     id: 'ui-ux-pro-max',
@@ -42,15 +55,9 @@ function read<T>(key: string): T[] {
   }
 }
 
-interface RuntimeMcpConfig {
-  id: string;
-  name: string;
-  transport: 'stdio' | 'streamable_http';
-  command?: string;
-  args: string[];
-  url?: string;
-  secretRef?: string;
-  secretHeader?: string;
+interface McpConnectionReport {
+  toolCount: number;
+  tools: string[];
 }
 
 function runtimeInput(server: McpServerConfig): RuntimeMcpConfig {
@@ -64,6 +71,7 @@ function runtimeInput(server: McpServerConfig): RuntimeMcpConfig {
     url: server.url,
     secretRef: credential?.[1],
     secretHeader: credential?.[0],
+    enabled: server.enabled,
   };
 }
 function runtimeSkillInput(skill: SkillPackage) {
@@ -96,6 +104,8 @@ const copy = {
     cancel: 'Cancel',
     test: 'Test connection',
     connected: 'Connected',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
     remove: 'Uninstall',
     catalog: 'Curated catalog',
     source: 'Git or local source',
@@ -127,6 +137,8 @@ const copy = {
     cancel: '取消',
     test: '测试连接',
     connected: '已连接',
+    enabled: '已启用',
+    disabled: '已禁用',
     remove: '卸载',
     catalog: '策展目录',
     source: 'Git 或本地来源',
@@ -152,7 +164,7 @@ export function ExtensionsPage() {
   const [skills, setSkills] = useState<SkillPackage[]>(() => read(SKILL_KEY));
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState('');
-  const [tested, setTested] = useState<string>();
+  const [tested, setTested] = useState<{ id: string; report: McpConnectionReport }>();
   const [error, setError] = useState('');
   const [manualSource, setManualSource] = useState('');
   const [revision, setRevision] = useState('');
@@ -160,36 +172,13 @@ export function ExtensionsPage() {
   const [exporting, setExporting] = useState<SkillPackage>();
   const [exportTarget, setExportTarget] = useState('');
   const [overwrite, setOverwrite] = useState(false);
-  const [form, setForm] = useState({
-    name: '',
-    transport: 'streamable_http' as 'stdio' | 'streamable_http',
-    url: '',
-    command: '',
-    args: '',
-    credential: '',
-    credentialHeader: 'authorization',
-    secret: '',
-  });
+  const [form, setForm] = useState(emptyMcpForm);
   const installed = useMemo(() => new Set(skills.map((skill) => skill.id)), [skills]);
   useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return;
     void invoke<RuntimeMcpConfig[]>('orchestration_list_mcp_servers')
       .then((items) => {
-        setServers(
-          items.map((item): McpServerConfig => ({
-            id: item.id,
-            name: item.name,
-            transport: item.transport,
-            command: item.command,
-            args: item.args,
-            url: item.url,
-            secretRefs: item.secretRef
-              ? { [item.secretHeader || 'authorization']: item.secretRef }
-              : {},
-            enabled: true,
-            source: 'manual',
-          })),
-        );
+        setServers(items.map(fromRuntimeMcp));
       })
       .catch(() => setError('MCP registry could not be loaded.'));
     void invoke<ReturnType<typeof runtimeSkillInput>[]>('orchestration_list_skills')
@@ -204,6 +193,10 @@ export function ExtensionsPage() {
       })
       .catch(() => setError('Skill registry could not be loaded.'));
   }, []);
+  function closeMcpForm() {
+    setForm(emptyMcpForm());
+    setShowForm(false);
+  }
   async function saveServer() {
     if (
       !form.name.trim() ||
@@ -235,15 +228,18 @@ export function ExtensionsPage() {
     }
     setServers(next);
     localStorage.setItem(MCP_KEY, JSON.stringify(next));
-    setShowForm(false);
+    closeMcpForm();
   }
   async function testConnection(server: McpServerConfig) {
     setError('');
     try {
-      if ('__TAURI_INTERNALS__' in window) {
-        await invoke('orchestration_test_mcp_connection', { input: runtimeInput(server) });
-      }
-      setTested(server.id);
+      const report =
+        '__TAURI_INTERNALS__' in window
+          ? await invoke<McpConnectionReport>('orchestration_test_mcp_connection', {
+              input: runtimeInput(server),
+            })
+          : { toolCount: 3, tools: ['search', 'fetch', 'read'] };
+      setTested({ id: server.id, report });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -252,6 +248,15 @@ export function ExtensionsPage() {
     if ('__TAURI_INTERNALS__' in window)
       await invoke('orchestration_delete_mcp_server', { id: server.id });
     const next = servers.filter((item) => item.id !== server.id);
+    setServers(next);
+    localStorage.setItem(MCP_KEY, JSON.stringify(next));
+  }
+  async function toggleServer(server: McpServerConfig) {
+    const updated = { ...server, enabled: !server.enabled };
+    if ('__TAURI_INTERNALS__' in window) {
+      await invoke('orchestration_save_mcp_server', { input: runtimeInput(updated) });
+    }
+    const next = servers.map((item) => (item.id === server.id ? updated : item));
     setServers(next);
     localStorage.setItem(MCP_KEY, JSON.stringify(next));
   }
@@ -444,12 +449,27 @@ export function ExtensionsPage() {
                     </small>
                   </div>
                   <code>{server.transport}</code>
+                  <label className="extension-toggle">
+                    <input
+                      type="checkbox"
+                      checked={server.enabled}
+                      onChange={() => void toggleServer(server)}
+                    />
+                    {server.enabled ? c.enabled : c.disabled}
+                  </label>
                   <button
                     className="button button--compact"
+                    title={
+                      tested?.id === server.id && tested.report.tools.length
+                        ? tested.report.tools.join(', ')
+                        : undefined
+                    }
                     onClick={() => void testConnection(server)}
                   >
                     <FlaskConical size={14} />
-                    {tested === server.id ? c.connected : c.test}
+                    {tested?.id === server.id
+                      ? `${c.connected} · ${tested.report.toolCount} ${language === 'zh-CN' ? '个工具' : 'tools'}`
+                      : c.test}
                   </button>
                   <button
                     className="icon-button"
@@ -585,7 +605,7 @@ export function ExtensionsPage() {
               type="button"
               className="icon-button extension-dialog__close"
               aria-label={c.cancel}
-              onClick={() => setShowForm(false)}
+              onClick={closeMcpForm}
             >
               <X size={16} />
             </button>
@@ -637,11 +657,14 @@ export function ExtensionsPage() {
             )}
             <label>
               {c.credentialHeader}
-              <input
+              <select
                 value={form.credentialHeader}
                 onChange={(e) => setForm({ ...form, credentialHeader: e.target.value })}
-                placeholder="authorization or x-api-key"
-              />
+              >
+                <option value="authorization">Authorization</option>
+                <option value="x-api-key">X-API-Key</option>
+                <option value="api-key">API-Key</option>
+              </select>
             </label>
             <label>
               {c.credential}
@@ -661,11 +684,7 @@ export function ExtensionsPage() {
             </label>
             <p>{c.legacy}</p>
             <div>
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={() => setShowForm(false)}
-              >
+              <button type="button" className="button button--secondary" onClick={closeMcpForm}>
                 {c.cancel}
               </button>
               <button className="button button--primary">{c.save}</button>

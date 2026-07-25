@@ -23,6 +23,7 @@ export interface AgentSession {
   workflowRunId?: string;
   workflowNodeId?: string;
   externalSessionId?: string;
+  archived?: boolean;
 }
 
 interface TimelineEventBase {

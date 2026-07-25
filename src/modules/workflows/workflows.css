@@ -231,6 +231,16 @@
   margin-bottom: var(--space-3);
   font-size: var(--text-sm);
 }
+.workflow-palette .workflow-palette__section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+.workflow-palette__empty {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
 .workflow-palette button {
   display: grid;
   width: 100%;
@@ -247,6 +257,16 @@
 }
 .workflow-palette button:hover {
   border-color: var(--color-accent);
+}
+.workflow-palette button.workflow-capability {
+  border-style: dashed;
+  cursor: grab;
+}
+.workflow-palette button.workflow-capability:active {
+  cursor: grabbing;
+}
+.workflow-palette button.workflow-capability svg {
+  color: var(--color-info);
 }
 .workflow-palette small {
   color: var(--color-text-subtle);
@@ -316,6 +336,28 @@
 }
 .react-flow__node.workflow-node--agent {
   border-left: 3px solid var(--color-accent);
+}
+.workflow-node__content {
+  display: grid;
+  gap: var(--space-2);
+}
+.workflow-node__capabilities {
+  display: flex;
+  max-width: 220px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.workflow-node__capabilities span {
+  max-width: 100%;
+  padding: 2px 5px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  color: var(--color-text-muted);
+  background: var(--color-canvas);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .react-flow__controls,
 .react-flow__minimap {
@@ -428,13 +470,24 @@
 .run-nodes article {
   display: grid;
   min-height: 48px;
-  grid-template-columns: 120px minmax(0, 1fr) auto;
+  grid-template-columns: 120px minmax(0, 1fr);
   align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
+}
+.run-node-main {
+  display: grid;
+  gap: 2px;
+  padding-block: var(--space-2);
+}
+.run-node-error {
+  color: var(--color-danger) !important;
+}
+.run-node-artifact code {
+  font-size: inherit;
 }
 .run-nodes small {
   color: var(--color-text-muted);

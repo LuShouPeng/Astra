@@ -37,6 +37,22 @@ describe('workflow service browser fallback', () => {
     expect(cancelled.status).toBe('cancelled');
   });
 
+  it('selects DAG roots instead of the first array item after offline approval', async () => {
+    const service = createWorkflowService(new BrowserWorkflowAdapter());
+    const workflow = createWorkflowDraft('project-1', 'Build');
+    workflow.nodes = [workflow.nodes[2], workflow.nodes[1], workflow.nodes[0]];
+    await service.save(workflow);
+
+    const run = await service.createRun(workflow);
+    const approved = await service.decideRun(run.id, true);
+    const statuses = Object.fromEntries(
+      approved.nodeRuns.map((node) => [node.nodeId, node.status]),
+    );
+
+    expect(statuses[workflow.nodes[2].id]).toBe('ready');
+    expect(statuses[workflow.nodes[0].id]).toBe('pending');
+  });
+
   it('recovers from corrupt storage and replaces workflows and templates by id', async () => {
     localStorage.setItem('astra.workflow.definitions.v1', '{broken');
     const adapter = new BrowserWorkflowAdapter();

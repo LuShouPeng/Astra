@@ -62,6 +62,7 @@ export function ChangesReview({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(requestOnOpen);
   const [feedback, setFeedback] = useState('');
+  const [line, setLine] = useState<number | null>(null);
   const [severity, setSeverity] = useState<ReviewSeverity>('medium');
   const [rerunImmediately, setRerunImmediately] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -129,6 +130,7 @@ export function ChangesReview({
         severity,
         rerunImmediately,
         timestamp: nextReviewTimestamp(snapshot!),
+        location: line === null ? undefined : `${selected.relativePath}:${line}`,
       });
       const saved = await persist(next, t('changes.requested'), [
         { id: selected.id, status: 'changes_requested' },
@@ -140,6 +142,7 @@ export function ChangesReview({
       }
       setDialogOpen(false);
       setFeedback('');
+      setLine(null);
     } catch (caught) {
       setError(caught instanceof Error ? text(caught.message) : t('changes.requestError'));
     }
@@ -287,7 +290,13 @@ export function ChangesReview({
           </div>
         )}
         <div className="diff-panel__body">
-          <DiffViewer change={selected} />
+          <DiffViewer
+            change={selected}
+            onSelectLine={(value) => {
+              setLine(value);
+              setDialogOpen(true);
+            }}
+          />
         </div>
         <footer className="diff-panel__footer">
           <span>{statusLabel(selected.reviewStatus, t)}</span>
@@ -311,6 +320,12 @@ export function ChangesReview({
             </button>
             <p className="eyebrow">{t('changes.reviewFeedback')}</p>
             <h2>{t('changes.requestChanges')}</h2>
+            <label htmlFor="review-location">{t('changes.codeLocation')}</label>
+            <input
+              id="review-location"
+              value={line === null ? selected.relativePath : `${selected.relativePath}:${line}`}
+              readOnly
+            />
             <label htmlFor="requested-changes">{t('changes.requestedChanges')}</label>
             <textarea
               id="requested-changes"

@@ -62,6 +62,7 @@ pub enum RunDisposition {
     Waiting,
     Completed,
     Failed,
+    Cancelled,
     Interrupted,
 }
 
@@ -237,6 +238,11 @@ pub fn reconcile(
         RunDisposition::Failed
     } else if effective
         .values()
+        .any(|status| *status == NodeStatus::Cancelled)
+    {
+        RunDisposition::Cancelled
+    } else if effective
+        .values()
         .any(|status| *status == NodeStatus::Interrupted)
     {
         RunDisposition::Interrupted
@@ -248,7 +254,7 @@ pub fn reconcile(
     } else if workflow.nodes.iter().all(|node| {
         matches!(
             effective.get(&node.id),
-            Some(NodeStatus::Succeeded | NodeStatus::Skipped | NodeStatus::Cancelled)
+            Some(NodeStatus::Succeeded | NodeStatus::Skipped)
         )
     }) {
         RunDisposition::Completed

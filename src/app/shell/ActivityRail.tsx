@@ -7,6 +7,7 @@ import {
   Settings,
   Workflow,
   Blocks,
+  Library,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useI18n } from '../../core/i18n/I18nContext';
@@ -15,6 +16,7 @@ import { useWorkbench } from '../../core/state/WorkbenchContext';
 const activities = [
   { labelKey: 'nav.commandCenter', icon: LayoutDashboard, to: '/command-center' },
   { labelKey: 'nav.projects', icon: FolderKanban, to: '/projects' },
+  { labelKey: 'nav.sessionLibrary', icon: Library, to: '/sessions' },
   { labelKey: 'nav.workflows', icon: Workflow, to: '/workflows' },
   { labelKey: 'nav.extensions', icon: Blocks, to: '/extensions' },
   { labelKey: 'nav.attention', icon: CircleAlert, to: '/attention' },

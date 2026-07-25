@@ -12,6 +12,8 @@ mod commands_test;
 #[cfg(test)]
 mod extensions_test;
 #[cfg(test)]
+mod mcp_runtime_test;
+#[cfg(test)]
 mod permissions_test;
 #[cfg(test)]
 mod providers_test;

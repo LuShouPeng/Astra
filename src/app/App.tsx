@@ -32,7 +32,7 @@ import {
   TauriProjectNativeAdapter,
   type ProjectService,
 } from '../modules/projects';
-import { SessionDetailPage } from '../modules/sessions';
+import { SessionDetailPage, SessionLibraryPage } from '../modules/sessions';
 import { SettingsPage } from '../modules/settings';
 import { WelcomePage } from '../modules/workspace';
 import { createTauriWorkspaceAdapters } from '../modules/workspace/services/workspaceAdapters';
@@ -166,6 +166,7 @@ function AppRouter({
               <SessionDetailPage changesService={changesService} projectService={projectService} />
             }
           />
+          <Route path="sessions" element={<SessionLibraryPage />} />
           <Route path="attention" element={<AttentionPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="changes" element={<ChangesPage service={changesService} />} />

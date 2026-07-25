@@ -195,6 +195,27 @@
   overflow: auto;
   padding-bottom: var(--space-4);
 }
+.project-tree__workspace-row {
+  display: grid;
+  height: 34px;
+  grid-template-columns: 20px 18px minmax(0, 1fr) auto;
+  align-items: center;
+  padding-right: var(--space-3);
+  color: var(--color-text);
+}
+.project-tree__workspace-row strong {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-tree__workspace-row > span {
+  color: var(--color-text-subtle);
+  font-size: var(--text-xs);
+}
+.project-tree__directories {
+  padding-left: var(--space-2);
+}
 
 .project-tree__project-row {
   display: grid;

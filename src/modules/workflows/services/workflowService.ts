@@ -5,11 +5,23 @@ import type {
   WorkflowDefinition,
   WorkflowRun,
 } from '../../../core/contracts/workflows';
+import { readyNodeIds } from '../model/workflowGraph';
 
 export interface WorkflowRunProjection extends WorkflowRun {
   nodeRuns: NodeRun[];
   approvals?: ApprovalRequest[];
+  artifacts?: WorkflowArtifact[];
   events: Array<{ at: string; message: string }>;
+}
+
+export interface WorkflowArtifact {
+  id: string;
+  runId: string;
+  nodeRunId?: string;
+  kind: string;
+  path: string;
+  contentHash: string;
+  byteLength: number;
 }
 
 export interface WorkflowAdapter {
@@ -95,6 +107,7 @@ interface BackendRunProjection {
     }
   >;
   approvals: ApprovalRequest[];
+  artifacts: WorkflowArtifact[];
   events: Array<{ sequence: number; eventJson: string; createdAt: string }>;
 }
 
@@ -182,6 +195,7 @@ export class TauriWorkflowAdapter extends BrowserWorkflowAdapter {
           : undefined,
       })),
       approvals: backend.approvals,
+      artifacts: backend.artifacts,
       events: backend.events.map((event) => ({
         at: event.createdAt,
         message: eventMessage(event.eventJson),
@@ -235,12 +249,28 @@ export function createWorkflowService(adapter: WorkflowAdapter) {
         await new BrowserWorkflowAdapter().saveRun(reconciled);
         return reconciled;
       }
+      let nodeRuns: NodeRun[];
+      if (approved) {
+        const workflow = (await adapter.list()).find((item) => item.id === run.workflowId);
+        const pending = Object.fromEntries(
+          run.nodeRuns.map((node) => [node.nodeId, 'pending' as const]),
+        );
+        const ready = new Set(
+          workflow ? readyNodeIds(workflow, pending) : [run.nodeRuns[0]?.nodeId],
+        );
+        nodeRuns = run.nodeRuns.map((node) => ({
+          ...node,
+          status: ready.has(node.nodeId) ? 'ready' : 'pending',
+        }));
+      } else {
+        nodeRuns = run.nodeRuns.map((node) =>
+          ['succeeded', 'skipped'].includes(node.status) ? node : { ...node, status: 'cancelled' },
+        );
+      }
       const next: WorkflowRunProjection = {
         ...run,
         status: approved ? 'queued' : 'cancelled',
-        nodeRuns: run.nodeRuns.map((node, index) =>
-          index === 0 ? { ...node, status: approved ? 'ready' : 'cancelled' } : node,
-        ),
+        nodeRuns,
         events: [
           ...run.events,
           {

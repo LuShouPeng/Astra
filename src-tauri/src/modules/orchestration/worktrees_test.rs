@@ -67,3 +67,40 @@ fn refuses_final_merge_without_explicit_approval() {
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(cache).unwrap();
 }
+
+#[test]
+fn aborts_conflicting_node_integration_and_keeps_the_run_worktree_clean() {
+    let root = temp("conflict-repo");
+    let cache = temp("conflict-cache");
+    git(&root, &["init"]);
+    git(&root, &["config", "user.name", "Astra Test"]);
+    git(&root, &["config", "user.email", "astra@example.test"]);
+    fs::write(root.join("README.md"), "base\n").unwrap();
+    git(&root, &["add", "README.md"]);
+    git(&root, &["commit", "-m", "initial"]);
+    let manager = WorktreeManager::new(&root, &cache).unwrap();
+    let run = manager.prepare_run("run-conflict").unwrap();
+    let first = manager.prepare_node(&run, "first").unwrap();
+    let second = manager.prepare_node(&run, "second").unwrap();
+    fs::write(first.path.join("README.md"), "first\n").unwrap();
+    fs::write(second.path.join("README.md"), "second\n").unwrap();
+    manager
+        .commit_node(&first, "workflow", "run-conflict", "first")
+        .unwrap();
+    manager
+        .commit_node(&second, "workflow", "run-conflict", "second")
+        .unwrap();
+    manager.integrate_node(&run, &first).unwrap();
+    assert!(manager.integrate_node(&run, &second).is_err());
+    let status = Command::new("git.exe")
+        .arg("-C")
+        .arg(&run.path)
+        .args(["status", "--porcelain"])
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    assert!(status.stdout.is_empty());
+    drop(manager);
+    fs::remove_dir_all(root).unwrap();
+    fs::remove_dir_all(cache).unwrap();
+}

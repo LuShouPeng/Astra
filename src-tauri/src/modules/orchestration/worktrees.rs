@@ -257,23 +257,27 @@ impl WorktreeManager {
             return Err("The node worktree belongs to a different run.".into());
         }
         let message = format!("astra: integrate run {} node {}", run.id, node.id);
-        require_success(
-            git(
-                &run.path,
-                [
-                    OsString::from("-c"),
-                    OsString::from("user.name=Astra Nexus"),
-                    OsString::from("-c"),
-                    OsString::from("user.email=astra@localhost"),
-                    OsString::from("merge"),
-                    OsString::from("--no-ff"),
-                    OsString::from(&node.branch),
-                    OsString::from("-m"),
-                    OsString::from(message),
-                ],
-            )?,
-            "The node branch conflicts with the integration branch.",
+        let merge = git(
+            &run.path,
+            [
+                OsString::from("-c"),
+                OsString::from("user.name=Astra Nexus"),
+                OsString::from("-c"),
+                OsString::from("user.email=astra@localhost"),
+                OsString::from("merge"),
+                OsString::from("--no-ff"),
+                OsString::from(&node.branch),
+                OsString::from("-m"),
+                OsString::from(message),
+            ],
         )?;
+        if !merge.status.success() {
+            let _ = git(
+                &run.path,
+                [OsString::from("merge"), OsString::from("--abort")],
+            );
+            return Err("The node branch conflicts with the integration branch.".into());
+        }
         Ok(())
     }
 

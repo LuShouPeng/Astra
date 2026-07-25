@@ -24,6 +24,8 @@ import {
 } from '../model/attentionTransitions';
 
 type AttentionFilter = 'all' | AttentionType;
+type AttentionQueue = 'open' | 'resolved';
+const priorityRank = { critical: 4, high: 3, medium: 2, low: 1 } as const;
 
 const filters: Array<{ id: AttentionFilter; labelKey: TranslationKey }> = [
   { id: 'all', labelKey: 'attention.filter.all' },
@@ -46,12 +48,24 @@ export function AttentionPage() {
   const { language, t, text } = useI18n();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
   const [filter, setFilter] = useState<AttentionFilter>('all');
+  const [queue, setQueue] = useState<AttentionQueue>('open');
+  const [sort, setSort] = useState<'priority' | 'recent'>('priority');
   const [error, setError] = useState<string | null>(null);
   const openItems = useMemo(
     () => snapshot?.attentionItems.filter((item) => !item.resolved) ?? [],
     [snapshot?.attentionItems],
   );
-  const visibleItems = openItems.filter((item) => filter === 'all' || item.type === filter);
+  const queueItems = (snapshot?.attentionItems ?? []).filter(
+    (item) => item.resolved === (queue === 'resolved'),
+  );
+  const visibleItems = queueItems
+    .filter((item) => filter === 'all' || item.type === filter)
+    .sort((left, right) =>
+      sort === 'priority'
+        ? priorityRank[right.priority] - priorityRank[left.priority] ||
+          right.createdAt.localeCompare(left.createdAt)
+        : right.createdAt.localeCompare(left.createdAt),
+    );
 
   async function act(attentionId: string, action: AttentionAction) {
     if (!snapshot) return;
@@ -121,11 +135,21 @@ export function AttentionPage() {
         <span>{t('attention.openCount', { count: openItems.length })}</span>
       </header>
       <div className="attention-tabs" role="tablist" aria-label={t('attention.filters')}>
+        <button role="tab" aria-selected={queue === 'open'} onClick={() => setQueue('open')}>
+          {t('attention.open')} {openItems.length}
+        </button>
+        <button
+          role="tab"
+          aria-selected={queue === 'resolved'}
+          onClick={() => setQueue('resolved')}
+        >
+          {t('attention.resolved')} {snapshot.attentionItems.length - openItems.length}
+        </button>
         {filters.map((option) => {
           const count =
             option.id === 'all'
-              ? openItems.length
-              : openItems.filter((item) => item.type === option.id).length;
+              ? queueItems.length
+              : queueItems.filter((item) => item.type === option.id).length;
           return (
             <button
               key={option.id}
@@ -137,6 +161,13 @@ export function AttentionPage() {
             </button>
           );
         })}
+        <label className="attention-sort">
+          <span>{t('attention.sort')}</span>
+          <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}>
+            <option value="priority">{t('attention.sortPriority')}</option>
+            <option value="recent">{t('attention.sortRecent')}</option>
+          </select>
+        </label>
       </div>
       {error && (
         <div className="attention-error" role="alert">
@@ -176,144 +207,148 @@ export function AttentionPage() {
               </div>
             </div>
             <div className="attention-item__actions">
-              {item.type === 'approval' && (
+              {!item.resolved && (
                 <>
-                  <button
-                    className="button button--primary"
-                    disabled={saving}
-                    aria-label={t('attention.approveNamed', { name: text(item.title) })}
-                    onClick={() => void act(item.id, 'approve')}
-                  >
-                    <Check size={15} />
-                    {t('session.approve')}
-                  </button>
-                  <button
-                    className="button button--secondary"
-                    disabled={saving}
-                    aria-label={t('attention.rejectNamed', { name: text(item.title) })}
-                    onClick={() => void act(item.id, 'reject')}
-                  >
-                    <X size={15} />
-                    {t('session.reject')}
-                  </button>
-                  <Link
-                    className="button button--secondary"
-                    aria-label={t('attention.viewSessionNamed', { name: text(item.title) })}
-                    to={`/sessions/${item.sessionId}`}
-                  >
-                    <ExternalLink size={15} aria-hidden="true" />
-                    {t('attention.viewSession')}
-                  </Link>
+                  {item.type === 'approval' && (
+                    <>
+                      <button
+                        className="button button--primary"
+                        disabled={saving}
+                        aria-label={t('attention.approveNamed', { name: text(item.title) })}
+                        onClick={() => void act(item.id, 'approve')}
+                      >
+                        <Check size={15} />
+                        {t('session.approve')}
+                      </button>
+                      <button
+                        className="button button--secondary"
+                        disabled={saving}
+                        aria-label={t('attention.rejectNamed', { name: text(item.title) })}
+                        onClick={() => void act(item.id, 'reject')}
+                      >
+                        <X size={15} />
+                        {t('session.reject')}
+                      </button>
+                      <Link
+                        className="button button--secondary"
+                        aria-label={t('attention.viewSessionNamed', { name: text(item.title) })}
+                        to={`/sessions/${item.sessionId}`}
+                      >
+                        <ExternalLink size={15} aria-hidden="true" />
+                        {t('attention.viewSession')}
+                      </Link>
+                    </>
+                  )}
+                  {item.type === 'input' && (
+                    <>
+                      <Link
+                        className="button button--primary"
+                        aria-label={t('attention.replyNamed', { name: text(item.title) })}
+                        to={`/sessions/${item.sessionId}?focus=message`}
+                      >
+                        <MessageSquareReply size={15} aria-hidden="true" />
+                        {t('attention.reply')}
+                      </Link>
+                      <Link
+                        className="button button--secondary"
+                        aria-label={t('attention.viewSessionNamed', { name: text(item.title) })}
+                        to={`/sessions/${item.sessionId}`}
+                      >
+                        <ExternalLink size={15} aria-hidden="true" />
+                        {t('attention.viewSession')}
+                      </Link>
+                    </>
+                  )}
+                  {item.type === 'review' && (
+                    <>
+                      <Link
+                        className="button button--secondary"
+                        aria-label={t('attention.openDiffNamed', { name: text(item.title) })}
+                        to={`/sessions/${item.sessionId}?tab=changes`}
+                      >
+                        <FileDiff size={15} aria-hidden="true" />
+                        {t('attention.openDiff')}
+                      </Link>
+                      <button
+                        className="button button--primary"
+                        disabled={saving}
+                        aria-label={t('attention.acceptNamed', { name: text(item.title) })}
+                        onClick={() => void acceptReview(item.id, item.sessionId)}
+                      >
+                        <CheckCheck size={15} aria-hidden="true" />
+                        {t('attention.accept')}
+                      </button>
+                      <Link
+                        className="button button--secondary"
+                        aria-label={t('attention.requestNamed', { name: text(item.title) })}
+                        to={`/sessions/${item.sessionId}?tab=changes&request=changes`}
+                      >
+                        <MessageSquareReply size={15} aria-hidden="true" />
+                        {t('changes.requestChanges')}
+                      </Link>
+                    </>
+                  )}
+                  {item.type === 'failure' && (
+                    <>
+                      <button
+                        className="button button--primary"
+                        disabled={saving}
+                        aria-label={t('attention.retryNamed', { name: text(item.title) })}
+                        onClick={() => void act(item.id, 'retry')}
+                      >
+                        <RotateCcw size={15} aria-hidden="true" />
+                        {t('attention.retry')}
+                      </button>
+                      <Link
+                        className="button button--secondary"
+                        aria-label={t('attention.viewLogsNamed', { name: text(item.title) })}
+                        to={`/sessions/${item.sessionId}?tab=commands`}
+                      >
+                        <ScrollText size={15} aria-hidden="true" />
+                        {t('attention.viewLogs')}
+                      </Link>
+                      <button
+                        className="button button--secondary"
+                        disabled={saving}
+                        aria-label={t('attention.dismissNamed', { name: text(item.title) })}
+                        onClick={() => void act(item.id, 'dismiss')}
+                      >
+                        {t('attention.dismiss')}
+                      </button>
+                    </>
+                  )}
+                  {item.type === 'completed' && (
+                    <>
+                      <Link
+                        className="button button--secondary"
+                        aria-label={t('attention.reviewNamed', { name: text(item.title) })}
+                        to={`/sessions/${item.sessionId}?tab=changes`}
+                      >
+                        <FileDiff size={15} aria-hidden="true" />
+                        {t('session.reviewChanges')}
+                      </Link>
+                      <button
+                        className="button button--primary"
+                        disabled={saving}
+                        aria-label={t('attention.markDoneNamed', { name: text(item.title) })}
+                        onClick={() => void act(item.id, 'dismiss')}
+                      >
+                        <Check size={15} aria-hidden="true" />
+                        {t('attention.markDone')}
+                      </button>
+                    </>
+                  )}
+                  {!item.read && (
+                    <button
+                      className="button button--secondary"
+                      disabled={saving}
+                      aria-label={t('attention.markReadNamed', { name: text(item.title) })}
+                      onClick={() => void markRead(item.id)}
+                    >
+                      {t('attention.markRead')}
+                    </button>
+                  )}
                 </>
-              )}
-              {item.type === 'input' && (
-                <>
-                  <Link
-                    className="button button--primary"
-                    aria-label={t('attention.replyNamed', { name: text(item.title) })}
-                    to={`/sessions/${item.sessionId}?focus=message`}
-                  >
-                    <MessageSquareReply size={15} aria-hidden="true" />
-                    {t('attention.reply')}
-                  </Link>
-                  <Link
-                    className="button button--secondary"
-                    aria-label={t('attention.viewSessionNamed', { name: text(item.title) })}
-                    to={`/sessions/${item.sessionId}`}
-                  >
-                    <ExternalLink size={15} aria-hidden="true" />
-                    {t('attention.viewSession')}
-                  </Link>
-                </>
-              )}
-              {item.type === 'review' && (
-                <>
-                  <Link
-                    className="button button--secondary"
-                    aria-label={t('attention.openDiffNamed', { name: text(item.title) })}
-                    to={`/sessions/${item.sessionId}?tab=changes`}
-                  >
-                    <FileDiff size={15} aria-hidden="true" />
-                    {t('attention.openDiff')}
-                  </Link>
-                  <button
-                    className="button button--primary"
-                    disabled={saving}
-                    aria-label={t('attention.acceptNamed', { name: text(item.title) })}
-                    onClick={() => void acceptReview(item.id, item.sessionId)}
-                  >
-                    <CheckCheck size={15} aria-hidden="true" />
-                    {t('attention.accept')}
-                  </button>
-                  <Link
-                    className="button button--secondary"
-                    aria-label={t('attention.requestNamed', { name: text(item.title) })}
-                    to={`/sessions/${item.sessionId}?tab=changes&request=changes`}
-                  >
-                    <MessageSquareReply size={15} aria-hidden="true" />
-                    {t('changes.requestChanges')}
-                  </Link>
-                </>
-              )}
-              {item.type === 'failure' && (
-                <>
-                  <button
-                    className="button button--primary"
-                    disabled={saving}
-                    aria-label={t('attention.retryNamed', { name: text(item.title) })}
-                    onClick={() => void act(item.id, 'retry')}
-                  >
-                    <RotateCcw size={15} aria-hidden="true" />
-                    {t('attention.retry')}
-                  </button>
-                  <Link
-                    className="button button--secondary"
-                    aria-label={t('attention.viewLogsNamed', { name: text(item.title) })}
-                    to={`/sessions/${item.sessionId}?tab=commands`}
-                  >
-                    <ScrollText size={15} aria-hidden="true" />
-                    {t('attention.viewLogs')}
-                  </Link>
-                  <button
-                    className="button button--secondary"
-                    disabled={saving}
-                    aria-label={t('attention.dismissNamed', { name: text(item.title) })}
-                    onClick={() => void act(item.id, 'dismiss')}
-                  >
-                    {t('attention.dismiss')}
-                  </button>
-                </>
-              )}
-              {item.type === 'completed' && (
-                <>
-                  <Link
-                    className="button button--secondary"
-                    aria-label={t('attention.reviewNamed', { name: text(item.title) })}
-                    to={`/sessions/${item.sessionId}?tab=changes`}
-                  >
-                    <FileDiff size={15} aria-hidden="true" />
-                    {t('session.reviewChanges')}
-                  </Link>
-                  <button
-                    className="button button--primary"
-                    disabled={saving}
-                    aria-label={t('attention.markDoneNamed', { name: text(item.title) })}
-                    onClick={() => void act(item.id, 'dismiss')}
-                  >
-                    <Check size={15} aria-hidden="true" />
-                    {t('attention.markDone')}
-                  </button>
-                </>
-              )}
-              {!item.read && (
-                <button
-                  className="button button--secondary"
-                  disabled={saving}
-                  aria-label={t('attention.markReadNamed', { name: text(item.title) })}
-                  onClick={() => void markRead(item.id)}
-                >
-                  {t('attention.markRead')}
-                </button>
               )}
             </div>
           </article>

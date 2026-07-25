@@ -11,6 +11,7 @@ import {
   type Node as FlowNode,
   type OnEdgesChange,
   type OnNodesChange,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { invoke } from '@tauri-apps/api/core';
@@ -21,9 +22,10 @@ import {
   Hand,
   LayoutGrid,
   Play,
-  Plus,
   Redo2,
   Save,
+  Server,
+  Sparkles,
   Trash2,
   Undo2,
   UserCheck,
@@ -33,12 +35,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type {
   WorkflowDefinition,
+  WorkflowEdge,
   WorkflowNode,
   WorkflowNodeType,
 } from '../../../core/contracts/workflows';
 import type { McpServerConfig, SkillPackage } from '../../../core/contracts/extensions';
 import { useI18n } from '../../../core/i18n/I18nContext';
-import { validateWorkflow } from '../model/workflowGraph';
+import { layoutWorkflow, validateWorkflow } from '../model/workflowGraph';
+import {
+  attachCapability,
+  parseCapabilityPayload,
+  type WorkflowCapability,
+} from '../model/workflowCapabilities';
 import { routeWorkflowProviders, type ProviderAvailability } from '../model/providerRouting';
 import { loadProviderPreferences } from '../model/providerPreferences';
 import { createDefaultWorkflowService, type WorkflowService } from '../services/workflowService';
@@ -46,7 +54,6 @@ import { workflowCopy } from '../workflowCopy';
 
 const kinds: Array<{ type: WorkflowNodeType; icon: typeof Wrench; en: string; zh: string }> = [
   { type: 'agent', icon: Wrench, en: 'Agent', zh: 'Agent' },
-  { type: 'mcp_tool', icon: Plus, en: 'MCP tool', zh: 'MCP 工具' },
   { type: 'approval', icon: UserCheck, en: 'Approval', zh: '人工审批' },
   { type: 'condition', icon: GitBranch, en: 'Condition', zh: '条件' },
   { type: 'join', icon: Hand, en: 'Join', zh: '汇合' },
@@ -60,12 +67,71 @@ function storedExtensions<T>(key: string): T[] {
   }
 }
 
+interface RuntimeMcpConfig {
+  id: string;
+  name: string;
+  transport: 'stdio' | 'streamable_http';
+  command?: string;
+  args: string[];
+  url?: string;
+  secretRef?: string;
+  secretHeader?: string;
+  enabled: boolean;
+}
+
+interface RuntimeSkillPackage {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  source: SkillPackage['source'];
+  sourceUrl?: string;
+  sourceRevision?: string;
+  contentHash: string;
+}
+
+function nodeLabel(node: WorkflowNode) {
+  return (
+    <div className="workflow-node__content">
+      <strong>{node.name}</strong>
+      {node.type === 'agent' && (node.skillIds.length > 0 || node.mcpServerIds.length > 0) && (
+        <div className="workflow-node__capabilities">
+          {node.skillIds.map((id) => (
+            <span key={`skill-${id}`}>Skill · {id}</span>
+          ))}
+          {node.mcpServerIds.map((id) => (
+            <span key={`mcp-${id}`}>MCP · {id}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function toFlowNode(node: WorkflowNode): FlowNode {
   return {
     id: node.id,
     position: node.position,
-    data: { label: node.name },
+    data: { label: nodeLabel(node) },
     className: `workflow-node workflow-node--${node.type}`,
+  };
+}
+
+function cloneFlowNodes(nodes: FlowNode[]): FlowNode[] {
+  return nodes.map((node) => ({ ...node, position: { ...node.position } }));
+}
+
+function cloneFlowEdges(edges: FlowEdge[]): FlowEdge[] {
+  return edges.map((edge) => ({ ...edge }));
+}
+
+function toFlowEdge(edge: WorkflowEdge): FlowEdge {
+  return {
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    label: edge.outcome,
+    data: { outcome: edge.outcome },
   };
 }
 function newNode(type: WorkflowNodeType, position: { x: number; y: number }): WorkflowNode {
@@ -88,14 +154,17 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
   const [nodes, setNodes] = useState<FlowNode[]>([]);
   const [edges, setEdges] = useState<FlowEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
   const [message, setMessage] = useState('');
+  const [messageIsError, setMessageIsError] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [availableSkills] = useState(() =>
+  const [availableSkills, setAvailableSkills] = useState(() =>
     storedExtensions<SkillPackage>('astra.extensions.skills.v1'),
   );
-  const [availableMcp] = useState(() =>
+  const [availableMcp, setAvailableMcp] = useState(() =>
     storedExtensions<McpServerConfig>('astra.extensions.mcp.v1'),
   );
+  const [flow, setFlow] = useState<ReactFlowInstance>();
   const [past, setPast] = useState<
     Array<{ definition: WorkflowDefinition; nodes: FlowNode[]; edges: FlowEdge[] }>
   >([]);
@@ -108,10 +177,43 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       setDefinition(found);
       if (found) {
         setNodes(found.nodes.map(toFlowNode));
-        setEdges(found.edges.map((edge) => ({ ...edge, label: edge.outcome })));
+        setEdges(found.edges.map(toFlowEdge));
       }
     });
   }, [service, workflowId]);
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    void invoke<RuntimeMcpConfig[]>('orchestration_list_mcp_servers')
+      .then((items) =>
+        setAvailableMcp(
+          items.map((item) => ({
+            id: item.id,
+            name: item.name,
+            transport: item.transport,
+            command: item.command,
+            args: item.args,
+            url: item.url,
+            secretRefs: item.secretRef
+              ? { [item.secretHeader || 'authorization']: item.secretRef }
+              : {},
+            enabled: item.enabled,
+            source: 'manual',
+          })),
+        ),
+      )
+      .catch(() => undefined);
+    void invoke<RuntimeSkillPackage[]>('orchestration_list_skills')
+      .then((items) =>
+        setAvailableSkills(
+          items.map((item) => ({
+            ...item,
+            installPath: `astra-cache/${item.contentHash}`,
+            installedAt: new Date().toISOString(),
+          })),
+        ),
+      )
+      .catch(() => undefined);
+  }, []);
   const sync = useCallback(
     (): WorkflowDefinition | null =>
       definition && {
@@ -123,50 +225,97 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
             ...item,
             position: nodes.find((node) => node.id === item.id)!.position,
           })),
-        edges: edges.map((edge) => ({ id: edge.id, source: edge.source, target: edge.target })),
+        edges: edges.map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          outcome: edge.data?.outcome as WorkflowEdge['outcome'],
+        })),
       },
     [definition, edges, nodes],
   );
   const issues = definition ? validateWorkflow(sync() ?? definition) : [];
-  function checkpoint() {
+  const checkpoint = useCallback(() => {
     if (!definition) return;
     setPast((items) => [
       ...items.slice(-29),
       {
         definition: structuredClone(definition),
-        nodes: structuredClone(nodes),
-        edges: structuredClone(edges),
+        nodes: cloneFlowNodes(nodes),
+        edges: cloneFlowEdges(edges),
       },
     ]);
     setFuture([]);
-  }
-  function restore(direction: 'undo' | 'redo') {
-    const source = direction === 'undo' ? past : future;
-    const target = direction === 'undo' ? setFuture : setPast;
-    const setSource = direction === 'undo' ? setPast : setFuture;
-    const previous = source.at(-1);
-    if (!previous || !definition) return;
-    target((items) => [
-      ...items,
-      {
-        definition: structuredClone(definition),
-        nodes: structuredClone(nodes),
-        edges: structuredClone(edges),
-      },
-    ]);
-    setSource((items) => items.slice(0, -1));
-    setDefinition(previous.definition);
-    setNodes(previous.nodes);
-    setEdges(previous.edges);
-    setSelectedId(undefined);
-  }
-  const onNodesChange: OnNodesChange = (changes) =>
+  }, [definition, edges, nodes]);
+  const restore = useCallback(
+    (direction: 'undo' | 'redo') => {
+      const source = direction === 'undo' ? past : future;
+      const target = direction === 'undo' ? setFuture : setPast;
+      const setSource = direction === 'undo' ? setPast : setFuture;
+      const previous = source.at(-1);
+      if (!previous || !definition) return;
+      target((items) => [
+        ...items,
+        {
+          definition: structuredClone(definition),
+          nodes: cloneFlowNodes(nodes),
+          edges: cloneFlowEdges(edges),
+        },
+      ]);
+      setSource((items) => items.slice(0, -1));
+      setDefinition(previous.definition);
+      setNodes(previous.nodes);
+      setEdges(previous.edges);
+      setSelectedId(undefined);
+      setSelectedEdgeId(undefined);
+    },
+    [definition, edges, future, nodes, past],
+  );
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z') {
+        event.preventDefault();
+        restore(event.shiftKey ? 'redo' : 'undo');
+      } else if (key === 'y') {
+        event.preventDefault();
+        restore('redo');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [restore]);
+  const onNodesChange: OnNodesChange = (changes) => {
+    if (changes.some((change) => change.type === 'remove')) checkpoint();
     setNodes((current) => applyNodeChanges(changes, current));
-  const onEdgesChange: OnEdgesChange = (changes) =>
+  };
+  const onEdgesChange: OnEdgesChange = (changes) => {
+    if (changes.some((change) => change.type === 'remove')) checkpoint();
     setEdges((current) => applyEdgeChanges(changes, current));
+  };
   const onConnect = (connection: Connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return;
-    const candidate = addEdge({ ...connection, id: `edge-${crypto.randomUUID()}` }, edges);
+    const source = definition?.nodes.find((node) => node.id === connection.source);
+    const conditionOutcome: WorkflowEdge['outcome'] =
+      source?.type === 'condition'
+        ? edges.some(
+            (edge) => edge.source === source.id && edge.data?.outcome === ('true' as const),
+          )
+          ? 'false'
+          : 'true'
+        : undefined;
+    const candidate = addEdge(
+      {
+        ...connection,
+        id: `edge-${crypto.randomUUID()}`,
+        label: conditionOutcome,
+        data: { outcome: conditionOutcome },
+      },
+      edges,
+    );
     const graph = sync();
     if (
       graph &&
@@ -194,22 +343,58 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
     setSelectedId(item.id);
   }
   function updateSelected(patch: Partial<WorkflowNode>) {
-    setDefinition((current) =>
-      current
-        ? {
-            ...current,
-            nodes: current.nodes.map((node) =>
-              node.id === selectedId ? ({ ...node, ...patch } as WorkflowNode) : node,
-            ),
-          }
-        : current,
+    if (!definition) return;
+    const nextNodes = definition.nodes.map((node) =>
+      node.id === selectedId ? ({ ...node, ...patch } as WorkflowNode) : node,
     );
-    if (patch.name)
-      setNodes((current) =>
-        current.map((node) =>
-          node.id === selectedId ? { ...node, data: { label: patch.name } } : node,
-        ),
+    setDefinition({ ...definition, nodes: nextNodes });
+    setNodes((current) =>
+      current.map((flowNode) => {
+        const next = nextNodes.find((node) => node.id === flowNode.id);
+        return next
+          ? {
+              ...flowNode,
+              data: { label: nodeLabel(next) },
+              className: `workflow-node workflow-node--${next.type}`,
+            }
+          : flowNode;
+      }),
+    );
+  }
+  function applyCapability(nodeId: string, capability: WorkflowCapability) {
+    if (!definition) return;
+    const target = definition.nodes.find((node) => node.id === nodeId);
+    if (!target || target.type !== 'agent') {
+      setMessage(
+        language === 'zh-CN'
+          ? 'MCP 与 Skill 只能内化到 Agent 节点。'
+          : 'MCP and Skills can only be attached to Agent nodes.',
       );
+      return;
+    }
+    const updated = attachCapability(target, capability);
+    if (updated === target) {
+      setMessage(
+        language === 'zh-CN'
+          ? '该 Agent 已具备此能力。'
+          : 'This Agent already has that capability.',
+      );
+      return;
+    }
+    checkpoint();
+    const nextNodes = definition.nodes.map((node) => (node.id === nodeId ? updated : node));
+    setDefinition({ ...definition, nodes: nextNodes });
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId ? { ...node, data: { label: nodeLabel(updated) } } : node,
+      ),
+    );
+    setSelectedId(nodeId);
+    setMessage(
+      language === 'zh-CN'
+        ? `${capability.name} 已内化到 ${target.name}`
+        : `${capability.name} attached to ${target.name}`,
+    );
   }
   async function save() {
     const next = sync();
@@ -218,7 +403,11 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
     try {
       await service.save(next);
       setDefinition(next);
+      setMessageIsError(false);
       setMessage(c.valid);
+    } catch (reason) {
+      setMessageIsError(true);
+      setMessage(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setSaving(false);
     }
@@ -226,44 +415,86 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
   async function saveTemplate() {
     const next = sync();
     if (!next || validateWorkflow(next).length > 0) {
+      setMessageIsError(true);
       setMessage(c.invalid);
       return;
     }
-    await service.saveTemplate(next);
-    setMessage(language === 'zh-CN' ? '模板已保存' : 'Template saved');
+    try {
+      await service.saveTemplate(next);
+      setMessageIsError(false);
+      setMessage(language === 'zh-CN' ? '模板已保存' : 'Template saved');
+    } catch (reason) {
+      setMessageIsError(true);
+      setMessage(reason instanceof Error ? reason.message : String(reason));
+    }
   }
   async function run() {
     const next = sync();
     if (!next || validateWorkflow(next).length) {
+      setMessageIsError(true);
       setMessage(c.invalid);
       return;
     }
-    const providers: ProviderAvailability[] =
-      '__TAURI_INTERNALS__' in window
-        ? await invoke<Array<ProviderAvailability & { reason?: string }>>(
-            'orchestration_discover_providers',
-            { input: loadProviderPreferences() },
-          )
-        : [
-            { provider: 'claude', available: true },
-            { provider: 'codex', available: true },
-          ];
-    const routed = routeWorkflowProviders(next, providers);
-    setDefinition(routed);
-    await service.save(routed);
-    const run = await service.createRun(routed);
-    void navigate(`/runs/${run.id}`);
+    try {
+      const providers: ProviderAvailability[] =
+        '__TAURI_INTERNALS__' in window
+          ? await invoke<Array<ProviderAvailability & { reason?: string }>>(
+              'orchestration_discover_providers',
+              { input: loadProviderPreferences() },
+            )
+          : [
+              { provider: 'claude', available: true },
+              { provider: 'codex', available: true },
+            ];
+      const routed = routeWorkflowProviders(next, providers);
+      setDefinition(routed);
+      await service.save(routed);
+      const run = await service.createRun(routed);
+      void navigate(`/runs/${run.id}`);
+    } catch (reason) {
+      setMessageIsError(true);
+      setMessage(reason instanceof Error ? reason.message : String(reason));
+    }
   }
   function autoLayout() {
+    const graph = sync();
+    if (!graph) return;
     checkpoint();
+    const positions = layoutWorkflow(graph);
     setNodes((current) =>
-      current.map((node, index) => ({
+      current.map((node) => ({
         ...node,
-        position: { x: 80 + (index % 3) * 300, y: 70 + Math.floor(index / 3) * 180 },
+        position: positions.get(node.id) ?? node.position,
       })),
     );
   }
+  function updateSelectedEdge(outcome: WorkflowEdge['outcome']) {
+    if (!selectedEdgeId) return;
+    checkpoint();
+    setEdges((current) =>
+      current.map((edge) =>
+        edge.id === selectedEdgeId
+          ? { ...edge, label: outcome, data: { ...edge.data, outcome } }
+          : edge,
+      ),
+    );
+  }
   const selected = definition?.nodes.find((node) => node.id === selectedId);
+  const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId);
+  const selectedEdgeSource = definition?.nodes.find((node) => node.id === selectedEdge?.source);
+  const capabilities = useMemo<WorkflowCapability[]>(
+    () => [
+      ...availableMcp
+        .filter((server) => server.enabled)
+        .map((server) => ({ kind: 'mcp' as const, id: server.id, name: server.name })),
+      ...availableSkills.map((skill) => ({
+        kind: 'skill' as const,
+        id: skill.id,
+        name: skill.name,
+      })),
+    ],
+    [availableMcp, availableSkills],
+  );
   if (!definition) return <div className="workflow-loading">{c.editor}</div>;
   return (
     <section className="workflow-editor">
@@ -274,6 +505,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
         <input
           aria-label={c.name}
           value={definition.name}
+          onFocus={() => checkpoint()}
           onChange={(e) => setDefinition({ ...definition, name: e.target.value })}
         />
         <div className="workflow-editor__actions">
@@ -301,6 +533,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
             className="button button--compact"
             onClick={() => {
               const next = sync();
+              setMessageIsError(Boolean(!next || validateWorkflow(next).length));
               setMessage(next && validateWorkflow(next).length === 0 ? c.valid : c.invalid);
             }}
           >
@@ -323,7 +556,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
       </header>
       {message && (
         <div
-          className={`workflow-editor__message${issues.length ? ' is-error' : ''}`}
+          className={`workflow-editor__message${issues.length || messageIsError ? ' is-error' : ''}`}
           role="status"
         >
           {message}
@@ -344,18 +577,77 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
               <small>{c.add}</small>
             </button>
           ))}
+          <h2 className="workflow-palette__section">
+            {language === 'zh-CN' ? 'Agent 能力' : 'Agent capabilities'}
+          </h2>
+          {capabilities.length === 0 ? (
+            <p className="workflow-palette__empty">
+              {language === 'zh-CN'
+                ? '请先在扩展页安装 Skill 或注册 MCP。'
+                : 'Install a Skill or register MCP first.'}
+            </p>
+          ) : (
+            capabilities.map((capability) => (
+              <button
+                className="workflow-capability"
+                key={`${capability.kind}-${capability.id}`}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = 'copy';
+                  event.dataTransfer.setData(
+                    'application/astra-capability',
+                    JSON.stringify(capability),
+                  );
+                }}
+                onClick={() => selectedId && applyCapability(selectedId, capability)}
+              >
+                {capability.kind === 'mcp' ? <Server size={16} /> : <Sparkles size={16} />}
+                <span>{capability.name}</span>
+                <small>{capability.kind === 'mcp' ? 'MCP' : 'Skill'}</small>
+              </button>
+            ))
+          )}
         </aside>
         <div
           className="workflow-canvas"
           onDragOver={(e) => {
             e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
+            e.dataTransfer.dropEffect = e.dataTransfer.types.includes(
+              'application/astra-capability',
+            )
+              ? 'copy'
+              : 'move';
           }}
           onDrop={(e) => {
             e.preventDefault();
+            const capability = parseCapabilityPayload(
+              e.dataTransfer.getData('application/astra-capability'),
+            );
+            const position = flow?.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+            if (capability && position) {
+              const target = [...nodes].reverse().find((node) => {
+                const nodePosition = node.position;
+                const width = node.measured?.width ?? 180;
+                const height = node.measured?.height ?? 90;
+                return (
+                  position.x >= nodePosition.x &&
+                  position.x <= nodePosition.x + width &&
+                  position.y >= nodePosition.y &&
+                  position.y <= nodePosition.y + height
+                );
+              });
+              if (target) applyCapability(target.id, capability);
+              else
+                setMessage(
+                  language === 'zh-CN'
+                    ? '请将能力拖放到 Agent 节点内部。'
+                    : 'Drop the capability inside an Agent node.',
+                );
+              return;
+            }
             const type = e.dataTransfer.getData('application/astra-node') as WorkflowNodeType;
             if (kinds.some((kind) => kind.type === type))
-              add(type, { x: e.clientX - 360, y: e.clientY - 120 });
+              add(type, position ?? { x: e.clientX - 360, y: e.clientY - 120 });
           }}
         >
           <ReactFlow
@@ -364,7 +656,20 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onNodeClick={(_, node) => setSelectedId(node.id)}
+            onNodeClick={(_, node) => {
+              setSelectedId(node.id);
+              setSelectedEdgeId(undefined);
+            }}
+            onEdgeClick={(_, edge) => {
+              setSelectedEdgeId(edge.id);
+              setSelectedId(undefined);
+            }}
+            onPaneClick={() => {
+              setSelectedId(undefined);
+              setSelectedEdgeId(undefined);
+            }}
+            onNodeDragStart={() => checkpoint()}
+            onInit={setFlow}
             fitView
             deleteKeyCode={['Backspace', 'Delete']}
           >
@@ -375,8 +680,53 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
         </div>
         <aside className="workflow-inspector">
           <h2>{c.inspector}</h2>
-          {selected ? (
+          {selectedEdge ? (
             <div className="workflow-fields">
+              <p>
+                <strong>{language === 'zh-CN' ? '连线' : 'Edge'}</strong>
+                <br />
+                <code>
+                  {selectedEdge.source} → {selectedEdge.target}
+                </code>
+              </p>
+              <label>
+                {language === 'zh-CN' ? '分支结果' : 'Branch outcome'}
+                <select
+                  value={(selectedEdge.data?.outcome as WorkflowEdge['outcome']) ?? ''}
+                  onChange={(event) =>
+                    updateSelectedEdge((event.target.value || undefined) as WorkflowEdge['outcome'])
+                  }
+                >
+                  {selectedEdgeSource?.type === 'condition' ? (
+                    <>
+                      <option value="" disabled>
+                        {language === 'zh-CN' ? '选择结果' : 'Select outcome'}
+                      </option>
+                      <option value="true">True</option>
+                      <option value="false">False</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="">{language === 'zh-CN' ? '普通依赖' : 'Dependency'}</option>
+                      <option value="success">Success</option>
+                    </>
+                  )}
+                </select>
+              </label>
+              <button
+                className="button button--danger"
+                onClick={() => {
+                  checkpoint();
+                  setEdges((current) => current.filter((edge) => edge.id !== selectedEdge.id));
+                  setSelectedEdgeId(undefined);
+                }}
+              >
+                <Trash2 size={15} />
+                {language === 'zh-CN' ? '删除连线' : 'Delete edge'}
+              </button>
+            </div>
+          ) : selected ? (
+            <div className="workflow-fields" onFocusCapture={() => checkpoint()}>
               <label>
                 {c.name}
                 <input
@@ -442,6 +792,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
                         <label key={server.id}>
                           <input
                             type="checkbox"
+                            disabled={!server.enabled}
                             checked={selected.mcpServerIds.includes(server.id)}
                             onChange={(event) =>
                               updateSelected({
@@ -452,6 +803,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
                             }
                           />
                           {server.name}
+                          {!server.enabled && ` (${language === 'zh-CN' ? '已禁用' : 'disabled'})`}
                         </label>
                       ))
                     )}
@@ -470,7 +822,7 @@ export function WorkflowEditorPage({ service: supplied }: { service?: WorkflowSe
                         {language === 'zh-CN' ? '选择服务器' : 'Select server'}
                       </option>
                       {availableMcp.map((server) => (
-                        <option key={server.id} value={server.id}>
+                        <option key={server.id} value={server.id} disabled={!server.enabled}>
                           {server.name}
                         </option>
                       ))}
