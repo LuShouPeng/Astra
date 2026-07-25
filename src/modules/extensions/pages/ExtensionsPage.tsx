@@ -203,32 +203,37 @@ export function ExtensionsPage() {
       (form.transport === 'streamable_http' ? !/^https?:\/\//.test(form.url) : !form.command.trim())
     )
       return;
-    const server: McpServerConfig = {
-      id: `mcp-${crypto.randomUUID()}`,
-      name: form.name.trim(),
-      transport: form.transport,
-      url: form.transport === 'streamable_http' ? form.url : undefined,
-      command: form.transport === 'stdio' ? form.command : undefined,
-      args: form.transport === 'stdio' ? form.args.split(/\s+/).filter(Boolean) : undefined,
-      secretRefs: form.credential
-        ? { [form.credentialHeader.trim() || 'authorization']: form.credential }
-        : {},
-      enabled: true,
-      source: 'manual',
-    };
-    const next = [server, ...servers];
-    if (form.secret && form.credential && '__TAURI_INTERNALS__' in window) {
-      await invoke('orchestration_store_secret', {
-        reference: form.credential,
-        secret: form.secret,
-      });
+    setError('');
+    try {
+      const server: McpServerConfig = {
+        id: `mcp-${crypto.randomUUID()}`,
+        name: form.name.trim(),
+        transport: form.transport,
+        url: form.transport === 'streamable_http' ? form.url : undefined,
+        command: form.transport === 'stdio' ? form.command : undefined,
+        args: form.transport === 'stdio' ? form.args.split(/\s+/).filter(Boolean) : undefined,
+        secretRefs: form.credential
+          ? { [form.credentialHeader.trim() || 'authorization']: form.credential }
+          : {},
+        enabled: true,
+        source: 'manual',
+      };
+      if (form.secret && form.credential && '__TAURI_INTERNALS__' in window) {
+        await invoke('orchestration_store_secret', {
+          reference: form.credential,
+          secret: form.secret,
+        });
+      }
+      if ('__TAURI_INTERNALS__' in window) {
+        await invoke('orchestration_save_mcp_server', { input: runtimeInput(server) });
+      }
+      const next = [server, ...servers];
+      setServers(next);
+      localStorage.setItem(MCP_KEY, JSON.stringify(next));
+      closeMcpForm();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
-    if ('__TAURI_INTERNALS__' in window) {
-      await invoke('orchestration_save_mcp_server', { input: runtimeInput(server) });
-    }
-    setServers(next);
-    localStorage.setItem(MCP_KEY, JSON.stringify(next));
-    closeMcpForm();
   }
   async function testConnection(server: McpServerConfig) {
     setError('');
