@@ -14,6 +14,7 @@ import {
   createDefaultAgentRuntimeService,
   type AgentRuntimeService,
 } from '../modules/agents';
+import { LiveSessionProvider } from '../modules/sessions';
 import { CommandCenterPage } from '../modules/command-center';
 import { AttentionPage } from '../modules/attention';
 import {
@@ -113,43 +114,51 @@ function AppRouter({
   projectService,
   changesService,
   desktopNotifications,
+  agentRuntime,
 }: {
   repository: PrototypeRepository;
   projectService: ProjectService;
   changesService: ChangesService;
   desktopNotifications: DesktopNotificationService;
+  agentRuntime: AgentRuntimeService;
 }) {
   const { activeWorkspace } = useWorkspace();
   if (resolveAppRoute(activeWorkspace) === 'projects') return <WelcomePage />;
 
   return (
     <WorkbenchProvider repository={repository} discoverCapabilities={discoverCapabilities}>
-      <DesktopNotificationBridge service={desktopNotifications} />
-      <Routes>
-        <Route element={<WorkbenchShell />}>
-          <Route index element={<Navigate replace to="/command-center" />} />
-          <Route path="command-center" element={<CommandCenterPage />} />
-          <Route path="projects" element={<ProjectsRoute service={projectService} />} />
-          <Route
-            path="projects/:projectId"
-            element={<ProjectDetailPage service={projectService} />}
-          />
-          <Route
-            path="sessions/:sessionId"
-            element={
-              <SessionDetailPage changesService={changesService} projectService={projectService} />
-            }
-          />
-          <Route path="attention" element={<AttentionPage />} />
-          <Route path="notifications" element={<NotificationsPage />} />
-          <Route path="changes" element={<ChangesPage service={changesService} />} />
-          <Route
-            path="settings"
-            element={<SettingsPage desktopNotifications={desktopNotifications} />}
-          />
-          <Route path="*" element={<Navigate replace to="/command-center" />} />
-        </Route>
-      </Routes>
+      <LiveSessionProvider agentRuntime={agentRuntime}>
+        <DesktopNotificationBridge service={desktopNotifications} />
+        <Routes>
+          <Route element={<WorkbenchShell />}>
+            <Route index element={<Navigate replace to="/command-center" />} />
+            <Route path="command-center" element={<CommandCenterPage />} />
+            <Route path="projects" element={<ProjectsRoute service={projectService} />} />
+            <Route
+              path="projects/:projectId"
+              element={<ProjectDetailPage service={projectService} />}
+            />
+            <Route
+              path="sessions/:sessionId"
+              element={
+                <SessionDetailPage
+                  changesService={changesService}
+                  projectService={projectService}
+                  agentRuntime={agentRuntime}
+                />
+              }
+            />
+            <Route path="attention" element={<AttentionPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
+            <Route path="changes" element={<ChangesPage service={changesService} />} />
+            <Route
+              path="settings"
+              element={<SettingsPage desktopNotifications={desktopNotifications} />}
+            />
+            <Route path="*" element={<Navigate replace to="/command-center" />} />
+          </Route>
+        </Routes>
+      </LiveSessionProvider>
     </WorkbenchProvider>
   );
 }
@@ -160,27 +169,16 @@ export function App({
   projectService: suppliedProjectService,
   changesService: suppliedChangesService,
   desktopNotifications: suppliedDesktopNotifications,
+  agentRuntime: suppliedAgentRuntime,
 }: {
   service?: WorkspaceService;
   repository?: PrototypeRepository;
   projectService?: ProjectService;
   changesService?: ChangesService;
   desktopNotifications?: DesktopNotificationService;
+  agentRuntime?: AgentRuntimeService;
 }) {
   useEffect(() => startThemePreference(), []);
-  // M4: expose the agent runtime service on window in dev so the stream bridge
-  // (agent://stream → appEventBus) can be manually verified from devtools until
-  // the UI entry point lands (M6). No-op in production builds.
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    const runtime: AgentRuntimeService = createDefaultAgentRuntimeService(appEventBus);
-    (globalThis as unknown as { __astraAgentRuntime?: AgentRuntimeService }).__astraAgentRuntime =
-      runtime;
-    return () => {
-      delete (globalThis as unknown as { __astraAgentRuntime?: AgentRuntimeService })
-        .__astraAgentRuntime;
-    };
-  }, []);
   const workspaceService = useMemo(() => service ?? createDefaultService(), [service]);
   const prototypeRepository = useMemo(() => repository ?? createDefaultRepository(), [repository]);
   const projectService = useMemo(
@@ -195,6 +193,21 @@ export function App({
     () => suppliedDesktopNotifications ?? createDefaultDesktopNotificationService(),
     [suppliedDesktopNotifications],
   );
+  // 单例 runtime：live 会话订阅、Stop、sendInput 都走它，桥接到 appEventBus。
+  const agentRuntime = useMemo(
+    () => suppliedAgentRuntime ?? createDefaultAgentRuntimeService(appEventBus),
+    [suppliedAgentRuntime],
+  );
+  // M4: dev 下把 runtime 挂到 window，便于 devtools 手动验证流桥接。生产 no-op。
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (globalThis as unknown as { __astraAgentRuntime?: AgentRuntimeService }).__astraAgentRuntime =
+      agentRuntime;
+    return () => {
+      delete (globalThis as unknown as { __astraAgentRuntime?: AgentRuntimeService })
+        .__astraAgentRuntime;
+    };
+  }, [agentRuntime]);
   return (
     <HashRouter>
       <WorkspaceProvider service={workspaceService}>
@@ -203,6 +216,7 @@ export function App({
           projectService={projectService}
           changesService={changesService}
           desktopNotifications={desktopNotifications}
+          agentRuntime={agentRuntime}
         />
       </WorkspaceProvider>
     </HashRouter>

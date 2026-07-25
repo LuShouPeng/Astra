@@ -265,6 +265,32 @@ describe('stopLiveSession / resume / dispose', () => {
     expect(h.unsubscribe).toHaveBeenCalled();
   });
 
+  it('sendFollowUp forwards input to the process and persists a user_message', async () => {
+    const h = makeHarness();
+    await h.service.createLiveSession(localProject(), 'claude', 'go');
+    const before = h.updates.length;
+
+    await h.service.sendFollowUp('sess-1', '  keep going  ');
+
+    expect(h.runtime.sendInput).toHaveBeenCalledWith('sess-1', 'keep going');
+    const followUp = h.updates.slice(before).find(
+      (u) => u.update.kind === 'timeline-event' && u.update.event.type === 'user_message',
+    );
+    expect(followUp?.persist).toBe(true);
+    expect(followUp?.update).toMatchObject({
+      event: { id: 'event-sess-1-user-2', content: 'keep going' },
+    });
+  });
+
+  it('sendFollowUp rejects blank text and unknown sessions without calling the runtime', async () => {
+    const h = makeHarness();
+    await h.service.createLiveSession(localProject(), 'claude', 'go');
+
+    await expect(h.service.sendFollowUp('sess-1', '   ')).rejects.toThrow('请输入');
+    await expect(h.service.sendFollowUp('sess-unknown', 'hi')).rejects.toThrow('会话进程已结束');
+    expect(h.runtime.sendInput).not.toHaveBeenCalled();
+  });
+
   it('resumeLiveSession rejects (M5 mock)', async () => {
     const h = makeHarness();
     await expect(h.service.resumeLiveSession('sess-1')).rejects.toThrow('恢复执行功能开发中');

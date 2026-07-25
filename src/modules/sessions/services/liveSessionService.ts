@@ -66,6 +66,8 @@ interface StreamState {
   stderrTail: string[];
   /** 已产出的 agent_message 序号，用于生成事件 id。 */
   messageSeq: number;
+  /** 用户后续消息序号，用于生成事件 id（初始提示为 1，后续从 2 起）。 */
+  followUpSeq: number;
   provider: AgentProvider;
   /** 绑定的工作目录，用于冲突检测 [C3]。 */
   workingDirectory: string;
@@ -73,6 +75,8 @@ interface StreamState {
 
 export interface LiveSessionService {
   createLiveSession(project: Project, provider: AgentProvider, prompt: string): Promise<SessionId>;
+  /** 向运行中的 live 会话进程发送后续输入，并把用户消息追加到 Timeline。 */
+  sendFollowUp(sessionId: SessionId, text: string): Promise<void>;
   stopLiveSession(sessionId: SessionId): Promise<void>;
   resumeLiveSession(sessionId: SessionId): Promise<never>;
   /** 释放所有订阅与计时器（组件卸载时调用）。 */
@@ -250,6 +254,7 @@ export function createLiveSessionService(deps: LiveSessionDeps): LiveSessionServ
         flushTimer: null,
         stderrTail: [],
         messageSeq: 0,
+        followUpSeq: 1,
         provider,
         workingDirectory: project.rootPath,
       });
@@ -272,6 +277,39 @@ export function createLiveSessionService(deps: LiveSessionDeps): LiveSessionServ
         );
       }
       return sessionId;
+    },
+
+    async sendFollowUp(sessionId, text) {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        throw new LiveSessionError('请输入要发送的消息。');
+      }
+      const state = streams.get(sessionId);
+      if (!state) {
+        throw new LiveSessionError('会话进程已结束，无法发送消息。');
+      }
+      try {
+        await deps.agentRuntime.sendInput(sessionId, trimmed);
+      } catch (error) {
+        throw new LiveSessionError(
+          error instanceof Error ? error.message : '发送消息到 Agent 进程失败。',
+        );
+      }
+      state.followUpSeq += 1;
+      // 用户后续消息是关键节点：落盘。
+      deps.sink.apply(
+        {
+          kind: 'timeline-event',
+          event: {
+            id: `event-${sessionId}-user-${state.followUpSeq}`,
+            sessionId,
+            type: 'user_message',
+            timestamp: now(),
+            content: trimmed,
+          },
+        },
+        { persist: true },
+      );
     },
 
     async stopLiveSession(sessionId) {

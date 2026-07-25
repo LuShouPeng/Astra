@@ -12,12 +12,14 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { appEventBus } from '../../../core/events/appEventBus';
 import { useWorkbench } from '../../../core/state/WorkbenchContext';
+import type { AgentRuntimeService } from '../../agents';
 import { ChangesReview, type ChangesService } from '../../changes';
 import { resolveAttention } from '../../attention';
 import type { ProjectService } from '../../projects';
 import { CommandsView, ContextView, TestsView } from '../components/SessionEventViews';
 import { Timeline } from '../components/Timeline';
 import { applyFollowUp, nextSessionTimestamp, stopSession } from '../model/sessionTransitions';
+import { useLiveSessions } from '../state/LiveSessionContext';
 
 type SessionTab = 'timeline' | 'changes' | 'tests' | 'commands' | 'context';
 
@@ -41,21 +43,48 @@ function formatDuration(startedAt: string, endedAt: string): string {
 export function SessionDetailPage({
   changesService,
   projectService,
+  agentRuntime,
 }: {
   changesService?: ChangesService;
   projectService?: ProjectService;
+  agentRuntime?: AgentRuntimeService;
 }) {
   const { sessionId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { snapshot, saveSnapshot, saving } = useWorkbench();
+  const liveSessions = useLiveSessions();
   const tab = sessionTab(searchParams.get('tab'));
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [openingProject, setOpeningProject] = useState(false);
+  // live 会话是否有真实运行进程；异步查后端 registry，供 Stop 按钮判定。
+  const [liveProcessRunning, setLiveProcessRunning] = useState(false);
   const followUpRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (searchParams.get('focus') === 'message') followUpRef.current?.focus();
   }, [searchParams]);
+  // live 会话：查后端进程是否仍在运行，决定 Stop 是否可用。demo 会话跳过。
+  const runtimeSession = snapshot?.sessions.find((item) => item.id === sessionId);
+  const runtimeProcessId =
+    runtimeSession?.origin === 'live' ? runtimeSession.runtimeProcessId : undefined;
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!agentRuntime || !runtimeProcessId) {
+        if (!cancelled) setLiveProcessRunning(false);
+        return;
+      }
+      try {
+        const running = await agentRuntime.listRunning();
+        if (!cancelled) setLiveProcessRunning(running.includes(runtimeProcessId));
+      } catch {
+        if (!cancelled) setLiveProcessRunning(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agentRuntime, runtimeProcessId, snapshot]);
   if (!snapshot) return <div className="session-state">Loading session...</div>;
   const session = snapshot.sessions.find((item) => item.id === sessionId);
   if (!session)
@@ -73,8 +102,12 @@ export function SessionDetailPage({
   const approval = snapshot.attentionItems.find(
     (item) => item.sessionId === session.id && item.type === 'approval' && !item.resolved,
   );
+  const isLive = session.origin === 'live';
   const canStop =
-    !capability.displayOnly && (session.status === 'running' || session.status === 'waiting');
+    !capability.displayOnly &&
+    (session.status === 'running' || session.status === 'waiting') &&
+    // live 会话还需真实进程在运行；demo 会话按状态即可停止。
+    (!isLive || liveProcessRunning);
   const canOpenProject = Boolean(
     projectService && project?.source === 'local' && project.status === 'available',
   );
@@ -88,6 +121,13 @@ export function SessionDetailPage({
     event.preventDefault();
     setError(null);
     try {
+      if (isLive) {
+        // 真实会话：发到进程 stdin，用户消息由 liveSessionService 追加进快照。
+        if (!liveSessions) throw new Error('实时会话服务未就绪。');
+        await liveSessions.sendFollowUp(session!.id, message);
+        setMessage('');
+        return;
+      }
       const next = applyFollowUp(snapshot!, session!.id, message, nextSessionTimestamp(snapshot!));
       const previousStatus = session!.status;
       await saveSnapshot(next);
@@ -123,6 +163,18 @@ export function SessionDetailPage({
     setError(null);
     try {
       const previousStatus = session!.status;
+      if (isLive) {
+        // 真实会话：停进程 + 更新快照由 liveSessionService 经 sink 异步完成。
+        if (!liveSessions) throw new Error('实时会话服务未就绪。');
+        await liveSessions.stopLiveSession(session!.id);
+        setLiveProcessRunning(false);
+        // 快照经 sink 异步推进，这里用显式 stopped 态构造通知负载，避免读到旧值。
+        appEventBus.emit('session:status-changed', {
+          session: { ...session!, status: 'stopped' },
+          previousStatus,
+        });
+        return;
+      }
       const next = stopSession(snapshot!, session!.id, nextSessionTimestamp(snapshot!));
       await saveSnapshot(next);
       const updated = next.sessions.find((item) => item.id === session!.id)!;

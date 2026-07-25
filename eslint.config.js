@@ -57,6 +57,7 @@ export default tseslint.config(
   {
     files: [
       'src/modules/workspace/state/WorkspaceContext.tsx',
+      'src/modules/sessions/state/LiveSessionContext.tsx',
       'src/core/state/WorkbenchContext.tsx',
     ],
     rules: {
